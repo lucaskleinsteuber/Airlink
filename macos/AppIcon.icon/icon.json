@@ -1,0 +1,21 @@
+{
+  "fill": {
+    "linear-gradient": [
+      "extended-srgb:0.16078,0.58039,0.98431,1.00000",
+      "extended-srgb:0.07059,0.34118,0.83922,1.00000"
+    ],
+    "orientation": {"start":{"x":0.5,"y":0},"stop":{"x":0.5,"y":1}}
+  },
+  "groups": [
+    {
+      "name": "Connection",
+      "layers": [
+        {"image-name":"Link.svg","name":"Link","glass":true}
+      ],
+      "shadow":{"kind":"neutral","opacity":0.25},
+      "specular":true,
+      "translucency":{"enabled":false,"value":0}
+    }
+  ],
+  "supported-platforms":{"squares":["macOS"]}
+}

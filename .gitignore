@@ -1,0 +1,14 @@
+.DS_Store
+.build/
+build/
+dist/
+node_modules/
+web/dist/
+*.xcuserstate
+xcuserdata/
+.swiftpm/
+*.log
+.env
+web/*.tsbuildinfo
+internal/server/assets/*
+!internal/server/assets/README.txt

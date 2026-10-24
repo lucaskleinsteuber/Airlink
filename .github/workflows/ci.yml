@@ -1,0 +1,61 @@
+name: Background checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.3'
+          cache-dependency-path: go.sum
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build and test the web interface
+        run: |
+          npm --prefix web ci
+          npm --prefix web test
+          npm --prefix web run build
+          bash scripts/embed-web.sh
+      - name: Go unit, security, HTTPS, and race tests
+        run: go test -race ./...
+      - name: Compile portable platform binaries
+        if: runner.os == 'Linux'
+        run: bash scripts/build.sh
+      - name: Native Swift tests with the actual helper
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p build
+          CGO_ENABLED=0 go build -trimpath -o build/airlink-native ./cmd/airlink
+          AIRLINK_TEST_HELPER="$PWD/build/airlink-native" swift test --package-path macos --scratch-path build/swift-tests
+      - name: Compile both native macOS architectures
+        if: runner.os == 'macOS'
+        run: |
+          swift build --package-path macos --scratch-path build/swift-arm64 --configuration release --triple arm64-apple-macosx14.0
+          swift build --package-path macos --scratch-path build/swift-x86_64 --configuration release --triple x86_64-apple-macosx14.0
