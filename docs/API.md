@@ -1,6 +1,6 @@
 # AirLink protocol 1 — 0.1.0
 
-The additive 0.2.0 share and explicit clipboard interfaces are specified in [API-0.2.md](API-0.2.md). The baseline transfer routes below remain compatible.
+The additive share/clipboard interfaces are specified in [API-0.2.md](API-0.2.md), and relay, rate limits, history and statistics in [API-0.3.md](API-0.3.md). The baseline transfer routes below remain compatible.
 
 The Go definitions in `internal/model` define JSON names. All byte counts and offsets are signed 64-bit integers. State and transfer updates are persisted. Empty lists are JSON arrays.
 

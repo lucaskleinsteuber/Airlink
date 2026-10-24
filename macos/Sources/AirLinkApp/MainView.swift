@@ -13,6 +13,8 @@ struct MainView: View {
     @State private var showShares = false
     @State private var showShareCreator = false
     @State private var showClipboard = false
+    @State private var showHistory = false
+    @State private var showRelays = false
     var body: some View {
         NavigationSplitView {
             List(selection: $model.selectedDeviceID) {
@@ -65,6 +67,8 @@ struct MainView: View {
             }
             .background(Color(nsColor: .windowBackgroundColor))
             .toolbar {
+                ToolbarItem { Button { showHistory = true } label: { Label(model.text("Verlauf", "History"), systemImage: "clock") } }
+                ToolbarItem { Button { showRelays = true } label: { Label(model.text("Browser-Relays", "Browser relays"), systemImage: "arrow.triangle.branch") } }
                 ToolbarItem { Button { showShares = true } label: { Label("Quick Share", systemImage: "link") } }
                 ToolbarItem { Button { showClipboard = true } label: { Label(model.text("Zwischenablage", "Clipboard"), systemImage: "clipboard") } }
                 ToolbarItem { Button { showLocalConnection = true } label: { Label(model.text("Verbindung", "Connection"), systemImage: "qrcode") } }
@@ -77,6 +81,8 @@ struct MainView: View {
         .sheet(isPresented: $showShares) { ShareListView().environmentObject(model) }
         .sheet(isPresented: $showShareCreator) { ShareCreateView(initialPaths: model.pendingURLs).environmentObject(model) }
         .sheet(isPresented: $showClipboard) { ClipboardView().environmentObject(model) }
+        .sheet(isPresented: $showHistory) { HistoryView().environmentObject(model) }
+        .sheet(isPresented: $showRelays) { RelayOverview().environmentObject(model) }
         .alert(model.text("AirLink konnte die Aktion nicht ausführen", "AirLink could not complete the action"), isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("OK") { model.error = nil }
         } message: { Text(model.error ?? "") }
@@ -270,6 +276,10 @@ struct DeviceSettingsView: View {
             Toggle(model.text("Darf Dateien an diesen Mac senden", "May send files to this Mac"), isOn: $device.canSend)
             Toggle(model.text("Darf Dateien von diesem Mac empfangen", "May receive files from this Mac"), isOn: $device.canReceive)
             Toggle(model.text("Darf Zwischenablagetext austauschen", "May exchange clipboard text"), isOn: $device.canClipboard)
+            if device.kind == "browser" {
+                Toggle(model.text("Darf Dateien zwischen Browsern vermitteln lassen", "May use browser-to-browser relay"), isOn: $device.canRelay)
+                Text(model.text("Für Senden oder Empfangen gelten zusätzlich die jeweiligen Dateiberechtigungen. Neue Relay-Angebote benötigen die Bestätigung im Empfänger-Browser.", "Sending and receiving also require the corresponding file permission. New relay offers need acceptance in the recipient browser.")).font(.caption).foregroundStyle(.secondary)
+            }
             Toggle(model.text("Eingehende Übertragungen automatisch annehmen", "Automatically accept incoming transfers"), isOn: $device.autoAccept)
                 .disabled(!device.canSend)
             if let fingerprint = device.fingerprint { Text(fingerprint).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled) }

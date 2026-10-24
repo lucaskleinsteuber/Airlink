@@ -1,6 +1,6 @@
 # Architecture
 
-AirLink 0.2 extends the shared local transfer service with Quick Share and explicit clipboard text. Native and browser interfaces use the same host. Runtime resources are bundled; no hosted signaling service, external relay, account, or online asset server is required. The additions are specified in [API-0.2.md](API-0.2.md).
+AirLink 0.3 extends the shared local transfer service with browser relay, aggregate payload limits, and richer history/statistics, retaining Quick Share and explicit clipboard text. Native and browser interfaces use the same local host. Runtime resources are bundled; no hosted signaling service, external relay, account, or online asset server is required. Additions are specified in [API-0.2.md](API-0.2.md) and [API-0.3.md](API-0.3.md).
 
 ```mermaid
 flowchart LR
@@ -8,6 +8,8 @@ flowchart LR
   Browser[Desktop or mobile browser] <-->|HTTPS + SSE| Host
   Peer[Paired desktop Go service] <-->|Pinned TLS / direct transfer| Host
   Recipient[Share recipient browser] -->|HTTPS / share session| Host
+  SenderTab[Paired source browser] -->|Requested RAM blocks| Host
+  Host -->|Bounded relay stream| ReceiverTab[Paired recipient browser]
   Host --> State[Private settings + identity + SQLite checkpoints]
   Host --> Destination[Selected receive directory]
   Source[Selected source files] -->|Read in bounded chunks| Host
@@ -21,7 +23,29 @@ Each uploaded chunk carries a SHA-256 checksum. Confirmed chunks and transfer me
 
 Incoming files remain partial until the receiver verifies the complete file. Publication uses an atomic operation that refuses to overwrite an existing destination. Relative path validation and filesystem-root operations constrain received content to its destination. Source manifests reference original files and verify their identity before reuse; sending does not move or replace them.
 
-The queue has independent pools of two incoming and two outgoing transfers. Verification counts against its direction's pool. This avoids a deadlock when both hosts have incoming offers waiting for each other's outgoing queues. Chunk I/O is additionally bounded to two incoming requests. Durable transfer records also provide the current local transfer list; expanded history and analytics are later milestones.
+The queue has independent pools of two incoming and two outgoing transfers. Verification counts against its direction's pool. This avoids a deadlock when both hosts have incoming offers waiting for each other's outgoing queues. Chunk I/O is additionally bounded to two incoming requests. Browser relay has its own two-file-stream bound and separate metadata, so a relay is not duplicated as a stored direct transfer.
+
+## Browser relay
+
+`internal/relay` persists immutable manifests, acceptance/state, confirmed block hashes, and delivered byte-range metadata. Payload blocks stay in bounded RAM only; the host never writes a complete relay source or destination file. At most two active relay file streams request 8 MiB blocks, with a shorter final block. This bound is not a claim about total process RSS: HTTP, hashing, runtime, and metadata allocations remain separate.
+
+Both browsers pair with the same host. A separate `canRelay` permission defaults false for existing and new devices. The sender also needs `canSend`; the receiver needs `canReceive`. Only authorized online browser peers appear in a guest's relay choices, exposing names/IDs rather than addresses or credentials. The recipient explicitly accepts each new offer. The host may pause/resume/cancel but does not auto-accept for a guest; resuming cannot bypass acceptance. Permission changes and revocation interrupt affected activity.
+
+The source hashes each file before the immutable offer and answers unpredictable receiver-driven requests for a specific file/chunk. Unsolicited, stale, wrong-owner, or changed confirmed blocks are rejected. Chunk acknowledgments describe consumption by the receiver transport. A normal full stream verifies the complete digest before releasing its final bytes; partial ranges validate blocks/source identity without asserting a whole saved file.
+
+HEAD and invalid ranges do not request source bytes or advance delivery. Individual downloads support a stable ETag and a single Range; ZIP64 preserves path structure/empty directories with no archive-resume promise. `delivered` means all relevant byte ranges reached the browser transport, not that its download manager saved or verified the filesystem copy.
+
+After host/tab/network interruption, metadata survives but buffered data does not. Both tabs must return, source file access may need reselection, and the receiver may need to resume/restart its download. No fallback silently stages a complete file on the host.
+
+## Payload limits and history
+
+`internal/traffic` applies independent shared token buckets for host send and receive payloads. The persisted setting is zero for unlimited, otherwise 1,024 through 1 TiB/s. Normal file transfers, public share payloads, and relay I/O use the same directional budget. Payload metering excludes control and HTTP error response bodies. Share policy/source checks run after throttling waits and before output so a limit cannot defer delivery past expiry/revocation checks.
+
+Lifetime host payload counters persist separately from history and survive history clearing. Confirmed direct-file bytes, unique relayed transport bytes, and relay-delivery counts remain distinct. Guest statistics are computed only from owned/participant records and omit host-wide traffic counters.
+
+History combines transfer and relay records newest first, with case-insensitive filename/device search and state/direction/device filters; the combined result limit defaults to 100 and is capped at 500. Clear removes terminal metadata only. Host control may clear all terminal records; a guest removes only its own terminal association, preserving the other relay participant's history. Originals, received files, active work, shares, and clipboard messages are not deleted.
+
+Statistics describe the remaining history. Daily groups put each record's accumulated bytes/counts under its latest activity date in UTC (falling back to creation if unavailable); they are not actual per-day byte deltas. Resuming an old record can move its accumulated history total to a later day. Clearing history can reduce these summaries while lifetime payload counters remain unchanged.
 
 ## Service and trust
 
@@ -57,9 +81,11 @@ Native and browser UI provide Paste, editable text, Send, preview, Copy, and Dis
 
 The Swift package in `macos/` separates Codable protocol models and subprocess transport from SwiftUI/AppKit presentation. The app launches its bundled Go helper with private pipes, polls status once per second, and sends local control commands through correlated JSON-lines requests. Status refresh is serialized, and a single asynchronous reader preserves response byte order.
 
-The app remains available in the menu bar after window closure. Explicit quit checkpoints and stops the helper. File selection, drag-and-drop, and Finder Services provide source URLs; the helper handles the transfer. Login startup uses `SMAppService`. Notification authorization is requested only after a user action. The global send shortcut is currently fixed to ⇧⌘L.
+The app remains available in the menu bar after window closure. The menu and quit warning include active host relays as well as direct transfers. Explicit quit awaits helper checkpoint/process cleanup. File selection, drag-and-drop, and user-invoked Finder Services provide source URLs, with a legacy filename-list fallback; the helper handles the transfer. Login startup uses `SMAppService`. Status is read again when Settings opens or the app becomes active, using a user-action binding so refresh never registers/unregisters a login item. Notification authorization is requested only after a user action.
 
-Version 0.2 adds compact share policy/list/link sheets and an explicit clipboard composer/inbox. Shares can be created without selecting a paired target. Additive Codable fields tolerate old status/device fixtures, and version labels come from the helper status or app bundle.
+Compact share/clipboard sheets remain, with new history/statistics and relay oversight sheets. Shares need no paired target; the host relay view has no recipient-accept button. Additive Codable fields tolerate older status/device/settings fixtures, including false relay permission, unlimited rates, and the migrated enabled ⇧⌘L shortcut unless an explicit disabled setting exists. Version labels come from helper status or app bundle.
+
+Shortcut settings persist Carbon key codes/modifier bits (default key code 37, modifiers 768). The Settings recorder receives local key events only while explicitly focused; no global keystroke monitor is installed. Command or Control is required, with optional Shift/Option. The current hotkey is suspended during capture and restored afterward. A replacement is registered before the old registration is removed; failure keeps the working registration, shows the actual registration state, and rolls back the conflicting preference. Quitting unregisters the hotkey and event handler. These paths compile and have pure model tests; actual OS registration/conflicts, Finder interaction, and login startup have not been exercised through a native GUI session.
 
 The app icon consists of written SVG layers and `AppIcon.icon/icon.json`. Icon Composer renders appearance variants headlessly; `actool` produces compiled icon assets and an older-system `.icns` fallback. No image generator is part of this process.
 
@@ -71,11 +97,11 @@ Reconnection reconciles the host's confirmed offsets. After reload or loss of fi
 
 Individual downloads use HTTP Range/ETag support; ZIP64 folder downloads stream without a resumable-archive promise. The browser download manager owns saving and completion reporting. A download initiation acknowledgment is never treated as proof of saved or integrity-verified bytes on the client.
 
-In 0.2 a paired browser connects to one desktop host, while anonymous share recipients use a separate share route without device pairing. A local browser-to-browser relay is planned for 0.3.
+Paired browsers use the connected host for direct uploads/downloads or for authorized browser-to-browser relay. Anonymous share recipients use a separate route without device pairing. Both modes retain the certificate onboarding and browser file-access/download-manager limits.
 
 ## Persistence and packaging
 
-Host settings, identity, and device records live in a private OS-specific AirLink configuration directory; SQLite stores transfer checkpoints and durable share/session data. Authorized share owners can recover links after restart, so link secrets remain private local application data. Clipboard messages are deliberately excluded from persistence. Received files live separately in the selected destination. A data-directory lock prevents two services from operating on the same local state concurrently.
+Host settings, identity, and device records live in a private OS-specific AirLink configuration directory; SQLite stores transfer/relay metadata and durable share/session data, while traffic counters persist separately. Authorized share owners can recover links after restart, so link secrets remain private local application data. Relay payload blocks and clipboard messages are deliberately excluded from persistence. Received files live separately in the selected destination. A data-directory lock prevents two services from operating on the same local state concurrently.
 
 The build pipeline compiles the web interface, embeds it, and cross-compiles portable Go services. On macOS it creates a universal native app with a universal helper and the compiled icon. Packaging creates platform archives, a DMG, and checksums. App replacement must preserve the separate state and receive directories.
 

@@ -35,12 +35,20 @@ func openStore(dir, receive string) (*stateStore, error) {
 		if err = json.Unmarshal(b, &s.data); err != nil {
 			return nil, err
 		}
+		var presence struct {
+			Settings map[string]json.RawMessage `json:"settings"`
+		}
+		_ = json.Unmarshal(b, &presence)
+		if _, exists := presence.Settings["shortcut"]; !exists {
+			s.data.Settings.Shortcut = model.Shortcut{Enabled: true, KeyCode: 37, Modifiers: 768}
+		}
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
 	if s.data.ID == "" {
 		name, _ := os.Hostname()
 		s.data = persisted{ID: randomID(), Settings: model.Settings{Name: name, ReceiveDirectory: receive, Appearance: "system", Language: "system", Notifications: true}, Devices: map[string]deviceRecord{}}
+		s.data.Settings.Shortcut = model.Shortcut{Enabled: true, KeyCode: 37, Modifiers: 768}
 	}
 	if s.data.Devices == nil {
 		s.data.Devices = map[string]deviceRecord{}
@@ -112,6 +120,7 @@ func (s *stateStore) updateDevice(d model.Device) error {
 	r.Device.CanSend = d.CanSend
 	r.Device.CanReceive = d.CanReceive
 	r.Device.CanClipboard = d.CanClipboard
+	r.Device.CanRelay = d.CanRelay
 	r.Device.AutoAccept = d.AutoAccept
 	if d.Name != "" {
 		r.Device.Name = d.Name

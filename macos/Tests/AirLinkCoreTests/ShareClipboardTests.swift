@@ -14,6 +14,7 @@ import Testing
     let fixture = Data(#"{"id":"d","name":"Old peer","kind":"engine","paired":true,"online":false,"canSend":true,"canReceive":true,"autoAccept":false}"#.utf8)
     var device = try JSONDecoder().decode(Device.self, from: fixture)
     #expect(!device.canClipboard)
+    #expect(!device.canRelay)
     device.canClipboard = true
     let encoded = try JSONEncoder().encode(device)
     let object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
@@ -27,6 +28,8 @@ import Testing
     #expect(status.shares == nil)
     #expect(status.clipboard == nil)
     #expect(status.clipboardAllowed == nil)
+    #expect(status.relays == nil)
+    #expect(status.statistics == nil)
 }
 
 @Test func sharePolicyPreserves64BitLimitsAndExactlyOneSource() throws {

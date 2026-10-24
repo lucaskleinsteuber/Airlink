@@ -23,7 +23,9 @@ import (
 	"github.com/gofrs/flock"
 	"github.com/lucasfd3/Airlink/internal/engine"
 	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucasfd3/Airlink/internal/relay"
 	"github.com/lucasfd3/Airlink/internal/shares"
+	"github.com/lucasfd3/Airlink/internal/traffic"
 )
 
 //go:embed assets/*
@@ -44,6 +46,8 @@ type pendingPair struct {
 type Server struct {
 	engine                               *engine.Engine
 	shares                               *shares.Store
+	relays                               *relay.Store
+	traffic                              *traffic.Meter
 	clipboardMu                          sync.Mutex
 	clipboardMessages                    []model.ClipboardMessage
 	store                                *stateStore
@@ -112,13 +116,33 @@ func New(opts Options) (*Server, error) {
 		eng.Close()
 		return nil, err
 	}
+	relayStore, err := relay.New(opts.DataDir)
+	if err != nil {
+		eng.Close()
+		shareStore.Close()
+		return nil, err
+	}
+	meter, err := traffic.New(opts.DataDir)
+	if err != nil {
+		eng.Close()
+		shareStore.Close()
+		relayStore.Close()
+		return nil, err
+	}
+	if err = meter.SetLimits(p.Settings.SendLimitBytesPerSecond, p.Settings.ReceiveLimitBytesPerSecond); err != nil {
+		eng.Close()
+		shareStore.Close()
+		relayStore.Close()
+		meter.Close()
+		return nil, err
+	}
 	for _, t := range eng.Transfers("") {
 		if t.Direction == "receive" && t.State == "reconnecting" {
 			_ = eng.Resume(t.ID)
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Server{engine: eng, shares: shareStore, store: store, opts: opts, fingerprint: fp, certificate: ca, pending: map[string]*pendingPair{}, discovered: map[string]model.Device{}, rate: map[string][]time.Time{}, senders: map[string]bool{}, senderCancels: map[string]context.CancelFunc{}, active: map[string]map[string]context.CancelFunc{}, chunkSlots: make(chan struct{}, 2), ctx: ctx, cancel: cancel, lock: lock}
+	s := &Server{engine: eng, shares: shareStore, relays: relayStore, traffic: meter, store: store, opts: opts, fingerprint: fp, certificate: ca, pending: map[string]*pendingPair{}, discovered: map[string]model.Device{}, rate: map[string][]time.Time{}, senders: map[string]bool{}, senderCancels: map[string]context.CancelFunc{}, active: map[string]map[string]context.CancelFunc{}, chunkSlots: make(chan struct{}, 2), ctx: ctx, cancel: cancel, lock: lock}
 	port := opts.Port
 	if port == 0 {
 		port = 43871
@@ -130,6 +154,8 @@ func New(opts Options) (*Server, error) {
 	if err != nil {
 		eng.Close()
 		shareStore.Close()
+		relayStore.Close()
+		meter.Close()
 		cancel()
 		return nil, err
 	}
@@ -210,6 +236,16 @@ func (s *Server) Close() error {
 			e = shareErr
 		}
 	}
+	if s.relays != nil {
+		if closeErr := s.relays.Close(); e == nil {
+			e = closeErr
+		}
+	}
+	if s.traffic != nil {
+		if closeErr := s.traffic.Close(); e == nil {
+			e = closeErr
+		}
+	}
 	if s.lock != nil {
 		_ = s.lock.Unlock()
 	}
@@ -240,7 +276,7 @@ func (s *Server) Status() model.Status {
 		}
 	}
 	s.mu.Unlock()
-	return model.Status{Version: model.Version, ID: p.ID, Name: p.Settings.Name, URLs: s.currentURLs(s.urls), SetupURLs: s.currentURLs(s.setupURLs), Fingerprint: s.fingerprint, CertificatePath: filepath.Join(s.opts.DataDir, "certificate.pem"), ChunkSize: model.ChunkSize, Devices: ds, Transfers: s.engine.Transfers(""), PairRequests: requests, Settings: p.Settings, Shares: s.shareSummaries(""), Clipboard: s.clipboardSnapshot(""), ClipboardAllowed: true}
+	return model.Status{Version: model.Version, ID: p.ID, Name: p.Settings.Name, URLs: s.currentURLs(s.urls), SetupURLs: s.currentURLs(s.setupURLs), Fingerprint: s.fingerprint, CertificatePath: filepath.Join(s.opts.DataDir, "certificate.pem"), ChunkSize: model.ChunkSize, Devices: ds, Transfers: s.engine.Transfers(""), PairRequests: requests, Settings: p.Settings, Shares: s.shareSummaries(""), Clipboard: s.clipboardSnapshot(""), ClipboardAllowed: true, CurrentDeviceID: p.ID, RelayDevices: []model.Device{}, Relays: s.relaySummaries(""), Statistics: s.statistics("")}
 }
 func (s *Server) guestStatus(d model.Device) model.Status {
 	p := s.store.snapshot()
@@ -256,7 +292,7 @@ func (s *Server) guestStatus(d model.Device) model.Status {
 	if d.CanClipboard {
 		messages = s.clipboardSnapshot(d.ID)
 	}
-	return model.Status{Version: model.Version, ID: p.ID, Name: p.Settings.Name, URLs: s.currentURLs(s.urls), Fingerprint: s.fingerprint, ChunkSize: model.ChunkSize, Devices: []model.Device{host}, Transfers: ts, PairRequests: []model.PairRequest{}, Shares: s.shareSummaries(d.ID), Clipboard: messages, ClipboardAllowed: d.CanClipboard}
+	return model.Status{Version: model.Version, ID: p.ID, Name: p.Settings.Name, URLs: s.currentURLs(s.urls), Fingerprint: s.fingerprint, ChunkSize: model.ChunkSize, Devices: []model.Device{host}, Transfers: ts, PairRequests: []model.PairRequest{}, Shares: s.shareSummaries(d.ID), Clipboard: messages, ClipboardAllowed: d.CanClipboard, CurrentDeviceID: d.ID, RelayDevices: s.relayDevices(d), Relays: s.relaySummaries(d.ID), Statistics: s.statistics(d.ID)}
 }
 func respond(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -384,6 +420,12 @@ func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 	}()
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/")
+	if s.handleRelayAPI(w, r, d) {
+		return
+	}
+	if s.handleHistoryAPI(w, r, d) {
+		return
+	}
 	if s.handleShareAPI(w, r, d) {
 		return
 	}
@@ -484,7 +526,7 @@ func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) {
 				fail(w, 400, e)
 				return
 			}
-			n, e := s.engine.WriteChunk(r.Context(), t.ID, fid, index, r.Header.Get("X-Chunk-SHA256"), http.MaxBytesReader(w, r.Body, model.ChunkSize+1))
+			n, e := s.engine.WriteChunk(r.Context(), t.ID, fid, index, r.Header.Get("X-Chunk-SHA256"), s.traffic.WrapReader(r.Context(), http.MaxBytesReader(w, r.Body, model.ChunkSize+1), "receive"))
 			if e != nil {
 				s.engineError(w, e)
 				return
@@ -522,7 +564,7 @@ func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) {
 			}
 			w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(filepath.Base(m.Path)))
 			w.Header().Set("ETag", fmt.Sprintf(`"%s-%d-%d"`, m.ID, fi.Size(), fi.ModTime().UnixNano()))
-			http.ServeContent(w, r, m.Path, fi.ModTime(), &cancelReader{Context: r.Context(), File: f})
+			http.ServeContent(s.traffic.WrapWriter(r.Context(), w, "send"), r, m.Path, fi.ModTime(), &cancelReader{Context: r.Context(), File: f})
 			return
 		}
 	}

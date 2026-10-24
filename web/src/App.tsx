@@ -10,6 +10,13 @@ import { UploadManager } from './uploader';
 import { SharesPanel } from './SharesPanel';
 import { ClipboardPanel } from './ClipboardPanel';
 import { featureText } from './features-i18n';
+import { RelayManager } from './relay-manager';
+import type { RelayLocal, RelayPreparing } from './relay-manager';
+import { relayManifests } from './relay-storage';
+import { RelaysPanel } from './RelaysPanel';
+import { HistoryPanel } from './HistoryPanel';
+import { StatisticsPanel } from './StatisticsPanel';
+import { transferText } from './transfer-i18n';
 import type { LocalUpload } from './uploader';
 import type { HostInfo, PendingPair, Selection, Status, Transfer } from './types';
 function preference(key: string, fallback: string): string { try { return localStorage.getItem(key) || fallback; } catch { return fallback; } }
@@ -32,7 +39,8 @@ export function App() {
   const [appearance, setAppearance] = useState(() => preference('airlink-appearance', 'system'));
   const t = messages[language] || messages.de;
   const ft = featureText(language);
-  const [section, setSection] = useState<'transfers' | 'shares' | 'clipboard'>('transfers');
+  const rt = transferText(language);
+  const [section, setSection] = useState<'transfers' | 'shares' | 'clipboard' | 'history' | 'statistics'>('transfers');
   const [host, setHost] = useState<HostInfo>();
   const [status, setStatus] = useState<Status>();
   const statusRef = useRef<Status | undefined>(undefined); statusRef.current = status;
@@ -46,6 +54,11 @@ export function App() {
   const [dragging, setDragging] = useState(false);
   const [local, setLocal] = useState(new Map<string, LocalUpload>());
   const manager = useRef<UploadManager | undefined>(undefined);
+  const relayManager = useRef<RelayManager | undefined>(undefined);
+  const [relayLocal, setRelayLocal] = useState(new Map<string, RelayLocal>());
+  const [preparingRelay, setPreparingRelay] = useState<RelayPreparing>();
+  const [targetId, setTargetId] = useState('host');
+  const [relayReselect, setRelayReselect] = useState<string | null>(null);
   const filesInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
   const [reselect, setReselect] = useState<string | null>(null);
@@ -68,7 +81,13 @@ export function App() {
     void manifestsForHost(host.id).then(values => { upload.restore(values); if (statusRef.current) upload.update(statusRef.current); }).catch(() => setError(tRef.current.storageError));
     return () => { upload.stop(); manager.current = undefined; };
   }, [authenticated, host?.id, unauthorized]);
-  useEffect(() => { if (status) manager.current?.update(status); }, [status]);
+  useEffect(() => {
+    if (!authenticated || !host?.id || !status?.currentDeviceId) return;
+    const relay = new RelayManager(setRelayLocal, setPreparingRelay, unauthorized); relayManager.current = relay;
+    void relayManifests(host.id, status.currentDeviceId).then(values => { relay.restore(values); if (statusRef.current) relay.update(statusRef.current); }).catch(() => setError(tRef.current.storageError));
+    return () => { relay.stop(); relayManager.current = undefined; };
+  }, [authenticated, host?.id, status?.currentDeviceId, unauthorized]);
+  useEffect(() => { if (status) { manager.current?.update(status); relayManager.current?.update(status); } }, [status]);
   useEffect(() => {
     if (!authenticated) return;
     const events = new EventSource('/api/v1/events');
@@ -105,14 +124,16 @@ export function App() {
     try { const value = await post<PendingPair>('/pair/request', { name: name.trim(), kind: 'browser' }); sessionStorage.setItem('airlink-pair', JSON.stringify(value)); setPending(value); }
     catch (failure) { showError(failure); } finally { setBusy(false); }
   }
-  async function selected(values: Selection[], existingId: string | null = reselect) {
+  async function selected(values: Selection[], existingId: string | null = reselect, existingRelay: string | null = relayReselect) {
     if (!host || !manager.current) return;
     setError('');
     try {
-      if (existingId) { await manager.current.attach(existingId, values); setReselect(null); }
+      if (existingRelay) { if (!relayManager.current) throw new Error(rt.permission); await relayManager.current.attach(existingRelay, values); setRelayReselect(null); }
+      else if (existingId) { await manager.current.attach(existingId, values); setReselect(null); }
+      else if (targetId !== 'host') { if (!relayManager.current) throw new Error(rt.permission); await relayManager.current.create(targetId, values); }
       else await manager.current.create(values, host.id);
       await refresh();
-    } catch (failure) { showError(failure); }
+    } catch (failure) { if (!(failure instanceof DOMException && failure.name === 'AbortError')) showError(failure); }
   }
   function inputChange(event: ChangeEvent<HTMLInputElement>) {
     try { if (event.target.files?.length) void selected(fromFiles(event.target.files)); } catch (failure) { showError(failure); }
@@ -121,7 +142,7 @@ export function App() {
   async function drop(event: DragEvent) {
     event.preventDefault(); setDragging(false); setReselect(null);
     if (!authenticated) return;
-    try { await selected(await fromDrop(event.dataTransfer), null); } catch (failure) { showError(failure); }
+    try { await selected(await fromDrop(event.dataTransfer), null, null); } catch (failure) { showError(failure); }
   }
   async function action(id: string, name: string) {
     try { await post(`${transferPath(id)}/${name}`); await refresh(); } catch (failure) { showError(failure); }
@@ -154,11 +175,15 @@ export function App() {
         {!online && <p className="warning">{t.offline} <button className="text-button" onClick={() => { void refresh(); }}>{t.refresh}</button></p>}
       </section> : <>
         <section className="connection"><div className="connection-icon"><Glyph name="device" size={28} /></div><div><h1>{host?.name}</h1><p><span className={`status-dot ${online ? '' : 'offline'}`} />{online ? t.paired : t.offline}<span className="connection-detail">{online ? t.onlineHelp : t.offlineHelp}</span></p></div><Glyph name="shield" /></section>
-        <nav className="feature-tabs" aria-label="AirLink"><button aria-pressed={section === 'transfers'} onClick={() => setSection('transfers')}>{ft.transfers}</button><button aria-pressed={section === 'shares'} onClick={() => setSection('shares')}>{ft.shares}</button><button aria-pressed={section === 'clipboard'} onClick={() => setSection('clipboard')}>{ft.clipboard}</button></nav>
+        <nav className="feature-tabs" aria-label="AirLink"><button aria-pressed={section === 'transfers'} onClick={() => setSection('transfers')}>{ft.transfers}</button><button aria-pressed={section === 'shares'} onClick={() => setSection('shares')}>{ft.shares}</button><button aria-pressed={section === 'clipboard'} onClick={() => setSection('clipboard')}>{ft.clipboard}</button><button aria-pressed={section === 'history'} onClick={() => setSection('history')}>{rt.history}</button><button aria-pressed={section === 'statistics'} onClick={() => setSection('statistics')}>{rt.statistics}</button></nav>
         <div hidden={section !== 'transfers'}>
         <section className={`dropzone ${dragging ? 'dragging' : ''}`} aria-label={t.send} onDragOver={event => { event.preventDefault(); setDragging(true); }} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }} onDrop={event => { void drop(event); }}>
-          <div className="drop-symbol"><Glyph name="upload" size={30} /></div><h2>{t.drop}</h2><p>{t.dropHelp}</p><div className="button-row"><button className="primary" onClick={() => { setReselect(null); filesInput.current?.click(); }}>{t.chooseFiles}</button><button className="secondary" onClick={() => { setReselect(null); folderInput.current?.click(); }}>{t.chooseFolder}</button></div>
+          <label className="recipient-picker">{rt.recipient}<select value={targetId} disabled={!!preparingRelay} onChange={event => setTargetId(event.target.value)}><option value="host">{rt.host} · {host?.name}</option>{(status?.relayDevices || []).map(device => <option key={device.id} value={device.id}>{device.name}</option>)}{targetId !== 'host' && !status?.relayDevices?.some(device => device.id === targetId) && <option value={targetId} disabled>{rt.noPeers}</option>}</select></label>
+          <div className="drop-symbol"><Glyph name="upload" size={30} /></div><h2>{t.drop}</h2><p>{targetId === 'host' ? t.dropHelp : rt.relayHelp}</p><div className="button-row"><button className="primary" disabled={!!preparingRelay} onClick={() => { setReselect(null); setRelayReselect(null); filesInput.current?.click(); }}>{t.chooseFiles}</button><button className="secondary" disabled={!!preparingRelay} onClick={() => { setReselect(null); setRelayReselect(null); folderInput.current?.click(); }}>{t.chooseFolder}</button></div>
         </section>
+        <p className="relay-permission-note">{rt.permission}</p>
+        {preparingRelay && <div className="relay-preparation" role="status"><p>{rt.preparing}: {preparingRelay.path}</p><progress max={preparingRelay.total || 1} value={preparingRelay.done} /><div className="transfer-meta"><span>{bytes(preparingRelay.done, language)} / {bytes(preparingRelay.total, language)}</span><button className="text-button" onClick={() => relayManager.current?.cancelPreparation()}>{rt.cancelPreparing}</button></div></div>}
+        <RelaysPanel relays={status?.relays || []} currentDeviceId={status?.currentDeviceId || ''} local={relayLocal} language={language} refresh={refresh} showError={showError} reselect={(id, folder) => { setReselect(null); setRelayReselect(id); if (folder) folderInput.current?.click(); else filesInput.current?.click(); }} />
         <section className="transfer-section"><div className="section-heading"><h2>{t.transfers}</h2><span>{transfers.length || ''}</span></div>
           {!transfers.length ? <div className="empty"><Glyph name="file" size={29} /><h3>{t.empty}</h3><p>{t.emptyHelp}</p></div> : <div className="transfer-list">{transfers.map(transfer => {
             const upload = transfer.direction === 'receive'; const stage = local.get(transfer.id); const files = transfer.files.filter(file => !file.directory);
@@ -170,7 +195,7 @@ export function App() {
               {stage?.phase === 'hashing' && active && <p className="transfer-note">{t.hashing} · {bytes(stage.done || 0, language)} / {bytes(stage.total || 0, language)}</p>}
               {stage?.phase === 'reconnecting' && active && <p className="transfer-note">{t.reconnecting} · {t.offlineHelp}</p>}
               {(transfer.error || stage?.phase === 'error') && <p className={transfer.state === 'failed' || stage?.phase === 'error' ? 'warning' : 'transfer-note'}>{transfer.error || stage?.error}</p>}
-              {needsSource && <div className="source-needed"><p>{t.sourceHelp}</p><div className="button-row"><button className="secondary small" onClick={() => { setReselect(transfer.id); filesInput.current?.click(); }}>{t.retrySource}</button><button className="text-button" onClick={() => { setReselect(transfer.id); folderInput.current?.click(); }}>{t.chooseFolder}</button></div></div>}
+              {needsSource && <div className="source-needed"><p>{t.sourceHelp}</p><div className="button-row"><button className="secondary small" onClick={() => { setRelayReselect(null); setReselect(transfer.id); filesInput.current?.click(); }}>{t.retrySource}</button><button className="text-button" onClick={() => { setRelayReselect(null); setReselect(transfer.id); folderInput.current?.click(); }}>{t.chooseFolder}</button></div></div>}
               {!upload && <><p className="transfer-note">{t.downloadHelp}</p><div className="download-files">{files.map(file => <div key={file.id}><span title={file.path}>{file.path}</span><span>{bytes(file.size, language)}</span><button className="text-button" disabled={['cancelled', 'failed'].includes(transfer.state)} onClick={() => { void download(transfer, file.id); }}>{t.download}</button></div>)}</div>{(files.length > 1 || transfer.files.some(file => file.directory)) && <><button className="secondary small" disabled={['cancelled', 'failed'].includes(transfer.state)} onClick={() => { void download(transfer); }}>{t.downloadAll}</button><p className="transfer-note">{t.archiveHelp}</p></>}</>}
               {upload && active && <div className="transfer-actions">{['running', 'queued', 'reconnecting'].includes(transfer.state) && <button className="text-button" onClick={() => { void action(transfer.id, 'pause'); }}>{t.pause}</button>}{transfer.state === 'paused' && <button className="text-button" onClick={() => { void action(transfer.id, 'resume'); }}>{t.resume}</button>}<button className="text-button muted" onClick={() => { void action(transfer.id, 'cancel'); }}>{t.cancel}</button></div>}
             </article>;
@@ -178,6 +203,8 @@ export function App() {
         </section>
         <p className="mobile-note">{t.mobile}</p>
         </div>
+        <div hidden={section !== 'history'}><HistoryPanel visible={section === 'history'} currentDeviceId={status?.currentDeviceId || ''} transfers={transfers} relays={status?.relays || []} language={language} refresh={refresh} showError={showError} notice={setNotice} /></div>
+        <div hidden={section !== 'statistics'}><StatisticsPanel statistics={status?.statistics} language={language} /></div>
         <div hidden={section !== 'shares'}><SharesPanel shares={status?.shares || []} transfers={transfers} language={language} refresh={refresh} showError={showError} notice={setNotice} /></div>
         <div hidden={section !== 'clipboard'}><ClipboardPanel allowed={status?.clipboardAllowed || false} messages={status?.clipboard || []} hostName={host?.name || 'Host'} language={language} refresh={refresh} showError={showError} notice={setNotice} /></div>
       </>}
@@ -185,6 +212,6 @@ export function App() {
       <input ref={filesInput} className="hidden-input" type="file" multiple onChange={inputChange} aria-label={t.chooseFiles} />
       <input ref={folderInput} className="hidden-input" type="file" multiple {...{ webkitdirectory: '' }} onChange={inputChange} aria-label={t.chooseFolder} />
     </main>
-    <footer><span>{t.privacy}</span><span>AirLink {host?.version || '0.2.0'}</span></footer>
+    <footer><span>{t.privacy}</span><span>AirLink {host?.version || '0.3.0'}</span></footer>
   </div>;
 }

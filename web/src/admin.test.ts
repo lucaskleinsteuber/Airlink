@@ -20,4 +20,10 @@ describe('offline console protocol helpers', () => {
     expect(script).toContain("el('clipboard-paste').addEventListener('click'");
     expect(script).toContain("el('clipboard-form').addEventListener('submit'");
   });
+  it('converts KiB/s limits without silently turning a positive subminimum limit into unlimited', () => {
+    const definition = script.match(/function limitBytes\(value\)\{[\s\S]*?\}\n/)![0];
+    const convert = (value: string) => runInNewContext(`${definition};limitBytes(value)`, { value, t: (key: string) => key });
+    expect(convert('0')).toBe(0); expect(convert('1')).toBe(1024); expect(convert('1.5')).toBe(1536); expect(convert('1073741824')).toBe(1099511627776);
+    for (const value of ['', '-1', '0.0001', '0.5', 'Infinity', '1073741825']) expect(() => convert(value)).toThrow('invalidLimit');
+  });
 });

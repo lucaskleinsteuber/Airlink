@@ -213,8 +213,8 @@ func (s *Server) sendTransfer(ctx context.Context, t model.Transfer, rec deviceR
 					return
 				}
 				raw := fmt.Sprintf("%s/%s/files/%s/chunks/%d", base, remote, f.ID, offset/model.ChunkSize)
-				chunkCtx, chunkCancel := context.WithTimeout(ctx, 2*time.Minute)
-				req, err := http.NewRequestWithContext(chunkCtx, "PUT", raw, bytes.NewReader(data))
+				chunkCtx, chunkCancel := context.WithCancel(ctx)
+				req, err := http.NewRequestWithContext(chunkCtx, "PUT", raw, s.traffic.WrapReader(chunkCtx, bytes.NewReader(data), "send"))
 				if err != nil {
 					chunkCancel()
 					return
@@ -285,6 +285,7 @@ func sleepContext(ctx context.Context, d time.Duration) bool {
 	}
 }
 func (s *Server) archive(w http.ResponseWriter, r *http.Request, t model.Transfer) {
+	w = s.traffic.WrapWriter(r.Context(), w, "send")
 	if t.Direction != "send" || t.State == "cancelled" {
 		fail(w, 403, errors.New("archive unavailable"))
 		return

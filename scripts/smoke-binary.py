@@ -9,6 +9,8 @@ import ssl
 import subprocess
 import sys
 import tempfile
+import time
+import concurrent.futures
 import urllib.error
 import urllib.request
 import urllib.parse
@@ -34,19 +36,19 @@ with tempfile.TemporaryDirectory(prefix="AirLink-binary-smoke-") as directory:
         assert hashlib.sha256(ssl.PEM_cert_to_DER_cert(certificate)).hexdigest() == status["fingerprint"]
         url = next(value for value in status["urls"] if "localhost:" in value)
 
-        def exchange(path, method="GET", body=None, cookie="", headers=None):
+        def exchange(path, method="GET", body=None, cookie="", headers=None, raw=None):
             # Apple's bundled Python may use LibreSSL without TLS 1.3. Node is
             # already a build dependency and verifies TLS 1.3 with the same CA.
             script = """
 const https=require('node:https'),fs=require('node:fs');
 let input='';process.stdin.setEncoding('utf8');process.stdin.on('data',part=>input+=part);process.stdin.on('end',()=>{
 const options=JSON.parse(input),headers=options.headers||{};if(options.cookie)headers.Cookie=options.cookie;
-const body=options.body==null?null:JSON.stringify(options.body);if(body){headers['Content-Type']='application/json';headers['Content-Length']=Buffer.byteLength(body)}
+const body=typeof options.raw==='string'?Buffer.from(options.raw,'base64'):options.body==null?null:JSON.stringify(options.body);if(body){headers['Content-Type']=typeof options.raw==='string'?'application/octet-stream':'application/json';headers['Content-Length']=Buffer.byteLength(body)}
 const req=https.request(process.argv[2],{ca:fs.readFileSync(process.argv[1]),minVersion:'TLSv1.3',method:options.method,headers},res=>{
 const parts=[];res.on('data',part=>parts.push(part));res.on('end',()=>process.stdout.write(JSON.stringify({status:res.statusCode,headers:res.headers,body:Buffer.concat(parts).toString('base64')})));});
 req.setTimeout(15000,()=>req.destroy(Error('timeout')));req.on('error',e=>{process.stderr.write(e.message);process.exitCode=1});if(body)req.write(body);req.end();});
 """
-            response = json.loads(subprocess.check_output(["node", "-e", script, status["certificatePath"], url + path],input=json.dumps({"method": method,"body": body,"cookie": cookie,"headers": headers or {}}),text=True))
+            response = json.loads(subprocess.check_output(["node", "-e", script, status["certificatePath"], url + path],input=json.dumps({"method": method,"body": body,"cookie": cookie,"headers": headers or {},"raw":base64.b64encode(raw).decode() if raw is not None else None}),text=True))
             response["data"] = base64.b64decode(response["body"])
             return response
 
@@ -71,7 +73,7 @@ req.setTimeout(15000,()=>req.destroy(Error('timeout')));req.on('error',e=>{proce
         with urllib.request.urlopen(setup_url, timeout=15) as response:
             assert status["fingerprint"].encode() in response.read()
         print("PASS: final binary serves embedded production assets over verified TLS; private status requires pairing; public bootstrap fingerprint matches")
-        if status["version"] == "0.2.0":
+        if status["version"] in ("0.2.0", "0.3.0"):
             original = base / "shared-original.txt"
             content = b"AirLink private share smoke fixture.\n"
             original.write_bytes(content)
@@ -122,6 +124,77 @@ req.setTimeout(15000,()=>req.destroy(Error('timeout')));req.on('error',e=>{proce
             rpc(16, "device.revoke", {"id": device["id"]})
             assert not rpc(17, "status")["clipboard"]
             print("PASS: 0.2 protected share unlock/range/quota/revocation and explicit clipboard permission/guest delivery work in the packaged service")
+        if status["version"] == "0.3.0":
+            def pair_browser(name, sequence):
+                request = json.loads(exchange("/api/v1/pair/request", "POST", {"name": name, "kind": "browser"})["data"])
+                rpc(sequence, "pair.approve", {"id": request["requestId"]})
+                approved = exchange("/api/v1/pair/poll", "POST", request)
+                assert approved["status"] == 200
+                cookie = approved["headers"]["set-cookie"][0].split(";", 1)[0]
+                private = rpc(sequence + 1, "status")
+                device = next(value for value in private["devices"] if value["name"] == name)
+                assert not device["canRelay"]
+                device["canRelay"] = True
+                rpc(sequence + 2, "device.update", device)
+                return device, cookie
+
+            source, source_cookie = pair_browser("Relay source", 30)
+            receiver, receiver_cookie = pair_browser("Relay receiver", 40)
+            current = rpc(50, "status")
+            settings = current["settings"]
+            settings["sendLimitBytesPerSecond"] = 32768
+            settings["receiveLimitBytesPerSecond"] = 32768
+            settings["shortcut"]["enabled"] = False
+            rpc(51, "settings.update", settings)
+            payload = b"DO-NOT-PERSIST-RELAY-CONTENT\n" * 256
+            file = {"id": "relay-smoke-file", "path": "relay-smoke.txt", "size": len(payload), "sha256": hashlib.sha256(payload).hexdigest()}
+            created = exchange("/api/v1/relays", "POST", {"receiverId": receiver["id"], "files": [file]}, source_cookie)
+            assert created["status"] == 201
+            relay = json.loads(created["data"])
+            relay_path = "/api/v1/relays/" + relay["id"]
+            download = relay_path + "/files/relay-smoke-file/download"
+            assert exchange(download, cookie=receiver_cookie)["status"] == 409
+            assert exchange(relay_path + "/accept", "POST", {}, receiver_cookie)["status"] == 200
+
+            def supply_requested_block():
+                for _ in range(100):
+                    pending = exchange(relay_path + "/request", cookie=source_cookie)
+                    assert pending["status"] == 200
+                    request = json.loads(pending["data"])["request"]
+                    if request:
+                        assert request["fileId"] == file["id"] and request["index"] == 0
+                        route = relay_path + "/files/relay-smoke-file/chunks/0?requestId=" + request["requestId"]
+                        delivered = exchange(route, "PUT", cookie=source_cookie, headers={"X-Chunk-SHA256": file["sha256"]}, raw=payload)
+                        assert delivered["status"] == 200 and json.loads(delivered["data"])["delivered"]
+                        return
+                    time.sleep(0.02)
+                raise AssertionError("relay never requested its source block")
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                full = pool.submit(exchange, download, cookie=receiver_cookie)
+                supply_requested_block()
+                response = full.result(timeout=15)
+                assert response["status"] == 200 and response["data"] == payload
+                retry = pool.submit(exchange, download, cookie=receiver_cookie, headers={"Range": "bytes=0-7"})
+                supply_requested_block()
+                response = retry.result(timeout=15)
+                assert response["status"] == 206 and response["data"] == payload[:8]
+            current = rpc(52, "status")
+            assert current["relays"][0]["state"] == "delivered"
+            assert current["statistics"]["relayedBytes"] == len(payload)
+            assert current["statistics"]["relayDeliveries"] == 1
+            for path in (base / "state").iterdir():
+                if path.is_file():
+                    try:
+                        recorded = path.read_bytes()
+                    except FileNotFoundError:
+                        continue  # An atomic metadata checkpoint was renamed.
+                    assert b"DO-NOT-PERSIST-RELAY-CONTENT" not in recorded
+            before = current["statistics"]["trafficSentBytes"]
+            rpc(53, "history.clear")
+            current = rpc(54, "status")
+            assert not current["relays"] and current["statistics"]["trafficSentBytes"] == before
+            print("PASS: 0.3 explicit-accept browser relay, source-demand ACK, delivered Range retry, shared rate limits, metadata-only disk, history and lifetime statistics work in the packaged service")
         rpc(2, "shutdown")
         assert process.wait(timeout=10) == 0
     finally:

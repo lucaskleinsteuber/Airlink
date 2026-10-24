@@ -12,17 +12,23 @@ import UserNotifications
     @Published var engineError: String?
     @Published var pendingURLs: [URL] = []
     @Published var showConnection = false
+    @Published var registeredShortcut = Shortcut(enabled: false)
+    @Published var shortcutError: String?
+    @Published var shortcutRecording = false
+    var shortcutController: ShortcutController?
     var openMainWindow: (() -> Void)?
     private let client = DaemonClient()
     private var polling: Task<Void, Never>?
     private var didStart = false
     private var refreshing = false
     private var notified = Set<String>()
+    private var lastShortcutAttempt: Shortcut?
 
     var english: Bool { LanguagePreference.usesEnglish(status?.settings.language ?? "system") }
     func text(_ de: String, _ en: String) -> String { english ? en : de }
     var selectedDevice: Device? { status?.devices.first { $0.id == selectedDeviceID } }
     var activeTransfers: [Transfer] { status?.transfers.filter(\.isActive) ?? [] }
+    var activeRelays: [Relay] { status?.relays?.filter(\.isActive) ?? [] }
     var colorSchemeName: String { status?.settings.appearance ?? "system" }
     var version: String { status?.version ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "" }
     var shares: [Share] { status?.shares ?? [] }
@@ -58,6 +64,18 @@ import UserNotifications
             let next = try JSONDecoder().decode(HostStatus.self, from: data)
             let previous = status
             status = next; engineError = nil
+            if lastShortcutAttempt != next.settings.shortcut, let controller = shortcutController {
+                lastShortcutAttempt = next.settings.shortcut
+                do { try controller.apply(next.settings.shortcut); registeredShortcut = controller.actual; if next.settings.shortcut.enabled { shortcutError = nil } }
+                catch {
+                    registeredShortcut = controller.actual; shortcutError = error.localizedDescription
+                    var rollback = next.settings; rollback.shortcut = controller.actual
+                    Task { [weak self] in
+                        do { _ = try await self?.client.request("settings.update", params: JSONEncoder().encode(rollback)) }
+                        catch { self?.shortcutError = error.localizedDescription }
+                    }
+                }
+            }
             if next.settings.notifications, let previous {
                 for transfer in next.transfers where transfer.state == "completed" && previous.transfers.contains(where: { $0.id == transfer.id && $0.state != "completed" }) {
                     notify(id: transfer.id, title: text("Übertragung abgeschlossen", "Transfer completed"), body: transfer.title)
@@ -78,7 +96,40 @@ import UserNotifications
         }
     }
     func update(_ device: Device) { perform("device.update", data: try? JSONEncoder().encode(device)) }
-    func update(_ settings: HostSettings) { perform("settings.update", data: try? JSONEncoder().encode(settings)) }
+    func update(_ settings: HostSettings) { Task { do { try await saveSettings(settings) } catch { self.error = error.localizedDescription } } }
+    func saveSettings(_ settings: HostSettings) async throws {
+        guard settings.shortcut.isValid, RateLimit.isValid(settings.sendLimitBytesPerSecond), RateLimit.isValid(settings.receiveLimitBytesPerSecond) else { throw NativeError.unavailable(text("Ungültige Tastenkombination oder Geschwindigkeitsgrenze.", "Invalid shortcut or speed limit.")) }
+        guard let controller = shortcutController else { throw NativeError.unavailable(text("Die Tastenkombination ist noch nicht bereit.", "The shortcut handler is not ready yet.")) }
+        let previous = registeredShortcut
+        do {
+            try controller.apply(settings.shortcut)
+            registeredShortcut = controller.actual
+            _ = try await client.request("settings.update", params: JSONEncoder().encode(settings))
+            shortcutError = nil; lastShortcutAttempt = settings.shortcut
+            await refresh()
+        } catch {
+            try? controller.apply(previous)
+            registeredShortcut = controller.actual
+            shortcutError = error.localizedDescription
+            throw error
+        }
+    }
+    func captureShortcut(_ enabled: Bool) {
+        shortcutRecording = enabled
+        if enabled { shortcutController?.suspend() }
+        else {
+            do { try shortcutController?.resume() }
+            catch { shortcutError = error.localizedDescription }
+        }
+        registeredShortcut = shortcutController?.actual ?? Shortcut(enabled: false)
+    }
+    func history(_ filter: HistoryFilter) async throws -> History {
+        try JSONDecoder().decode(History.self, from: await client.request("history.list", params: JSONEncoder().encode(filter)))
+    }
+    func clearHistory() async throws {
+        _ = try await client.request("history.clear")
+        await refresh()
+    }
     func createShare(_ request: ShareCreate) async throws -> Share {
         guard request.hasValidSource else { throw NativeError.unavailable(text("Bitte Dateien oder einen Ordner auswählen.", "Please choose files or a folder.")) }
         let result = try await client.request("share.create", params: JSONEncoder().encode(request))

@@ -94,7 +94,7 @@ export function ShareRecipient({ id, secret }: { id: string; secret: string }) {
         <p className="mobile-note">{t.downloadHelp}</p><p className="mobile-note">{t.shareLocal}</p>
       </section>}
       <a className="text-link" href="/setup">{t.secureSetup}</a>
-    </main><footer><span>{t.privacy}</span><span>AirLink 0.2.0</span></footer>
+    </main><footer><span>{t.privacy}</span><span>AirLink 0.3.0</span></footer>
   </div>;
 }
 export function InvalidShare() {

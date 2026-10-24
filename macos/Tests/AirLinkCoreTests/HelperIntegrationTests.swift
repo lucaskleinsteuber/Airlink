@@ -13,7 +13,7 @@ func actualHelperStatusAndSettingsUseNativeContract() async throws {
     do {
         let data = try await client.request("status")
         let status = try JSONDecoder().decode(HostStatus.self, from: data)
-        #expect(status.version == "0.2.0")
+        #expect(status.version == "0.3.0")
         #expect(status.chunkSize == 8 * 1024 * 1024)
         #expect(status.fingerprint.count == 64)
         #expect(!status.urls.isEmpty)
@@ -21,10 +21,17 @@ func actualHelperStatusAndSettingsUseNativeContract() async throws {
         var settings = status.settings
         settings.receiveDirectory = directory.appendingPathComponent("custom-received").path
         settings.appearance = "dark"; settings.language = "en"; settings.notifications = false
+        settings.sendLimitBytesPerSecond = 4 * 1024 * 1024
+        settings.receiveLimitBytesPerSecond = 8 * 1024 * 1024
+        settings.shortcut = Shortcut(enabled: false)
         let response = try await client.request("settings.update", params: JSONEncoder().encode(settings))
         #expect(try JSONDecoder().decode(HostSettings.self, from: response) == settings)
         let updated = try JSONDecoder().decode(HostStatus.self, from: await client.request("status"))
         #expect(updated.settings == settings)
+        #expect(updated.statistics != nil)
+        #expect(updated.relays?.isEmpty == true)
+        let history = try JSONDecoder().decode(History.self, from: await client.request("history.list", params: JSONEncoder().encode(HistoryFilter())))
+        #expect(history.entries.isEmpty)
         let original = directory.appendingPathComponent("original.txt")
         let contents = Data("Native share integration".utf8)
         try contents.write(to: original)
@@ -37,6 +44,10 @@ func actualHelperStatusAndSettingsUseNativeContract() async throws {
         _ = try await client.request("share.revoke", params: JSONEncoder().encode(["id": share.id]))
         let revoked = try JSONDecoder().decode(HostStatus.self, from: await client.request("status"))
         #expect(revoked.shares?.first(where: { $0.id == share.id })?.revoked == true)
+        _ = try await client.request("history.clear")
+        #expect(try Data(contentsOf: original) == contents)
+        let cleared = try JSONDecoder().decode(HostStatus.self, from: await client.request("status"))
+        #expect(cleared.shares?.contains(where: { $0.id == share.id }) == true)
         await client.stop()
     } catch {
         await client.stop()

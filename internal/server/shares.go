@@ -271,7 +271,7 @@ func (s *Server) publicShareAPI(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(filepath.Base(m.Path)))
 		w.Header().Set("ETag", fmt.Sprintf(`"%s-%d-%d"`, m.ID, info.Size(), info.ModTime().UnixNano()))
 		writer := &shareDownloadWriter{ResponseWriter: w, ctx: r.Context(), store: s.shares, id: id, token: token, method: r.Method, emptyBodyAllowed: m.Size == 0, validate: func() error { return s.shares.ValidateOpen(id, m.ID, file) }}
-		http.ServeContent(writer, r, m.Path, info.ModTime(), file)
+		http.ServeContent(s.traffic.WrapWriter(r.Context(), writer, "send"), r, m.Path, info.ModTime(), file)
 		writer.finish()
 		return
 	}
@@ -295,6 +295,7 @@ type shareDownloadWriter struct {
 	validate                   func() error
 }
 
+func (w *shareDownloadWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 func (w *shareDownloadWriter) WriteHeader(code int) {
 	if w.status == 0 {
 		w.status = code
@@ -390,7 +391,7 @@ func (s *Server) publicShareArchive(w http.ResponseWriter, r *http.Request, id, 
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", `attachment; filename="AirLink.zip"`)
 	writer := &shareDownloadWriter{ResponseWriter: w, ctx: r.Context(), store: s.shares, id: id, token: token, method: r.Method}
-	archive := zip.NewWriter(writer)
+	archive := zip.NewWriter(s.traffic.WrapWriter(r.Context(), writer, "send"))
 	for _, m := range summary.Files {
 		if err := r.Context().Err(); err != nil {
 			return

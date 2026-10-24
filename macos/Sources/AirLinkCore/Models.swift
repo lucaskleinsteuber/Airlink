@@ -46,9 +46,14 @@ public struct Device: Codable, Identifiable, Sendable {
     public var canSend: Bool
     public var canReceive: Bool
     private var storedCanClipboard: Bool?
+    private var storedCanRelay: Bool?
     public var canClipboard: Bool {
         get { storedCanClipboard ?? false }
         set { storedCanClipboard = newValue }
+    }
+    public var canRelay: Bool {
+        get { storedCanRelay ?? false }
+        set { storedCanRelay = newValue }
     }
     public var autoAccept: Bool
     public var lastSeen: String?
@@ -56,6 +61,7 @@ public struct Device: Codable, Identifiable, Sendable {
     enum CodingKeys: String, CodingKey {
         case id, name, kind, address, fingerprint, paired, online, canSend, canReceive, autoAccept, lastSeen
         case storedCanClipboard = "canClipboard"
+        case storedCanRelay = "canRelay"
     }
 }
 
@@ -72,8 +78,26 @@ public struct HostSettings: Codable, Equatable, Sendable {
     public var appearance: String
     public var language: String
     public var notifications: Bool
-    public init(name: String = "", receiveDirectory: String = "", appearance: String = "system", language: String = "de", notifications: Bool = true) {
+    public var sendLimitBytesPerSecond: Int64
+    public var receiveLimitBytesPerSecond: Int64
+    public var shortcut: Shortcut
+    public init(name: String = "", receiveDirectory: String = "", appearance: String = "system", language: String = "de", notifications: Bool = true, sendLimitBytesPerSecond: Int64 = 0, receiveLimitBytesPerSecond: Int64 = 0, shortcut: Shortcut = Shortcut()) {
         self.name = name; self.receiveDirectory = receiveDirectory; self.appearance = appearance; self.language = language; self.notifications = notifications
+        self.sendLimitBytesPerSecond = sendLimitBytesPerSecond; self.receiveLimitBytesPerSecond = receiveLimitBytesPerSecond; self.shortcut = shortcut
+    }
+    enum CodingKeys: String, CodingKey {
+        case name, receiveDirectory, appearance, language, notifications, sendLimitBytesPerSecond, receiveLimitBytesPerSecond, shortcut
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        receiveDirectory = try c.decode(String.self, forKey: .receiveDirectory)
+        appearance = try c.decode(String.self, forKey: .appearance)
+        language = try c.decode(String.self, forKey: .language)
+        notifications = try c.decode(Bool.self, forKey: .notifications)
+        sendLimitBytesPerSecond = try c.decodeIfPresent(Int64.self, forKey: .sendLimitBytesPerSecond) ?? 0
+        receiveLimitBytesPerSecond = try c.decodeIfPresent(Int64.self, forKey: .receiveLimitBytesPerSecond) ?? 0
+        shortcut = try c.decodeIfPresent(Shortcut.self, forKey: .shortcut) ?? Shortcut()
     }
 }
 
@@ -93,6 +117,10 @@ public struct HostStatus: Codable, Sendable {
     public var shares: [Share]?
     public var clipboard: [ClipboardMessage]?
     public var clipboardAllowed: Bool?
+    public var currentDeviceId: String?
+    public var relayDevices: [Device]?
+    public var relays: [Relay]?
+    public var statistics: Statistics?
 }
 
 public struct Share: Codable, Identifiable, Sendable {

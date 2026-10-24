@@ -1,6 +1,6 @@
 # AirLink roadmap
 
-This roadmap separates the established 0.1 baseline, 0.2 source additions, and future capabilities. Milestones are capability boundaries, not release dates. Version numbers use MAJOR.MINOR.PATCH; patch releases fix the current minor release without claiming a later milestone is complete. Source implementation, final automated verification, private release packaging, and physical acceptance are separate states.
+This roadmap separates the established 0.1/0.2 baseline, implemented 0.3 preview capabilities, and future capabilities. Milestones are capability boundaries, not release dates. Version numbers use MAJOR.MINOR.PATCH; patch releases fix the current minor release without claiming a later milestone is complete. Source implementation, final automated verification, private release packaging, and physical acceptance are separate states.
 
 ## 0.1 — Local transfer foundation
 
@@ -17,14 +17,17 @@ Before broad release: finish the documented platform/network/device acceptance c
 - Count a download session once across files, HTTP Range requests, and resumptions. Opening/unlocking does not consume quota; expiry or revocation stops streaming.
 - Explicit manual text clipboard sending and copying, with permission disabled by default for existing and new devices. Desktop peers require permission on both sides. Text is limited to 64 KiB UTF-8, retained only in process memory for up to one hour and 100 messages.
 
-These capabilities are implemented in source. Final consolidated verification and private release packaging are being completed. See [TESTING.md](TESTING.md). The 0.1 aggregate stress result remains historical evidence; it is not a rerun against 0.2.
+These capabilities reached the private 0.2 development package. Completed observations remain in [TESTING.md](TESTING.md). The 0.1 aggregate stress result remains historical evidence; it was not repeated for 0.2.
 
-## 0.3 — Browser relay and transfer controls
+## 0.3 — Browser relay and transfer controls (implemented in source)
 
-- Phone/browser-to-phone/browser transfers through a running local desktop relay, using bounded buffers without staging a full-file disk copy on that relay.
-- A configurable global shortcut, extending the fixed shortcut already present in 0.1.
-- Transfer speed limits and richer history/statistics.
-- Complete and refine the native Finder and login integration already delivered, based on actual runtime acceptance results.
+- Browser-to-browser transfers through one running local desktop host, using at most two active relay file streams and bounded 8 MiB blocks without a full-file disk copy. Relay permission defaults off; both paired browsers need the applicable send/receive rights. Recipient acceptance is mandatory for every offer.
+- Explicit transport-delivery states, Range retries, and ZIP fallback, with source tabs/file access still required after restart. No claim that the recipient filesystem saved or verified a file.
+- A configurable global shortcut with an explicit Settings key recorder, Command/Control validation, migrated ⇧⌘L default, retained disabled settings, and conflict handling that preserves the previous registration.
+- Independent aggregate send/receive limits; filtered combined history with terminal-metadata-only clearing; separate confirmed-file, relay-transport, and lifetime payload counters. Daily history totals group by last activity in UTC.
+- Modern/legacy Finder Services input and login status refresh without registration side effects. Menu and quit state include active browser relays.
+
+Consolidated local 0.3 verification and private package creation are complete; see [TESTING.md](TESTING.md). Carbon shortcut registration, Finder behavior, login startup, browser interaction, and physical networking still need runtime evidence; no UI automation is added. A new 100 GiB run has not been performed.
 
 ## 0.4 — Optional organization
 

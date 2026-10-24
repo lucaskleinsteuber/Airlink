@@ -30,7 +30,26 @@ Choose the matching architecture on an Intel Mac. The integration case starts on
 
 Set `AIRLINK_GO=/absolute/path/to/go` for the shell scripts if needed. For a direct Go command, invoke that Go binary explicitly.
 
-## 0.2 evidence — 2026-10-24
+## 0.3 evidence — 2026-10-24
+
+| Area | Completed observation | Scope and limits |
+| --- | --- | --- |
+| Go | `go test -race -count=1 -json ./...` passed 71 top-level tests, 89 cases including subtests; `go vet ./...` passed | Thirteen engine, 41 server, seven relay-store, six share-store and four traffic suites. Optional 0.1/0.2 previous-helper cases and the 100 GiB stress were skipped in this ordinary run. |
+| Relay | Seventeen new store/HTTPS suites passed, including three throttled-cancellation subcases | Explicit recipient acceptance, participant ACLs, request-bound PUT/ACK, two global streams, no persisted payload, source hash pinning, stale-operation isolation, pause/Range resume, delivered retries, restart, history visibility, >2 GiB offset, empty files/ZIPs and failed-archive HTTP abort. The large-offset fixture transports one byte, not a whole 3 GiB file. |
+| Traffic/history | Global directional cap, live unlimited update, cancellation, lifetime counter restart, private scopes, filtering, source/share preservation and migration tests passed | Confirmed file bytes and unique relay delivery are separate from processed payload counters. Error bodies are excluded. Share expiry/revocation is checked after limiter waits. Daily groups describe last-activity history cohorts in UTC, not real daily wire accounting. |
+| Web | Production build and all 45 Node tests passed | Metadata-only browser persistence, bounded source slices, demand-only chunks, lost ACK/retry, delivered Range service, role/acceptance gates, history and existing share/clipboard/upload regressions. No UI automation. |
+| Native | All 18 Swift tests passed against the final 0.3 helper | Limits, disabled shortcut, additive relay/statistics/history types, share preservation and private IPC. Both arm64/x86_64 production builds and universal app/helper assembly passed; signature and Info.plist checks passed. |
+| Final binary smoke | Portable Apple Silicon binary and bundled universal helper both passed `scripts/smoke-binary.py` | Real verified TLS: embedded assets, protected share/range/quota/revocation, clipboard, explicit-accept relay, source-demand ACK, delivered Range retry, rate settings, payload absence from state files, history clear and lifetime counters. This is headless protocol testing, not a physical phone/browser interaction. |
+| Migration | Real built 0.2 helper -> current service compatibility test passed | Preserved identity/fingerprint, original password share, counted recipient session and receive directory; new unlimited rates/default shortcut applied. Log: `build/upgrade-0.2-to-0.3.log`. |
+| Distribution | Universal macOS DMG and four Windows/Linux architecture archives created and checked | Ad hoc signature, DMG verification and SHA-256 integrity passed. Cross-compilation does not establish Windows/Linux runtime behavior. |
+| Dependency scan | Zero affected symbols/imported packages reported | The module-level advisory for unused `golang.org/x/crypto/openpgp` remains; AirLink imports Argon2, not OpenPGP. |
+| Hosted CI | Hosted jobs did not execute | Local background evidence is recorded separately. |
+| Interactive acceptance | No GUI launch, installation, UI automation, actual shortcut registration, Finder invocation, login startup or physical cross-device acceptance performed | Those runtime checks remain open. Native keyboard recording/conflict handling is implemented and compiled, not physically demonstrated. |
+| Large-transfer/RSS | No 100 GiB or new process-RSS benchmark performed for 0.3 | Two 8 MiB relay buffer slots are enforced and tested; that is not a measured total-process RSS claim. Historical 0.1 results below remain historical. |
+
+Logs stay outside Git under `build/go-tests-0.3.jsonl`, `build/web-tests-0.3.log`, `build/swift-tests-0.3.log`, `build/platform-build-0.3.log` and `build/govuln-0.3.log`. The private 0.3 preview is not a claim that physical 1.0 acceptance is complete.
+
+## Historical 0.2 evidence — 2026-10-24
 
 | Area | Completed observation | Scope and limits |
 | --- | --- | --- |
@@ -71,7 +90,7 @@ The final background Go run was `go test -race -count=1 -json ./...`: 25 top-lev
 
 Final binary smoke commands: `python3 scripts/smoke-binary.py build/airlink-darwin-arm64` and `python3 scripts/smoke-binary.py build/AirLink.app/Contents/Helpers/airlink`. This uses Node's TLS 1.3 client because the Apple-bundled Python SSL library may lack TLS 1.3. No GUI process is launched.
 
-These observations belong to the private 0.1.0 development prerelease. Do not treat them as a 0.2 rerun, and do not treat a compiled binary as a completed device test. Full cross-device release acceptance remains open below.
+These observations belong to the private 0.1.0 development prerelease. Do not treat them as a 0.2/0.3 rerun, and do not treat a compiled binary as a completed device test. Full cross-device release acceptance remains open below.
 
 ## Large-transfer stress case
 
@@ -90,11 +109,14 @@ The value counts **sequential 1 GiB files**, each transferred in 8 MiB chunks. C
 - Local network interruption, device sleep, process restart, changed addresses, revoked access during active work, and deliberate user pause/resume.
 - Browser reload with source reselection, mobile foreground/background transitions, browser-managed individual downloads, and streamed folder ZIPs.
 - Disk full, unavailable destination, source change, filesystem name/permission differences, and checksum failure without premature publication or overwriting.
-- Native window closure/menu bar access, Finder Services, the fixed shortcut, login-item approval/startup, notification authorization/presentation, and all appearance variants.
+- Native window/menu access with active direct and relay work, modern/legacy Finder Services, explicit shortcut recording/disable/conflict recovery, login-item status/approval/startup, notification authorization/presentation, and appearance variants.
 - DMG installation/update preserving state, first launch under normal Gatekeeper settings, and a future Developer ID/notarized package.
 - Quick Share recipient certificate onboarding, fragment-link handling, optional passwords, expiry/revocation during downloads, session-based quotas across multiple files/Range/resume, and access limited to the chosen share.
 - Paired-browser ownership boundaries for creating/revoking shares from completed uploads, source unavailability/change without copying originals, and share persistence after host restart.
 - Explicit clipboard Paste/Edit/Send/Copy/Dismiss on native and browser clients, permission disabled for migrated pairings, permission on both desktop peers, UTF-8 size limits, and in-memory retention without automatic system clipboard access.
+- Two authorized browser participants through a single desktop host, mandatory recipient acceptance, source re-selection after access loss, simultaneous relay streams, host/tab/network restart, Range retry, and ZIP fallback without stored host payload.
+- Aggregate independent send/receive caps across normal files, shares and relays, including live changes and expiry/revocation during throttled output. Keep file-confirmed, relay-transport and lifetime payload totals distinct.
+- History filtering/clearing for both relay participants without deleting the other party's association, preserving originals/received content/shares/active work, and interpreting daily groups as last-activity UTC rather than actual daily traffic.
 
 These checks must be described at their actual scope. They do not authorize adding desktop-controlling UI tests.
 

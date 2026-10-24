@@ -6,7 +6,7 @@
 
 AirLink transfers files and folders between computers and browsers on the same local network. It combines a native macOS app with a portable Windows/Linux service and a web interface for macOS, Windows, Linux, Android, and iOS.
 
-**Current source version: 0.2.0. Repository status: private development.** Source and release downloads are available only to people with access to this repository. The source is MIT licensed; repository visibility remains private. Final 0.2 verification and packaging are in progress; historical 0.1 results and current 0.2 evidence are separated in [TESTING.md](docs/TESTING.md).
+**Current version: 0.3.0. Repository status: private development.** Source and release downloads are available only to people with access to this repository. The source is MIT licensed; repository visibility remains private. The private 0.3 preview has completed local verification and packaging. Current checks, physical acceptance limits and historical 0.1/0.2 results are separated in [TESTING.md](docs/TESTING.md).
 
 ## The local transfer foundation
 
@@ -17,13 +17,13 @@ AirLink transfers files and folders between computers and browsers on the same l
 - Pair devices with local approval, remember trusted devices, control send/receive permissions, and revoke access.
 - Encrypt transfers with TLS 1.3, verify SHA-256 checksums for chunks and completed incoming files, and persist transfer state locally.
 - Use German or English and system, light, or dark appearance.
-- On macOS, use a native window and menu bar, Finder **Services → Send with AirLink**, the fixed **⇧⌘L** shortcut, optional notifications, and optional launch at login.
+- On macOS, use a native window and menu bar, Finder **Services → Send with AirLink**, a configurable shortcut with **⇧⌘L** as the migrated default, optional notifications, and optional launch at login.
 
-Version 0.2 adds **Quick Share** links with optional passwords, expiry, download limits, and revocation, plus **explicit clipboard text sharing** between authorized devices. The native app, browser interface, and portable host console expose the applicable controls. Their final 0.2 verification results are recorded separately from the 0.1 baseline.
+**Quick Share** provides links with optional passwords, expiry, download limits, and revocation. **Clipboard** exchanges text only after explicit actions between authorized devices. Version 0.3 adds browser-to-browser relay through one local desktop host, global speed limits, richer history/statistics, and configurable native shortcuts.
 
 The complete web interface is embedded in the desktop service. Normal use needs no account, cloud relay, external website, CDN, or internet connection. Downloading dependencies and building from source requires internet access initially.
 
-Phone-to-phone relay, configurable shortcuts, speed limits, richer statistics, content-based duplicate handling, and automatic sorting remain planned additions. See the [roadmap](docs/ROADMAP.md).
+Content-based duplicate handling and optional automatic sorting remain planned additions. See the [roadmap](docs/ROADMAP.md).
 
 ## Choose how to run it
 
@@ -34,13 +34,13 @@ Phone-to-phone relay, configurable shortcuts, speed limits, richer statistics, c
 | Linux | Portable service with a private local administration page; amd64 and arm64 builds |
 | Android / iPhone / iPad | Browser client connecting to a running desktop service |
 
-At least one computer must run AirLink. Two paired desktop services communicate directly. Browser clients send to and download from their connected desktop host. Browser-to-browser relay is not implemented in 0.2.0.
+At least one computer must run AirLink. Two paired desktop services communicate directly. Browsers can send to/download from their connected host, or use an explicitly authorized relay to another browser paired with that same host. The desktop service remains running throughout a relay.
 
 Platform builds are distinct from platform runtime verification. The current evidence and remaining checks are recorded in [TESTING.md](docs/TESTING.md).
 
 ### macOS
 
-1. Download `AirLink-0.2.0-macos-universal.dmg` from the repository's [Releases](https://github.com/lucasfd3/Airlink/releases) when that version's asset is available.
+1. Download `AirLink-0.3.0-macos-universal.dmg` from the repository's [Releases](https://github.com/lucasfd3/Airlink/releases) when that version's asset is available.
 2. Open the disk image and drag **AirLink.app** to **Applications**, replacing the previous AirLink app if present.
 3. Open AirLink. Keep only the intended current app in `/Applications`; app updates preserve the separate AirLink data directory and received files.
 4. Open the QR button to connect a browser, or **Connect device** to pair another computer.
@@ -104,6 +104,28 @@ Clipboard permission is **off by default**, including devices paired before 0.2.
 
 Each text must contain **1 to 65,536 UTF-8 bytes (64 KiB)**. AirLink keeps up to **100 recent text messages for at most one hour in process memory**, with no database persistence. Restarting the host clears those messages; dismiss removes a message, and revoking a device removes its messages. Copying text remains an explicit user action.
 
+## Browser-to-browser relay
+
+Pair both browsers with the same running desktop host and grant **Browser relay** permission to both devices. This permission is off by default for new and existing pairings. The sender also needs file-send permission; the recipient needs file-receive permission. Choose the other authorized browser as the target, then explicitly accept the offer in that recipient browser. Each new relay requires recipient acceptance, even if ordinary host uploads have auto-accept enabled. The host can pause, resume, or cancel a relay without accepting on the recipient's behalf.
+
+Keep **both browser tabs open and reachable**, including on phones. The source hashes the selected files before offering them. AirLink forwards bounded 8 MiB blocks through RAM, with at most two active relay file streams; it does not stage the complete relay payload on the host's disk. Original source files stay in place. The existing two-incoming/two-outgoing desktop transfer pools remain separate.
+
+Relay metadata and confirmed range information survive host restart; RAM blocks do not. A source tab that loses file access must reselect the same unchanged files. The recipient may need to resume its browser download or restart a ZIP download after interruption. AirLink does not silently convert the relay into a stored host upload.
+
+SHA-256 protects each block, and a normal full stream checks its full digest before the final bytes are released. Partial-range retries validate blocks and the unchanged source manifest. **Delivered** means bytes were handed to the recipient's browser transport; it does not prove that the browser saved or verified its local file. Saving and completion reporting remain the browser download manager's responsibility. Folder ZIP downloads are streamed and cannot be resumed.
+
+## Speed limits, history, and native controls
+
+Set independent **send** and **receive** limits on the host. Each limit is shared across normal transfers, Quick Share payloads, and browser relay payloads in that direction, rather than being a separate allowance for each transfer. The default is unlimited (`0`); enabled limits range from **1 KiB/s to 1 TiB/s**. Native settings offer KiB/s and MiB/s input. Payload counters exclude control/error response bodies.
+
+**History** filters file and relay records by case-insensitive filename/device search, state, direction, and device. Results are newest first, with up to 500 combined records. Clearing history removes terminal metadata only: completed, failed, cancelled, or relay-delivered entries. It preserves originals, received files, shares, clipboard messages, and active work. A paired browser clears only its own history association; another relay participant's history remains visible to that participant.
+
+Statistics separate confirmed file bytes from unique relay transport bytes/deliveries. Host-only lifetime payload counters remain after history clearing, while totals derived from the remaining history can decrease. **Daily history groups use the record's last activity date in UTC**; they are not a time series of bytes transferred during each calendar day. A transfer resumed on a later day can move its full accumulated history total to that day. Guests see only their own/participant statistics, not host-wide traffic totals.
+
+On macOS, change or disable the global shortcut in **Settings → Quick send**. Recording captures a key only while that Settings control has focus; it does not install a global keystroke monitor. Command or Control is required, with optional Shift/Option. Existing settings migrate to ⇧⌘L unless a shortcut was explicitly disabled. A conflicting replacement preserves the previous registration and displays an error; the UI distinguishes the registered shortcut from a pending draft.
+
+Finder Services accepts modern file URLs and the legacy selected-filename format only when the service is invoked. Login-item status refreshes when Settings opens or the app becomes active; reading that status does not register/unregister the login item. Native shortcut registration, Finder interaction, and login startup still require manual runtime acceptance; compiled code and background model tests do not establish that UI behavior.
+
 ## Browser behavior with large files
 
 Browser uploads read and hash bounded chunks. If the connection breaks while the page remains available, AirLink reconnects and resumes at the host's confirmed checkpoint. After a reload, browser restart, or loss of file access, choose the same unchanged source files again. AirLink verifies the saved integrity evidence before continuing.
@@ -121,7 +143,7 @@ Browser downloads are saved by the browser's download manager. Individual downlo
 | Linux settings, pairing identity, transfer database | `$XDG_CONFIG_HOME/AirLink`, or `~/.config/AirLink` |
 | Received files | `~/Downloads/AirLink`, configurable locally |
 
-The private state directory contains the TLS identity, device credentials, settings, SQLite transfer checkpoints, and durable share definitions/sessions. Authorized owners can recover their share links after restart, so protect this directory as private application data. Clipboard messages are not persisted there. Keep application state separate from the bundle. Sending and sharing reference selected source files; they do not move, replace, or create a whole-file staging copy of the originals.
+The private state directory contains the TLS identity, device credentials, settings, SQLite transfer/relay metadata, durable share definitions/sessions, and lifetime payload counters. Relay payload blocks and clipboard text are not persisted there. Authorized owners can recover share links after restart, so protect this directory as private application data. Keep application state separate from the bundle. Sending and sharing reference selected source files; they do not move, replace, or create a whole-file staging copy of the originals.
 
 Portable service options:
 
@@ -154,10 +176,10 @@ bash scripts/package.sh
 
 Set `AIRLINK_GO=/absolute/path/to/go` when Go is not on your PATH. To rebuild only the macOS app after both macOS helpers exist, use `bash scripts/build-macos.sh`.
 
-All automated tests run in the background. There are no UI automation tests that take over the desktop. See [testing instructions and verification limits](docs/TESTING.md), the [architecture](docs/ARCHITECTURE.md), the [base protocol](docs/API.md), and the [0.2 protocol additions](docs/API-0.2.md).
+All automated tests run in the background. There are no UI automation tests that take over the desktop. See [testing instructions and verification limits](docs/TESTING.md), the [architecture](docs/ARCHITECTURE.md), the [base protocol](docs/API.md), the [0.2 additions](docs/API-0.2.md), and the [0.3 additions](docs/API-0.3.md).
 
 ## Versions and license
 
-AirLink uses **MAJOR.MINOR.PATCH** versions. New pre-1.0 capabilities advance the minor version; fixes advance the patch version. Release tags use `v0.2.0` form. A compiled binary, local package, GitHub release, and public release are separate delivery states.
+AirLink uses **MAJOR.MINOR.PATCH** versions. New pre-1.0 capabilities advance the minor version; fixes advance the patch version. Release tags use `v0.3.0` form. A compiled binary, local package, GitHub release, and public release are separate delivery states.
 
 Copyright © 2026 lucasfd3. Licensed under the [MIT License](LICENSE).
