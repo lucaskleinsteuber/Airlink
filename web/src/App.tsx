@@ -17,6 +17,8 @@ import { RelaysPanel } from './RelaysPanel';
 import { HistoryPanel } from './HistoryPanel';
 import { StatisticsPanel } from './StatisticsPanel';
 import { transferText } from './transfer-i18n';
+import { duplicateAttention, fileHasPayload, transferProgressBytes } from './organization';
+import { organizationText } from './organization-i18n';
 import type { LocalUpload } from './uploader';
 import type { HostInfo, PendingPair, Selection, Status, Transfer } from './types';
 function preference(key: string, fallback: string): string { try { return localStorage.getItem(key) || fallback; } catch { return fallback; } }
@@ -40,6 +42,7 @@ export function App() {
   const t = messages[language] || messages.de;
   const ft = featureText(language);
   const rt = transferText(language);
+  const ot = organizationText(language);
   const [section, setSection] = useState<'transfers' | 'shares' | 'clipboard' | 'history' | 'statistics'>('transfers');
   const [host, setHost] = useState<HostInfo>();
   const [status, setStatus] = useState<Status>();
@@ -186,18 +189,21 @@ export function App() {
         <RelaysPanel relays={status?.relays || []} currentDeviceId={status?.currentDeviceId || ''} local={relayLocal} language={language} refresh={refresh} showError={showError} reselect={(id, folder) => { setReselect(null); setRelayReselect(id); if (folder) folderInput.current?.click(); else filesInput.current?.click(); }} />
         <section className="transfer-section"><div className="section-heading"><h2>{t.transfers}</h2><span>{transfers.length || ''}</span></div>
           {!transfers.length ? <div className="empty"><Glyph name="file" size={29} /><h3>{t.empty}</h3><p>{t.emptyHelp}</p></div> : <div className="transfer-list">{transfers.map(transfer => {
-            const upload = transfer.direction === 'receive'; const stage = local.get(transfer.id); const files = transfer.files.filter(file => !file.directory);
+            const upload = transfer.direction === 'receive'; const stage = local.get(transfer.id); const files = transfer.files.filter(file => !file.directory); const downloadableFiles = files.filter(fileHasPayload);
             const active = !terminal(transfer.state); const needsSource = upload && active && (stage?.phase === 'source' || stage?.phase === 'error');
-            const percentage = transfer.state === 'completed' ? 100 : progressPercent(transfer.completedBytes, transfer.totalBytes);
+            const percentage = transfer.state === 'completed' ? 100 : progressPercent(transferProgressBytes(transfer), transfer.totalBytes);
             return <article className="transfer" key={transfer.id}>
               <div className="transfer-top"><span className={`transfer-icon ${!upload ? 'incoming' : ''}`}><Glyph name={upload ? 'upload' : 'download'} /></span><div className="transfer-title"><h3>{files.length === 1 ? files[0].path.split('/').at(-1) : `${files.length} ${t.files}`}</h3><p>{upload ? t.toHost : t.fromHost} {host?.name}</p></div><span className={`state ${transfer.state}`}>{!upload ? t.browserDownload : t[transfer.state] || transfer.state}</span></div>
               {upload && <><progress aria-label={`${percentage.toFixed(0)}%`} max={100} value={percentage} /><div className="transfer-meta"><span>{bytes(transfer.completedBytes, language)} / {bytes(transfer.totalBytes, language)}</span><span>{transfer.bytesPerSecond > 0 && transfer.state === 'running' ? `${bytes(transfer.bytesPerSecond, language)}/s` : `${Math.floor(percentage)}%`}</span></div></>}
+              {!!transfer.skippedBytes && <p className="transfer-note">{ot.transferred}: {bytes(transfer.completedBytes, language)} · {ot.skippedBytes}: {bytes(transfer.skippedBytes, language)}</p>}
+              {files.filter(file => file.skipped).map(file => <p className="transfer-note skipped-file" key={file.id}>{file.path} · {ot.skipped}</p>)}
+              {upload && (duplicateAttention(transfer) || stage?.phase === 'waitingDuplicate') && <div className="source-needed"><p>{ot.attention}</p></div>}
               {stage?.phase === 'hashing' && active && <p className="transfer-note">{t.hashing} · {bytes(stage.done || 0, language)} / {bytes(stage.total || 0, language)}</p>}
               {stage?.phase === 'reconnecting' && active && <p className="transfer-note">{t.reconnecting} · {t.offlineHelp}</p>}
               {(transfer.error || stage?.phase === 'error') && <p className={transfer.state === 'failed' || stage?.phase === 'error' ? 'warning' : 'transfer-note'}>{transfer.error || stage?.error}</p>}
               {needsSource && <div className="source-needed"><p>{t.sourceHelp}</p><div className="button-row"><button className="secondary small" onClick={() => { setRelayReselect(null); setReselect(transfer.id); filesInput.current?.click(); }}>{t.retrySource}</button><button className="text-button" onClick={() => { setRelayReselect(null); setReselect(transfer.id); folderInput.current?.click(); }}>{t.chooseFolder}</button></div></div>}
-              {!upload && <><p className="transfer-note">{t.downloadHelp}</p><div className="download-files">{files.map(file => <div key={file.id}><span title={file.path}>{file.path}</span><span>{bytes(file.size, language)}</span><button className="text-button" disabled={['cancelled', 'failed'].includes(transfer.state)} onClick={() => { void download(transfer, file.id); }}>{t.download}</button></div>)}</div>{(files.length > 1 || transfer.files.some(file => file.directory)) && <><button className="secondary small" disabled={['cancelled', 'failed'].includes(transfer.state)} onClick={() => { void download(transfer); }}>{t.downloadAll}</button><p className="transfer-note">{t.archiveHelp}</p></>}</>}
-              {upload && active && <div className="transfer-actions">{['running', 'queued', 'reconnecting'].includes(transfer.state) && <button className="text-button" onClick={() => { void action(transfer.id, 'pause'); }}>{t.pause}</button>}{transfer.state === 'paused' && <button className="text-button" onClick={() => { void action(transfer.id, 'resume'); }}>{t.resume}</button>}<button className="text-button muted" onClick={() => { void action(transfer.id, 'cancel'); }}>{t.cancel}</button></div>}
+              {!upload && <><p className="transfer-note">{t.downloadHelp}</p><div className="download-files">{downloadableFiles.map(file => <div key={file.id}><span title={file.path}>{file.path}</span><span>{bytes(file.size, language)}</span><button className="text-button" disabled={['cancelled', 'failed'].includes(transfer.state)} onClick={() => { void download(transfer, file.id); }}>{t.download}</button></div>)}</div>{(downloadableFiles.length > 1 || transfer.files.some(file => file.directory)) && <><button className="secondary small" disabled={['cancelled', 'failed'].includes(transfer.state)} onClick={() => { void download(transfer); }}>{t.downloadAll}</button><p className="transfer-note">{t.archiveHelp}</p></>}</>}
+              {upload && active && <div className="transfer-actions">{['running', 'queued', 'reconnecting', 'checkingDuplicate', 'waitingDuplicate'].includes(transfer.state) && <button className="text-button" onClick={() => { void action(transfer.id, 'pause'); }}>{t.pause}</button>}{transfer.state === 'paused' && <button className="text-button" onClick={() => { void action(transfer.id, 'resume'); }}>{t.resume}</button>}<button className="text-button muted" onClick={() => { void action(transfer.id, 'cancel'); }}>{t.cancel}</button></div>}
             </article>;
           })}</div>}
         </section>
@@ -212,6 +218,6 @@ export function App() {
       <input ref={filesInput} className="hidden-input" type="file" multiple onChange={inputChange} aria-label={t.chooseFiles} />
       <input ref={folderInput} className="hidden-input" type="file" multiple {...{ webkitdirectory: '' }} onChange={inputChange} aria-label={t.chooseFolder} />
     </main>
-    <footer><span>{t.privacy}</span><span>AirLink {host?.version || '0.3.0'}</span></footer>
+    <footer><span>{t.privacy}</span><span>AirLink {host?.version || '0.4.0'}</span></footer>
   </div>;
 }

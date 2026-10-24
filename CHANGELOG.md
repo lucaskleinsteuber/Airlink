@@ -2,6 +2,19 @@
 
 AirLink uses MAJOR.MINOR.PATCH versions. Entries describe implemented changes; distribution and verification status are recorded separately.
 
+## 0.4.0 — 2026-10-24
+
+- Added optional content-based duplicate decisions and ordered extension-to-folder sorting for desktop receives. Both default off with no rules for new and migrated settings; editable example rules never silently enable sorting.
+- Limited duplicate indexing to AirLink-managed verified received files, including eligible completed incoming history. Candidate identity, size and full SHA-256 are streamed and revalidated before offering Skip and again at the host's explicit decision. History clearing retains the independent index.
+- Added private host Keep/Skip choices and explicit existing-path show/copy actions. Source originals and existing received files are never automatically deleted, overwritten, moved or copied; Skip may remove only this transfer's validated private staging data and never creates a fake received-file placeholder.
+- Preserved folder transfers unchanged while sorting only top-level individual files. Incoming offers snapshot their rules and relative destination mappings; later settings changes cannot relocate active or completed data. Guest/peer responses omit host destinations and duplicate candidate IDs/paths.
+- Added pre-payload preparation and checking/waiting states, cached source-checksum reuse, pause/cancel generation guards and receive-slot release while awaiting a host decision. Legacy completion returns HTTP 409 while a decision is pending; Keep can publish previously verified staging without a connected sender.
+- Added bounded asynchronous private duplicate resolution with correlated out-of-order replies, keeping status and pause/cancel responsive during long candidate checks.
+- Separated skipped-file/avoided-byte statistics from actual confirmed data and lifetime traffic. Progress includes avoided bytes; exports exclude skipped payloads, and an all-skipped transfer cannot produce a file share or redirect a download to its existing candidate.
+- Extended the browser source workflow and portable host console with explicit opt-ins, validated ordered rules, duplicate attention/decisions and honest skipped-file labels. Background regression coverage includes pending/lost responses, mixed skip/send progress, legacy fallback, path validation and migration; final results belong in [TESTING.md](docs/TESTING.md).
+
+This is an implemented private development preview. Final verification and artifact publication are tracked separately in [TESTING.md](docs/TESTING.md). The MIT license, private repository policy and ad hoc macOS signing policy are unchanged. No installation, GUI acceptance, physical-device proof, notarization, or renewed 100 GiB result is implied by this entry.
+
 ## 0.3.0 — 2026-10-24
 
 - Added browser-to-browser relay through a running local desktop host, bounded to two active file streams using 8 MiB blocks without persisting a full relay payload. Both source and recipient remain required after interruption; metadata alone cannot reproduce the data.

@@ -39,20 +39,29 @@ type source struct {
 	Modified int64  `json:"modified"`
 }
 type record struct {
-	Transfer    model.Transfer    `json:"transfer"`
-	Sources     map[string]source `json:"sources,omitempty"`
-	ReceiveRoot string            `json:"receiveRoot,omitempty"`
+	Transfer       model.Transfer     `json:"transfer"`
+	Sources        map[string]source  `json:"sources,omitempty"`
+	ReceiveRoot    string             `json:"receiveRoot,omitempty"`
+	Organization   model.Organization `json:"organization"`
+	LegacyVerified map[string]string  `json:"legacyVerified,omitempty"`
 }
 
 type Engine struct {
-	mu            sync.Mutex
-	db            *sql.DB
-	records       map[string]*record
-	locks         sync.Map
-	receiveDir    string
-	closed        bool
-	progress      map[string]progressSample
-	verifications map[string]*verificationOperation
+	mu             sync.Mutex
+	db             *sql.DB
+	records        map[string]*record
+	locks          sync.Map
+	receiveDir     string
+	closed         bool
+	progress       map[string]progressSample
+	verifications  map[string]*verificationOperation
+	organization   model.Organization
+	managed        map[string]managedFile
+	managedSeen    map[string]bool
+	ctx            context.Context
+	cancel         context.CancelFunc
+	autoWG         sync.WaitGroup
+	autoPublishing map[string]bool
 }
 type verificationOperation struct {
 	ctx    context.Context
@@ -85,7 +94,23 @@ CREATE TABLE IF NOT EXISTS chunks(transfer_id TEXT NOT NULL,file_id TEXT NOT NUL
 		db.Close()
 		return nil, err
 	}
-	e := &Engine{db: db, records: map[string]*record{}, receiveDir: receiveDir, progress: map[string]progressSample{}, verifications: map[string]*verificationOperation{}}
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS managed_files(id TEXT PRIMARY KEY,sha TEXT NOT NULL,size INTEGER NOT NULL,document BLOB NOT NULL);CREATE INDEX IF NOT EXISTS managed_hash_size ON managed_files(sha,size);CREATE TABLE IF NOT EXISTS managed_seen(path TEXT PRIMARY KEY);`)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	canonicalReceive, err := filepath.EvalSymlinks(receiveDir)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	engineCtx, cancel := context.WithCancel(context.Background())
+	e := &Engine{db: db, records: map[string]*record{}, receiveDir: canonicalReceive, progress: map[string]progressSample{}, verifications: map[string]*verificationOperation{}, organization: model.Organization{Rules: []model.SortRule{}}, managed: map[string]managedFile{}, managedSeen: map[string]bool{}, ctx: engineCtx, cancel: cancel, autoPublishing: map[string]bool{}}
+	if err = e.loadManaged(); err != nil {
+		cancel()
+		db.Close()
+		return nil, err
+	}
 	rows, err := db.Query("SELECT document FROM transfers")
 	if err != nil {
 		db.Close()
@@ -113,9 +138,17 @@ CREATE TABLE IF NOT EXISTS chunks(transfer_id TEXT NOT NULL,file_id TEXT NOT NUL
 	// A process restart never asserts a live network connection. Confirmed data
 	// remains resumable; callers explicitly resume after reconnecting.
 	for _, r := range e.records {
-		if r.Transfer.State == "running" || r.Transfer.State == "verifying" || r.Transfer.State == "queued" {
+		if r.Transfer.State == "running" || r.Transfer.State == "verifying" || r.Transfer.State == "queued" || r.Transfer.State == "checkingDuplicate" {
 			r.Transfer.State = "reconnecting"
 			r.Transfer.BytesPerSecond = 0
+		}
+		if r.Transfer.State != "paused" && !terminal(r.Transfer.State) {
+			for _, f := range r.Transfer.Files {
+				if f.DuplicateState == "pending" {
+					r.Transfer.State = "waitingDuplicate"
+					break
+				}
+			}
 		}
 		if r.Transfer.Direction == "receive" {
 			if recoverErr := e.recoverIncoming(r); recoverErr != nil {
@@ -127,20 +160,30 @@ CREATE TABLE IF NOT EXISTS chunks(transfer_id TEXT NOT NULL,file_id TEXT NOT NUL
 			db.Close()
 			return nil, err
 		}
+		for _, file := range r.Transfer.Files {
+			if err = e.indexFileLocked(r, file); err != nil {
+				cancel()
+				db.Close()
+				return nil, err
+			}
+		}
 	}
 	return e, nil
 }
 
 func (e *Engine) Close() error {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	if e.closed {
+		e.mu.Unlock()
 		return nil
 	}
 	e.closed = true
+	e.cancel()
 	for id := range e.verifications {
 		e.cancelVerificationLocked(id)
 	}
+	e.mu.Unlock()
+	e.autoWG.Wait()
 	return e.db.Close()
 }
 func (e *Engine) SetReceiveDirectory(p string) error {
@@ -150,12 +193,22 @@ func (e *Engine) SetReceiveDirectory(p string) error {
 	if err := os.MkdirAll(p, 0700); err != nil {
 		return err
 	}
+	canonical, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return err
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.receiveDir = p
+	e.receiveDir = canonical
 	return nil
 }
-func clone(t model.Transfer) model.Transfer { t.Files = append([]model.File{}, t.Files...); return t }
+func clone(t model.Transfer) model.Transfer {
+	t.Files = append([]model.File{}, t.Files...)
+	for i := range t.Files {
+		t.Files[i].DuplicateCandidates = append([]model.DuplicateCandidate(nil), t.Files[i].DuplicateCandidates...)
+	}
+	return t
+}
 func (e *Engine) Transfers(deviceID string) []model.Transfer {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -279,6 +332,10 @@ func normalize(files []model.File) ([]model.File, int64, error) {
 		f.Received = 0
 		f.Completed = f.Directory
 		f.SHA256 = ""
+		f.DestinationPath = ""
+		f.Skipped = false
+		f.DuplicateState = ""
+		f.DuplicateCandidates = nil
 		out[i] = f
 		total += f.Size
 	}
@@ -305,6 +362,11 @@ func (e *Engine) CreateIncoming(device model.Device, files []model.File) (model.
 	if e.closed {
 		return model.Transfer{}, errors.New("engine closed")
 	}
+	policy := cloneOrganization(e.organization)
+	files, err = snapshotDestinations(files, policy)
+	if err != nil {
+		return model.Transfer{}, err
+	}
 	id := identifier()
 	label := strings.Map(func(r rune) rune {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' {
@@ -319,7 +381,7 @@ func (e *Engine) CreateIncoming(device model.Device, files []model.File) (model.
 		label = "Device"
 	}
 	dir := filepath.Join(e.receiveDir, "AirLink-"+time.Now().Format("20060102-150405")+"-"+label+"-"+id[:8])
-	r := &record{Transfer: model.Transfer{ID: id, DeviceID: device.ID, DeviceName: device.Name, Direction: "receive", State: "offered", Files: files, TotalBytes: total, CreatedAt: now(), Destination: dir}, ReceiveRoot: dir}
+	r := &record{Transfer: model.Transfer{ID: id, DeviceID: device.ID, DeviceName: device.Name, Direction: "receive", State: "offered", Files: files, TotalBytes: total, CreatedAt: now(), Destination: dir}, ReceiveRoot: dir, Organization: policy, LegacyVerified: map[string]string{}}
 	e.records[id] = r
 	if err = e.saveLocked(r); err != nil {
 		delete(e.records, id)
@@ -334,24 +396,30 @@ func (e *Engine) CreateIncoming(device model.Device, files []model.File) (model.
 }
 
 func (e *Engine) ensureIncoming(r *record) error {
-	if err := os.MkdirAll(r.ReceiveRoot, 0700); err != nil {
+	parentRoot, err := organizationRoot(filepath.Dir(r.ReceiveRoot))
+	if err != nil {
 		return err
 	}
-	root, err := os.OpenRoot(r.ReceiveRoot)
+	err = parentRoot.Mkdir(filepath.Base(r.ReceiveRoot), 0700)
+	parentRoot.Close()
+	if err != nil && !errors.Is(err, fs.ErrExist) {
+		return err
+	}
+	root, err := organizationRoot(r.ReceiveRoot)
 	if err != nil {
 		return err
 	}
 	defer root.Close()
-	if err = root.MkdirAll(".airlink-partials", 0700); err != nil {
+	if err = ensureOrganizationDirs(root, ".airlink-partials"); err != nil {
 		return err
 	}
 	for _, f := range r.Transfer.Files {
-		parent := path.Dir(f.Path)
+		parent := path.Dir(destination(f))
 		if f.Directory {
-			parent = f.Path
+			parent = destination(f)
 		}
 		if parent != "." {
-			if err = root.MkdirAll(filepath.FromSlash(parent), 0700); err != nil {
+			if err = ensureOrganizationDirs(root, parent); err != nil {
 				return err
 			}
 		}
@@ -412,7 +480,7 @@ func (e *Engine) scheduleLocked() error {
 	active := map[string]int{"receive": 0, "send": 0}
 	queue := []*record{}
 	for _, r := range e.records {
-		if r.Transfer.State == "running" || r.Transfer.State == "verifying" {
+		if r.Transfer.State == "running" || r.Transfer.State == "verifying" || (r.Transfer.State == "checkingDuplicate" && r.Transfer.Direction == "receive") {
 			active[r.Transfer.Direction]++
 		}
 		if r.Transfer.State == "queued" {
@@ -429,6 +497,9 @@ func (e *Engine) scheduleLocked() error {
 			return err
 		}
 		active[r.Transfer.Direction]++
+	}
+	for _, r := range e.records {
+		e.schedulePublicationLocked(r)
 	}
 	return nil
 }
@@ -470,8 +541,18 @@ func (e *Engine) Resume(id string) error {
 	if r.Transfer.State == "offered" && r.Transfer.Direction == "send" {
 		return e.acceptLocked(r)
 	}
-	if r.Transfer.State != "paused" && r.Transfer.State != "reconnecting" && r.Transfer.State != "queued" {
+	if r.Transfer.State != "paused" && r.Transfer.State != "reconnecting" && r.Transfer.State != "queued" && !(r.Transfer.Direction == "send" && (r.Transfer.State == "waitingDuplicate" || r.Transfer.State == "checkingDuplicate")) {
 		return ErrConflict
+	}
+	for _, f := range r.Transfer.Files {
+		if f.DuplicateState == "pending" {
+			r.Transfer.State = "waitingDuplicate"
+			r.Transfer.Error = ""
+			if err = e.saveLocked(r); err != nil {
+				return err
+			}
+			return e.scheduleLocked()
+		}
 	}
 	r.Transfer.State = "queued"
 	r.Transfer.Error = ""
@@ -608,12 +689,12 @@ func (e *Engine) WriteChunk(ctx context.Context, id, fileID string, index int64,
 	if offset != f.Received {
 		return f.Received, ErrConflict
 	}
-	root, err := os.OpenRoot(r.ReceiveRoot)
+	root, err := organizationRoot(r.ReceiveRoot)
 	if err != nil {
 		return f.Received, err
 	}
 	defer root.Close()
-	out, err := root.OpenFile(partialName(fileID), os.O_CREATE|os.O_RDWR, 0600)
+	out, err := openPrivatePartial(root, fileID)
 	if err != nil {
 		return f.Received, err
 	}
@@ -688,6 +769,10 @@ func (e *Engine) CompleteFile(ctx context.Context, id, fileID, hash string) erro
 		}
 		return ErrIntegrity
 	}
+	if f.DuplicateState != "" && f.SHA256 != "" && f.SHA256 != hash {
+		e.mu.Unlock()
+		return ErrIntegrity
+	}
 	if r.Transfer.Direction != "receive" || r.Transfer.State != "running" || f.Directory || f.Received != f.Size {
 		e.mu.Unlock()
 		return ErrConflict
@@ -698,25 +783,18 @@ func (e *Engine) CompleteFile(ctx context.Context, id, fileID, hash string) erro
 		e.mu.Unlock()
 		return err
 	}
-	destination := r.ReceiveRoot
+	receiveRoot := r.ReceiveRoot
 	verificationCtx, cancel := context.WithCancel(ctx)
 	op := &verificationOperation{ctx: verificationCtx, cancel: cancel}
 	e.verifications[id] = op
 	e.mu.Unlock()
-	defer func() {
-		op.cancel()
-		e.mu.Lock()
-		if e.verifications[id] == op {
-			delete(e.verifications, id)
-		}
-		e.mu.Unlock()
-	}()
-	root, err := os.OpenRoot(destination)
+	defer e.finishDuplicateOperation(id, op)
+	root, err := organizationRoot(receiveRoot)
 	if err != nil {
 		return e.verificationError(id, op, err)
 	}
 	defer root.Close()
-	in, err := root.OpenFile(partialName(fileID), os.O_CREATE|os.O_RDWR, 0600)
+	in, err := openPrivatePartial(root, fileID)
 	if err != nil {
 		return e.verificationError(id, op, err)
 	}
@@ -748,27 +826,69 @@ func (e *Engine) CompleteFile(ctx context.Context, id, fileID, hash string) erro
 	if r.Transfer.State != "verifying" || e.verifications[id] != op || verificationCtx.Err() != nil {
 		return ErrConflict
 	}
-	if _, err = root.Lstat(filepath.FromSlash(f.Path)); err == nil {
+	if r.Organization.DetectDuplicates && r.Transfer.Files[i].DuplicateState != "checked" && r.Transfer.Files[i].DuplicateState != "keep" {
+		if r.LegacyVerified == nil {
+			r.LegacyVerified = map[string]string{}
+		}
+		r.LegacyVerified[fileID] = hash
+		r.Transfer.State = "checkingDuplicate"
+		if err = e.saveLocked(r); err != nil {
+			return err
+		}
+		e.mu.Unlock()
+		candidate, checkErr := e.findDuplicate(op.ctx, hash, f.Size)
+		e.mu.Lock()
+		r, err = e.getLocked(id)
+		if err != nil {
+			return err
+		}
+		if e.verifications[id] != op || op.ctx.Err() != nil || r.Transfer.State != "checkingDuplicate" {
+			return ErrConflict
+		}
+		if checkErr != nil {
+			r.Transfer.State = "running"
+			r.Transfer.Error = "Duplicate check interrupted; retry completion."
+			_ = e.saveLocked(r)
+			return checkErr
+		}
+		if candidate != nil {
+			_, err = e.duplicateResultLocked(r, i, op, candidate)
+			return err
+		}
+		r.Transfer.Files[i].DuplicateState = "checked"
+		r.Transfer.State = "verifying"
+		if err = e.saveLocked(r); err != nil {
+			return err
+		}
+	}
+	if err = ensureOrganizationDirs(root, path.Dir(destination(f))); err != nil {
+		return e.failLocked(r, err)
+	}
+	if _, err = root.Lstat(filepath.FromSlash(destination(f))); err == nil {
 		return e.failLocked(r, fmt.Errorf("%w: destination already exists", ErrConflict))
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return e.failLocked(r, err)
 	}
 	// Both publication mechanisms refuse to replace an existing file. The
 	// rename fallback also supports exFAT, which has no hardlinks.
-	if err = publish(root, partialName(fileID), filepath.FromSlash(f.Path)); err != nil {
+	if err = publish(root, partialName(fileID), filepath.FromSlash(destination(f))); err != nil {
 		return e.failLocked(r, err)
 	}
-	if err = syncRootDirectory(root, filepath.Dir(filepath.FromSlash(f.Path))); err != nil {
+	if err = syncRootDirectory(root, filepath.Dir(filepath.FromSlash(destination(f)))); err != nil {
 		return e.failLocked(r, err)
 	}
 	r.Transfer.Files[i].SHA256 = hash
 	r.Transfer.Files[i].Completed = true
+	delete(r.LegacyVerified, fileID)
 	r.Transfer.State = "running"
 	r.Transfer.BytesPerSecond = 0
 	if allComplete(r.Transfer.Files) {
 		r.Transfer.State = "completed"
 	}
 	if err = e.saveLocked(r); err != nil {
+		return err
+	}
+	if err = e.indexFileLocked(r, r.Transfer.Files[i]); err != nil {
 		return err
 	}
 	return e.scheduleLocked()
@@ -820,24 +940,31 @@ func (e *Engine) recoverIncoming(r *record) error {
 	if err := e.ensureIncoming(r); err != nil {
 		return err
 	}
-	root, err := os.OpenRoot(r.ReceiveRoot)
+	root, err := organizationRoot(r.ReceiveRoot)
 	if err != nil {
 		return err
 	}
 	defer root.Close()
 	r.Transfer.CompletedBytes = 0
+	r.Transfer.SkippedBytes = 0
 	for i, f := range r.Transfer.Files {
 		if f.Directory {
 			continue
 		}
 		if f.Completed {
-			r.Transfer.CompletedBytes += f.Size
+			r.Transfer.CompletedBytes += f.Received
+			if f.Skipped {
+				r.Transfer.SkippedBytes += f.Size - f.Received
+			}
 			continue
 		}
 		// Publication may have completed immediately before a process crash,
 		// while the SQLite completion record did not. Reconcile using the
 		// expected hash persisted before publication; never overwrite it.
-		if final, openErr := root.Open(filepath.FromSlash(f.Path)); openErr == nil {
+		if finalInfo, statErr := root.Lstat(filepath.FromSlash(destination(f))); statErr == nil && finalInfo.Mode()&os.ModeSymlink != 0 {
+			return ErrConflict
+		}
+		if final, openErr := root.Open(filepath.FromSlash(destination(f))); openErr == nil {
 			info, statErr := final.Stat()
 			h := sha256.New()
 			_, hashErr := io.CopyBuffer(h, final, make([]byte, 256*1024))
@@ -853,7 +980,7 @@ func (e *Engine) recoverIncoming(r *record) error {
 		} else if !errors.Is(openErr, fs.ErrNotExist) {
 			return openErr
 		}
-		partial, err := root.OpenFile(partialName(f.ID), os.O_CREATE|os.O_RDWR, 0600)
+		partial, err := openPrivatePartial(root, f.ID)
 		if err != nil {
 			return err
 		}
@@ -994,7 +1121,7 @@ func (e *Engine) OpenDownload(id, fileID string) (*os.File, model.File, error) {
 	}
 	f := r.Transfer.Files[i]
 	src, ok := r.Sources[fileID]
-	if r.Transfer.Direction != "send" || !ok || f.Directory || r.Transfer.State == "cancelled" || r.Transfer.State == "failed" {
+	if r.Transfer.Direction != "send" || !ok || f.Directory || f.Skipped || r.Transfer.State == "cancelled" || r.Transfer.State == "failed" {
 		e.mu.Unlock()
 		return nil, model.File{}, ErrConflict
 	}
@@ -1107,6 +1234,12 @@ func (e *Engine) MarkOutgoingProgress(id, fileID string, received int64, hash st
 	if r.Transfer.Direction != "send" || terminal(r.Transfer.State) || received < 0 || received > f.Size {
 		return ErrConflict
 	}
+	if f.Skipped {
+		if received == f.Received && (hash == "" || hash == f.SHA256) {
+			return nil
+		}
+		return ErrConflict
+	}
 	r.Transfer.CompletedBytes += received - f.Received
 	f.Received = received
 	tick := time.Now()
@@ -1140,7 +1273,7 @@ func (e *Engine) CompleteOutgoingFile(id, fileID, hash string) error {
 	if r.Transfer.Direction == "send" && f.Completed && f.SHA256 == hash {
 		return nil
 	}
-	if r.Transfer.Direction != "send" || terminal(r.Transfer.State) || f.Received != f.Size {
+	if r.Transfer.Direction != "send" || r.Transfer.State == "paused" || terminal(r.Transfer.State) || f.Received != f.Size {
 		return ErrConflict
 	}
 	f.Completed = true

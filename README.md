@@ -6,7 +6,7 @@
 
 AirLink transfers files and folders between computers and browsers on the same local network. It combines a native macOS app with a portable Windows/Linux service and a web interface for macOS, Windows, Linux, Android, and iOS.
 
-**Current version: 0.3.0. Repository status: private development.** Source and release downloads are available only to people with access to this repository. The source is MIT licensed; repository visibility remains private. The private 0.3 preview has completed local verification and packaging. Current checks, physical acceptance limits and historical 0.1/0.2 results are separated in [TESTING.md](docs/TESTING.md).
+**Current version: 0.4.0. Repository status: private development preview.** Source and release downloads are available only to people with access to this repository. The source is MIT licensed; repository visibility remains private. Version 0.4 implements optional incoming-file organization. Final automated verification, private packaging, physical acceptance limits, and historical results remain separate delivery states recorded in [TESTING.md](docs/TESTING.md).
 
 ## The local transfer foundation
 
@@ -23,7 +23,7 @@ AirLink transfers files and folders between computers and browsers on the same l
 
 The complete web interface is embedded in the desktop service. Normal use needs no account, cloud relay, external website, CDN, or internet connection. Downloading dependencies and building from source requires internet access initially.
 
-Content-based duplicate handling and optional automatic sorting remain planned additions. See the [roadmap](docs/ROADMAP.md).
+Version 0.4 adds **optional duplicate decisions and extension-based sorting for new desktop receives**. Both are off by default, including upgrades. They do not organize browser-managed downloads or relay payloads. See the [organization workflow](#optional-incoming-file-organization) and [roadmap](docs/ROADMAP.md).
 
 ## Choose how to run it
 
@@ -40,7 +40,7 @@ Platform builds are distinct from platform runtime verification. The current evi
 
 ### macOS
 
-1. Download `AirLink-0.3.0-macos-universal.dmg` from the repository's [Releases](https://github.com/lucasfd3/Airlink/releases) when that version's asset is available.
+1. Download `AirLink-0.4.0-macos-universal.dmg` from the repository's [Releases](https://github.com/lucasfd3/Airlink/releases) when that version's asset is available.
 2. Open the disk image and drag **AirLink.app** to **Applications**, replacing the previous AirLink app if present.
 3. Open AirLink. Keep only the intended current app in `/Applications`; app updates preserve the separate AirLink data directory and received files.
 4. Open the QR button to connect a browser, or **Connect device** to pair another computer.
@@ -104,6 +104,25 @@ Clipboard permission is **off by default**, including devices paired before 0.2.
 
 Each text must contain **1 to 65,536 UTF-8 bytes (64 KiB)**. AirLink keeps up to **100 recent text messages for at most one hour in process memory**, with no database persistence. Restarting the host clears those messages; dismiss removes a message, and revoking a device removes its messages. Copying text remains an explicit user action.
 
+## Optional incoming-file organization
+
+Duplicate detection and sorting are independent host settings, both **off by default** for new and migrated installations. They apply only to files received by a desktop AirLink service. Enabling them never moves existing or active files, scans an arbitrary user library, or changes browser download-manager and relay behavior.
+
+Enable duplicate detection to compare **SHA-256 plus size** with an index of AirLink-managed, verified received files. Existing completed incoming history can populate that index; clearing transfer history does not erase the index. A filename match alone is insufficient. AirLink streams and revalidates an existing candidate before presenting it, and checks the chosen candidate again when the host selects Skip. Missing, modified, replaced, or symlink candidates cannot silently discard a new incoming file.
+
+The sending device waits while the **host** chooses:
+
+- **Keep / Receive a new copy:** receive a separate file in this transfer's planned destination. Existing files are never overwritten.
+- **Skip / Use existing:** leave the existing file in place and mark this incoming entry skipped, without copying it or creating a placeholder. Showing or copying the existing candidate path is an explicit private host action; the sender receives no candidate IDs, existing paths, or host destination mappings.
+
+If the same content has another filename, it can still be a candidate; equal filenames with different content are not duplicates. Source originals and existing received files are never automatically deleted, rewritten, or moved. An explicit Skip may remove this transfer's private staging file after validation; it never removes the indexed original. Existing directory structure may remain.
+
+Optional sorting uses editable, ordered extension-to-folder rules; the first match wins. Localized Images/Videos/Audio/Documents/Archives examples are editable drafts and enable nothing until you explicitly configure and save them. Destination folders must be safe relative paths. Only **top-level individual files** are classified: transferred folders and their hierarchy stay together unchanged. Rules are snapshotted when each incoming offer is created, so later settings changes affect only new offers. Invalid, conflicting, case-colliding, or unsafe destinations are rejected before receiving; existing destinations are not overwritten.
+
+Updated senders prepare each hashed file before payload transfer. A browser shows host-attention states and resumes from its saved checksums after the decision. Older senders can still reach the same host choice after full-file verification; `complete` returns HTTP 409 while that choice is pending, rather than reporting success. Keep can publish already-verified staging even if the sender disconnects.
+
+Progress combines actual confirmed bytes with avoided bytes, while statistics keep them separate. A skipped entry does **not** represent a newly received file or extra network traffic. Downloads and share exports exclude skipped payloads; a transfer whose files were all skipped cannot create a file share or serve the existing candidate through that transfer.
+
 ## Browser-to-browser relay
 
 Pair both browsers with the same running desktop host and grant **Browser relay** permission to both devices. This permission is off by default for new and existing pairings. The sender also needs file-send permission; the recipient needs file-receive permission. Choose the other authorized browser as the target, then explicitly accept the offer in that recipient browser. Each new relay requires recipient acceptance, even if ordinary host uploads have auto-accept enabled. The host can pause, resume, or cancel a relay without accepting on the recipient's behalf.
@@ -120,7 +139,7 @@ Set independent **send** and **receive** limits on the host. Each limit is share
 
 **History** filters file and relay records by case-insensitive filename/device search, state, direction, and device. Results are newest first, with up to 500 combined records. Clearing history removes terminal metadata only: completed, failed, cancelled, or relay-delivered entries. It preserves originals, received files, shares, clipboard messages, and active work. A paired browser clears only its own history association; another relay participant's history remains visible to that participant.
 
-Statistics separate confirmed file bytes from unique relay transport bytes/deliveries. Host-only lifetime payload counters remain after history clearing, while totals derived from the remaining history can decrease. **Daily history groups use the record's last activity date in UTC**; they are not a time series of bytes transferred during each calendar day. A transfer resumed on a later day can move its full accumulated history total to that day. Guests see only their own/participant statistics, not host-wide traffic totals.
+Statistics separate confirmed file bytes, skipped files/avoided bytes, and unique relay transport bytes/deliveries. Avoided bytes do not inflate confirmed or lifetime payload traffic. Host-only lifetime payload counters remain after history clearing, while totals derived from the remaining history can decrease. **Daily history groups use the record's last activity date in UTC**; they are not a time series of bytes transferred during each calendar day. A transfer resumed on a later day can move its full accumulated history total to that day. Guests see only their own/participant statistics, not host-wide traffic totals.
 
 On macOS, change or disable the global shortcut in **Settings → Quick send**. Recording captures a key only while that Settings control has focus; it does not install a global keystroke monitor. Command or Control is required, with optional Shift/Option. Existing settings migrate to ⇧⌘L unless a shortcut was explicitly disabled. A conflicting replacement preserves the previous registration and displays an error; the UI distinguishes the registered shortcut from a pending draft.
 
@@ -143,7 +162,7 @@ Browser downloads are saved by the browser's download manager. Individual downlo
 | Linux settings, pairing identity, transfer database | `$XDG_CONFIG_HOME/AirLink`, or `~/.config/AirLink` |
 | Received files | `~/Downloads/AirLink`, configurable locally |
 
-The private state directory contains the TLS identity, device credentials, settings, SQLite transfer/relay metadata, durable share definitions/sessions, and lifetime payload counters. Relay payload blocks and clipboard text are not persisted there. Authorized owners can recover share links after restart, so protect this directory as private application data. Keep application state separate from the bundle. Sending and sharing reference selected source files; they do not move, replace, or create a whole-file staging copy of the originals.
+The private state directory contains the TLS identity, device credentials, settings, SQLite transfer/relay metadata, the verified managed-file duplicate index, durable share definitions/sessions, and lifetime payload counters. Relay payload blocks and clipboard text are not persisted there. Authorized owners can recover share links after restart, so protect this directory as private application data. Keep application state separate from the bundle. Sending and sharing reference selected source files; they do not move, replace, or create a whole-file staging copy of the originals.
 
 Portable service options:
 
@@ -176,10 +195,10 @@ bash scripts/package.sh
 
 Set `AIRLINK_GO=/absolute/path/to/go` when Go is not on your PATH. To rebuild only the macOS app after both macOS helpers exist, use `bash scripts/build-macos.sh`.
 
-All automated tests run in the background. There are no UI automation tests that take over the desktop. See [testing instructions and verification limits](docs/TESTING.md), the [architecture](docs/ARCHITECTURE.md), the [base protocol](docs/API.md), the [0.2 additions](docs/API-0.2.md), and the [0.3 additions](docs/API-0.3.md).
+All automated tests run in the background. There are no UI automation tests that take over the desktop. See [testing instructions and verification limits](docs/TESTING.md), the [architecture](docs/ARCHITECTURE.md), the [base protocol](docs/API.md), the [0.2 additions](docs/API-0.2.md), the [0.3 additions](docs/API-0.3.md), and the [0.4 organization contract](docs/API-0.4.md).
 
 ## Versions and license
 
-AirLink uses **MAJOR.MINOR.PATCH** versions. New pre-1.0 capabilities advance the minor version; fixes advance the patch version. Release tags use `v0.3.0` form. A compiled binary, local package, GitHub release, and public release are separate delivery states.
+AirLink uses **MAJOR.MINOR.PATCH** versions. New pre-1.0 capabilities advance the minor version; fixes advance the patch version. Release tags use `v0.4.0` form. A compiled binary, local package, GitHub release, and public release are separate delivery states.
 
 Copyright © 2026 lucasfd3. Licensed under the [MIT License](LICENSE).

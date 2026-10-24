@@ -13,7 +13,7 @@ func actualHelperStatusAndSettingsUseNativeContract() async throws {
     do {
         let data = try await client.request("status")
         let status = try JSONDecoder().decode(HostStatus.self, from: data)
-        #expect(status.version == "0.3.0")
+        #expect(status.version == "0.4.0")
         #expect(status.chunkSize == 8 * 1024 * 1024)
         #expect(status.fingerprint.count == 64)
         #expect(!status.urls.isEmpty)
@@ -24,6 +24,7 @@ func actualHelperStatusAndSettingsUseNativeContract() async throws {
         settings.sendLimitBytesPerSecond = 4 * 1024 * 1024
         settings.receiveLimitBytesPerSecond = 8 * 1024 * 1024
         settings.shortcut = Shortcut(enabled: false)
+        settings.organization = Organization(detectDuplicates: true, sortEnabled: true, rules: [SortRule(id: "test-images", extensions: ["png"], folder: "Images")])
         let response = try await client.request("settings.update", params: JSONEncoder().encode(settings))
         #expect(try JSONDecoder().decode(HostSettings.self, from: response) == settings)
         let updated = try JSONDecoder().decode(HostStatus.self, from: await client.request("status"))

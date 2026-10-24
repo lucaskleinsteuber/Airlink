@@ -5,6 +5,7 @@ import { featureText } from './features-i18n';
 import { messages, systemLanguage } from './i18n';
 import type { Language } from './i18n';
 import { bytes } from './protocol';
+import { fileHasPayload } from './organization';
 import { publicSharePath, shareState } from './sharing';
 import type { Share } from './types';
 function preference(key: string, fallback: string): string { try { return localStorage.getItem(key) || fallback; } catch { return fallback; } }
@@ -69,7 +70,7 @@ export function ShareRecipient({ id, secret }: { id: string; secret: string }) {
       else setProblem(error instanceof APIError ? t.shareError : t.networkError);
     } finally { setBusy(false); }
   }
-  const files = share?.files.filter(file => !file.directory) || [];
+  const files = share?.files.filter(fileHasPayload) || [];
   const state = share ? shareState(share) : undefined;
   return <div className="shell share-recipient">
     <header className="masthead"><a className="brand" href="/"><span className="brand-mark"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round"><path d="M10 13a5 5 0 0 0 7 .2l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7-.2l-3 3a5 5 0 0 0 7 7l2-2" /></svg></span>AirLink</a><div className="preferences">
@@ -94,7 +95,7 @@ export function ShareRecipient({ id, secret }: { id: string; secret: string }) {
         <p className="mobile-note">{t.downloadHelp}</p><p className="mobile-note">{t.shareLocal}</p>
       </section>}
       <a className="text-link" href="/setup">{t.secureSetup}</a>
-    </main><footer><span>{t.privacy}</span><span>AirLink 0.3.0</span></footer>
+    </main><footer><span>{t.privacy}</span><span>AirLink 0.4.0</span></footer>
   </div>;
 }
 export function InvalidShare() {

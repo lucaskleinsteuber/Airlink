@@ -241,6 +241,10 @@ func normalize(files []model.File) ([]model.File, int64, error) {
 	var total int64
 	empty := sha256.Sum256(nil)
 	for i, f := range files {
+		f.DestinationPath = ""
+		f.DuplicateCandidates = nil
+		f.DuplicateState = ""
+		f.Skipped = false
 		validID := len(f.ID) > 0 && len(f.ID) <= 128
 		for _, c := range f.ID {
 			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_') {

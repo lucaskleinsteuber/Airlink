@@ -1,6 +1,6 @@
 # AirLink roadmap
 
-This roadmap separates the established 0.1/0.2 baseline, implemented 0.3 preview capabilities, and future capabilities. Milestones are capability boundaries, not release dates. Version numbers use MAJOR.MINOR.PATCH; patch releases fix the current minor release without claiming a later milestone is complete. Source implementation, final automated verification, private release packaging, and physical acceptance are separate states.
+This roadmap separates the established 0.1/0.2 baseline, implemented 0.3/0.4 preview capabilities, and future capabilities. Milestones are capability boundaries, not release dates. Version numbers use MAJOR.MINOR.PATCH; patch releases fix the current minor release without claiming a later milestone is complete. Source implementation, final automated verification, private release packaging, and physical acceptance are separate states.
 
 ## 0.1 — Local transfer foundation
 
@@ -29,13 +29,19 @@ These capabilities reached the private 0.2 development package. Completed observ
 
 Consolidated local 0.3 verification and private package creation are complete; see [TESTING.md](TESTING.md). Carbon shortcut registration, Finder behavior, login startup, browser interaction, and physical networking still need runtime evidence; no UI automation is added. A new 100 GiB run has not been performed.
 
-## 0.4 — Optional organization
+## 0.4 — Optional incoming-file organization (implemented preview)
 
-- Content-based duplicate identification with a visible choice to show or skip matching files. Never automatically delete existing or original files.
-- Opt-in sorting of received files, disabled by default. Sending must continue to preserve the source files and their locations.
+- Separate duplicate-detection and sorting opt-ins, both off for new and migrated settings, with no silently installed rules. Editable localized examples remain drafts until explicitly saved.
+- SHA-256-plus-size duplicate decisions against managed verified received files only, with streaming candidate revalidation and a second check at explicit host Skip. The persistent index survives history clearing; arbitrary user libraries are not scanned.
+- Private host Keep/Skip and explicit candidate-path actions. No automatic deletion, overwrite, movement or whole-file source copy; Skip creates no fake received payload. Candidate identities and host paths stay out of guest/peer responses.
+- Ordered extension rules for top-level individual files only, immutable per-offer destination snapshots and collision/path validation. Transferred folders stay together; settings changes affect new offers only.
+- Updated-source preparation, host-attention states, cached checksum reuse and legacy completion compatibility: HTTP 409 remains pending until a host decision; verified staging can be kept without a connected sender.
+- Actual transferred bytes, avoided bytes and relay transport remain separate. Skipped files are excluded from downloads/exports; all-skipped transfers cannot become file shares.
 
-## 1.0 — Accepted and maintainable
+Implementation is present in the private 0.4 preview. Final automated verification, packages and delivery evidence are recorded separately in [TESTING.md](TESTING.md). Manual organization decisions, real filesystem/platform behavior and cross-device acceptance remain part of the 1.0 acceptance work; no desktop-controlling UI tests are added.
 
-Reach the full agreed platform, reliability, integrity, security, usability, and distribution acceptance bar. Stable release claims require completed evidence, including real cross-device transfers, large single files, interrupted transfers, platform-specific file handling, and macOS distribution checks.
+## 1.0 — Accepted and maintainable (physical acceptance pending)
+
+Still pending: reach the full agreed platform, reliability, integrity, security, usability, and distribution acceptance bar. Stable release claims require completed evidence, including real cross-device transfers, large single files, interrupted transfers, platform-specific file handling, and macOS distribution checks.
 
 Native Windows, Linux, Android, or iOS UI clients beyond the portable desktop service and browser interface remain possible future work; no delivery date is assigned.

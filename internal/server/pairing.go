@@ -151,8 +151,16 @@ func validPeerURL(raw string) bool {
 	}
 	return strings.HasSuffix(strings.ToLower(host), ".local") || host == "localhost"
 }
+
+type peerHTTPError struct {
+	Code    int
+	Message string
+}
+
+func (e *peerHTTPError) Error() string { return fmt.Sprintf("peer HTTP %d: %s", e.Code, e.Message) }
+
 func requestJSON(ctx context.Context, client *http.Client, method, raw, token string, value any, out any) error {
-	if !strings.HasSuffix(raw, "/complete") {
+	if !strings.HasSuffix(raw, "/complete") && !strings.HasSuffix(raw, "/prepare") {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
@@ -180,7 +188,7 @@ func requestJSON(ctx context.Context, client *http.Client, method, raw, token st
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		b, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
-		return fmt.Errorf("peer HTTP %d: %s", res.StatusCode, b)
+		return &peerHTTPError{Code: res.StatusCode, Message: string(b)}
 	}
 	if out != nil {
 		return json.NewDecoder(io.LimitReader(res.Body, 4<<20)).Decode(out)

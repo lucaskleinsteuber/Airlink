@@ -27,6 +27,7 @@ describe('upload protocol with an in-memory host', () => {
     let completed = false;
     vi.stubGlobal('fetch', vi.fn(async (url: string, options?: RequestInit) => {
       expect(url).not.toContain('/chunks/');
+      if (url.endsWith('/prepare')) return new Response(JSON.stringify({ error: 'Old host endpoint not found' }), { status: 404 });
       if (url.endsWith('/complete')) {
         expect(JSON.parse(options!.body as string)).toEqual({ sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' });
         completed = true; transfer.files[0].completed = true; transfer.state = 'completed';
@@ -45,6 +46,7 @@ describe('upload protocol with an in-memory host', () => {
     const { transfer, manifest } = fixture(file);
     const offsets: number[] = []; let complete = false; let loseResponse = true;
     vi.stubGlobal('fetch', vi.fn(async (url: string, options?: RequestInit) => {
+      if (url.endsWith('/prepare')) return new Response(JSON.stringify({ error: 'Old host endpoint not found' }), { status: 404 });
       if (url.includes('/chunks/')) {
         const index = Number(url.split('/').at(-1)); offsets.push(index);
         const data = new Uint8Array(options!.body as ArrayBuffer);
@@ -73,6 +75,7 @@ describe('upload protocol with an in-memory host', () => {
     let finishVerification: (() => void) | undefined;
     let completedResponse = false;
     vi.stubGlobal('fetch', vi.fn(async (url: string, options?: RequestInit) => {
+      if (url.endsWith('/prepare')) return new Response(JSON.stringify({ error: 'Old host endpoint not found' }), { status: 404 });
       if (url.includes('/chunks/')) { transfer.files[0].received = file.size; return response({ received: file.size }); }
       if (url.endsWith('/complete')) {
         verificationSignal = options?.signal as AbortSignal;

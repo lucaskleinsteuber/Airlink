@@ -9,6 +9,11 @@ public struct TransferFile: Codable, Identifiable, Sendable {
     public var sha256: String?
     public var received: Int64
     public var completed: Bool
+    public var destinationPath: String?
+    public var skipped: Bool?
+    public var duplicateState: String?
+    public var duplicateCandidates: [DuplicateCandidate]?
+    public var isSkipped: Bool { skipped ?? false }
 }
 
 public struct Transfer: Codable, Identifiable, Sendable {
@@ -25,13 +30,22 @@ public struct Transfer: Codable, Identifiable, Sendable {
     public var updatedAt: String
     public var error: String?
     public var destination: String?
+    public var skippedBytes: Int64?
+    public var avoidedBytes: Int64 { max(0, skippedBytes ?? 0) }
+    public var accountedBytes: Int64 {
+        let confirmed = max(0, completedBytes)
+        return confirmed > Int64.max - avoidedBytes ? Int64.max : confirmed + avoidedBytes
+    }
 
     public var fractionCompleted: Double {
         if state == "completed" { return 1 }
         guard totalBytes > 0 else { return 0 }
-        return min(1, max(0, Double(completedBytes) / Double(totalBytes)))
+        return min(1, max(0, Double(accountedBytes) / Double(totalBytes)))
     }
-    public var isActive: Bool { ["offered", "queued", "running", "paused", "reconnecting", "verifying"].contains(state) }
+    public var isActive: Bool { ["offered", "queued", "running", "paused", "reconnecting", "verifying", "checkingDuplicate", "waitingDuplicate"].contains(state) }
+    public var pendingDuplicateFiles: [TransferFile] { direction == "receive" ? files.filter { $0.duplicateState == "pending" && !$0.isSkipped } : [] }
+    public var canResolveDuplicates: Bool { direction == "receive" && ["waitingDuplicate", "running", "queued"].contains(state) }
+    public var hasReceivedContent: Bool { direction == "receive" && files.contains { $0.directory == true || ($0.completed && !$0.isSkipped) } }
     public var title: String { files.first?.path.components(separatedBy: "/").last ?? "Transfer" }
 }
 
@@ -81,12 +95,14 @@ public struct HostSettings: Codable, Equatable, Sendable {
     public var sendLimitBytesPerSecond: Int64
     public var receiveLimitBytesPerSecond: Int64
     public var shortcut: Shortcut
-    public init(name: String = "", receiveDirectory: String = "", appearance: String = "system", language: String = "de", notifications: Bool = true, sendLimitBytesPerSecond: Int64 = 0, receiveLimitBytesPerSecond: Int64 = 0, shortcut: Shortcut = Shortcut()) {
+    public var organization: Organization
+    public init(name: String = "", receiveDirectory: String = "", appearance: String = "system", language: String = "de", notifications: Bool = true, sendLimitBytesPerSecond: Int64 = 0, receiveLimitBytesPerSecond: Int64 = 0, shortcut: Shortcut = Shortcut(), organization: Organization = Organization()) {
         self.name = name; self.receiveDirectory = receiveDirectory; self.appearance = appearance; self.language = language; self.notifications = notifications
         self.sendLimitBytesPerSecond = sendLimitBytesPerSecond; self.receiveLimitBytesPerSecond = receiveLimitBytesPerSecond; self.shortcut = shortcut
+        self.organization = organization
     }
     enum CodingKeys: String, CodingKey {
-        case name, receiveDirectory, appearance, language, notifications, sendLimitBytesPerSecond, receiveLimitBytesPerSecond, shortcut
+        case name, receiveDirectory, appearance, language, notifications, sendLimitBytesPerSecond, receiveLimitBytesPerSecond, shortcut, organization
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -98,6 +114,7 @@ public struct HostSettings: Codable, Equatable, Sendable {
         sendLimitBytesPerSecond = try c.decodeIfPresent(Int64.self, forKey: .sendLimitBytesPerSecond) ?? 0
         receiveLimitBytesPerSecond = try c.decodeIfPresent(Int64.self, forKey: .receiveLimitBytesPerSecond) ?? 0
         shortcut = try c.decodeIfPresent(Shortcut.self, forKey: .shortcut) ?? Shortcut()
+        organization = try c.decodeIfPresent(Organization.self, forKey: .organization) ?? Organization()
     }
 }
 

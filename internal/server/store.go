@@ -53,6 +53,9 @@ func openStore(dir, receive string) (*stateStore, error) {
 	if s.data.Devices == nil {
 		s.data.Devices = map[string]deviceRecord{}
 	}
+	if s.data.Settings.Organization.Rules == nil {
+		s.data.Settings.Organization.Rules = []model.SortRule{}
+	}
 	if receive != "" {
 		s.data.Settings.ReceiveDirectory = receive
 	}
@@ -73,6 +76,10 @@ func (s *stateStore) snapshot() persisted {
 	s.Lock()
 	defer s.Unlock()
 	p := s.data
+	p.Settings.Organization.Rules = append([]model.SortRule{}, s.data.Settings.Organization.Rules...)
+	for i := range p.Settings.Organization.Rules {
+		p.Settings.Organization.Rules[i].Extensions = append([]string{}, p.Settings.Organization.Rules[i].Extensions...)
+	}
 	p.Devices = map[string]deviceRecord{}
 	for k, v := range s.data.Devices {
 		p.Devices[k] = v

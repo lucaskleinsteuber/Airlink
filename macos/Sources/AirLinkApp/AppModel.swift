@@ -78,10 +78,20 @@ import UserNotifications
             }
             if next.settings.notifications, let previous {
                 for transfer in next.transfers where transfer.state == "completed" && previous.transfers.contains(where: { $0.id == transfer.id && $0.state != "completed" }) {
-                    notify(id: transfer.id, title: text("Übertragung abgeschlossen", "Transfer completed"), body: transfer.title)
+                    let files = transfer.files.filter { $0.directory != true }
+                    let allSkipped = !files.isEmpty && files.allSatisfy(\.isSkipped)
+                    notify(id: transfer.id, title: allSkipped ? text("Ohne neue Dateikopie abgeschlossen", "Finished without a new file copy") : text("Übertragung abgeschlossen", "Transfer completed"), body: transfer.title)
                 }
                 for pair in next.pairRequests where !previous.pairRequests.contains(where: { $0.id == pair.id }) {
                     notify(id: pair.id, title: text("Verbindungsanfrage", "Pairing request"), body: pair.name)
+                }
+                for transfer in next.transfers where transfer.direction == "receive" {
+                    for file in transfer.pendingDuplicateFiles {
+                        let wasPending = previous.transfers.first(where: { $0.id == transfer.id })?.pendingDuplicateFiles.contains(where: { $0.id == file.id }) == true
+                        if !wasPending {
+                            notify(id: "duplicate-\(transfer.id)-\(file.id)", title: text("Duplikat benötigt deine Entscheidung", "Duplicate needs your decision"), body: file.path)
+                        }
+                    }
                 }
             }
         } catch { engineError = error.localizedDescription }
@@ -99,6 +109,7 @@ import UserNotifications
     func update(_ settings: HostSettings) { Task { do { try await saveSettings(settings) } catch { self.error = error.localizedDescription } } }
     func saveSettings(_ settings: HostSettings) async throws {
         guard settings.shortcut.isValid, RateLimit.isValid(settings.sendLimitBytesPerSecond), RateLimit.isValid(settings.receiveLimitBytesPerSecond) else { throw NativeError.unavailable(text("Ungültige Tastenkombination oder Geschwindigkeitsgrenze.", "Invalid shortcut or speed limit.")) }
+        guard settings.organization.isValid else { throw NativeError.unavailable(text("Bitte gültige Dateiendungen und sichere relative Ordner für die Sortierregeln verwenden.", "Use valid extensions and safe relative folders for sorting rules.")) }
         guard let controller = shortcutController else { throw NativeError.unavailable(text("Die Tastenkombination ist noch nicht bereit.", "The shortcut handler is not ready yet.")) }
         let previous = registeredShortcut
         do {
@@ -129,6 +140,28 @@ import UserNotifications
     func clearHistory() async throws {
         _ = try await client.request("history.clear")
         await refresh()
+    }
+    func resolveDuplicate(transferID: String, fileID: String, action: String, candidateID: String? = nil) async throws {
+        guard let transfer = status?.transfers.first(where: { $0.id == transferID }), transfer.canResolveDuplicates,
+              let file = transfer.pendingDuplicateFiles.first(where: { $0.id == fileID }), action == "keep" || action == "skip" else {
+            throw NativeError.unavailable(text("Die Übertragung benötigt eine aktuelle, nicht pausierte Duplikatentscheidung.", "Refresh or resume the transfer before resolving this duplicate."))
+        }
+        if action == "skip", file.duplicateCandidates?.contains(where: { $0.id == candidateID }) != true {
+            throw NativeError.unavailable(text("Die vorhandene Datei muss erneut geprüft werden.", "The existing candidate needs to be checked again."))
+        }
+        var params = ["transferId": transferID, "fileId": fileID, "action": action]
+        if let candidateID { params["candidateId"] = candidateID }
+        _ = try await client.request("duplicate.resolve", params: JSONEncoder().encode(params))
+        await refresh()
+    }
+    func revealDuplicate(_ candidateID: String) async throws {
+        struct CandidatePath: Decodable { var path: String }
+        let response = try await client.request("duplicate.path", params: JSONEncoder().encode(["candidateId": candidateID]))
+        let path = try JSONDecoder().decode(CandidatePath.self, from: response).path
+        guard path.hasPrefix("/"), FileManager.default.fileExists(atPath: path) else {
+            throw NativeError.unavailable(text("Die vorhandene Datei ist nicht mehr verfügbar.", "The existing file is no longer available."))
+        }
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
     }
     func createShare(_ request: ShareCreate) async throws -> Share {
         guard request.hasValidSource else { throw NativeError.unavailable(text("Bitte Dateien oder einen Ordner auswählen.", "Please choose files or a folder.")) }
@@ -184,6 +217,8 @@ import UserNotifications
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
     }
     func revealDestination(_ transfer: Transfer) {
-        if let destination = transfer.destination { NSWorkspace.shared.open(URL(fileURLWithPath: destination)) }
+        if transfer.hasReceivedContent, let destination = transfer.destination, FileManager.default.fileExists(atPath: destination) {
+            NSWorkspace.shared.open(URL(fileURLWithPath: destination))
+        }
     }
 }

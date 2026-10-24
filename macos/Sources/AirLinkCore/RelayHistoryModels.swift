@@ -103,6 +103,8 @@ public struct Statistics: Codable, Sendable {
     public var relayDeliveries: Int64
     public var trafficSentBytes: Int64
     public var trafficReceivedBytes: Int64
+    public var skippedFiles: Int64?
+    public var skippedBytes: Int64?
     public var days: [DayStatistics]?
 }
 

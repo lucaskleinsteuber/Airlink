@@ -79,10 +79,17 @@ func (s *Server) createShare(owner string, input model.ShareCreate) (model.Share
 		}
 		mapped := make([]shares.Source, 0, len(t.Files))
 		for _, file := range t.Files {
-			ref := shares.Source{File: file}
+			if file.Skipped {
+				continue
+			}
+			ref := shares.Source{File: publicFile(file)}
 			if t.Direction == "receive" {
 				ref.Root = t.Destination
-				ref.Path = filepath.Join(t.Destination, filepath.FromSlash(file.Path))
+				path := file.DestinationPath
+				if path == "" {
+					path = file.Path
+				}
+				ref.Path = filepath.Join(t.Destination, filepath.FromSlash(path))
 				// Transfer timestamps describe the sender. Received files have a
 				// local creation time, which becomes the share's immutable snapshot.
 				ref.File.Modified = 0

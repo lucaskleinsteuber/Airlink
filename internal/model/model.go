@@ -1,17 +1,21 @@
 package model
 
-const Version = "0.3.0"
+const Version = "0.4.0"
 const ChunkSize int64 = 8 * 1024 * 1024
 
 type File struct {
-	ID        string `json:"id"`
-	Path      string `json:"path"`
-	Size      int64  `json:"size"`
-	Modified  int64  `json:"modified,omitempty"`
-	Directory bool   `json:"directory,omitempty"`
-	SHA256    string `json:"sha256,omitempty"`
-	Received  int64  `json:"received"`
-	Completed bool   `json:"completed"`
+	ID                  string               `json:"id"`
+	Path                string               `json:"path"`
+	Size                int64                `json:"size"`
+	Modified            int64                `json:"modified,omitempty"`
+	Directory           bool                 `json:"directory,omitempty"`
+	SHA256              string               `json:"sha256,omitempty"`
+	Received            int64                `json:"received"`
+	Completed           bool                 `json:"completed"`
+	DestinationPath     string               `json:"destinationPath,omitempty"`
+	Skipped             bool                 `json:"skipped,omitempty"`
+	DuplicateState      string               `json:"duplicateState,omitempty"`
+	DuplicateCandidates []DuplicateCandidate `json:"duplicateCandidates,omitempty"`
 }
 type Transfer struct {
 	ID             string  `json:"id"`
@@ -27,6 +31,7 @@ type Transfer struct {
 	UpdatedAt      string  `json:"updatedAt"`
 	Error          string  `json:"error,omitempty"`
 	Destination    string  `json:"destination,omitempty"`
+	SkippedBytes   int64   `json:"skippedBytes"`
 }
 type Device struct {
 	ID           string `json:"id"`
@@ -50,14 +55,15 @@ type PairRequest struct {
 	CreatedAt string `json:"createdAt"`
 }
 type Settings struct {
-	Name                       string   `json:"name"`
-	ReceiveDirectory           string   `json:"receiveDirectory"`
-	Appearance                 string   `json:"appearance"`
-	Language                   string   `json:"language"`
-	Notifications              bool     `json:"notifications"`
-	SendLimitBytesPerSecond    int64    `json:"sendLimitBytesPerSecond"`
-	ReceiveLimitBytesPerSecond int64    `json:"receiveLimitBytesPerSecond"`
-	Shortcut                   Shortcut `json:"shortcut"`
+	Name                       string       `json:"name"`
+	ReceiveDirectory           string       `json:"receiveDirectory"`
+	Appearance                 string       `json:"appearance"`
+	Language                   string       `json:"language"`
+	Notifications              bool         `json:"notifications"`
+	SendLimitBytesPerSecond    int64        `json:"sendLimitBytesPerSecond"`
+	ReceiveLimitBytesPerSecond int64        `json:"receiveLimitBytesPerSecond"`
+	Shortcut                   Shortcut     `json:"shortcut"`
+	Organization               Organization `json:"organization"`
 }
 type Status struct {
 	Version          string             `json:"version"`
@@ -158,7 +164,26 @@ type Statistics struct {
 	RelayDeliveries      int64           `json:"relayDeliveries"`
 	TrafficSentBytes     int64           `json:"trafficSentBytes"`
 	TrafficReceivedBytes int64           `json:"trafficReceivedBytes"`
+	SkippedFiles         int64           `json:"skippedFiles"`
+	SkippedBytes         int64           `json:"skippedBytes"`
 	Days                 []DayStatistics `json:"days"`
+}
+
+type Organization struct {
+	DetectDuplicates bool       `json:"detectDuplicates"`
+	SortEnabled      bool       `json:"sortEnabled"`
+	Rules            []SortRule `json:"rules"`
+}
+type SortRule struct {
+	ID         string   `json:"id"`
+	Extensions []string `json:"extensions"`
+	Folder     string   `json:"folder"`
+}
+type DuplicateCandidate struct {
+	ID     string `json:"id"`
+	Path   string `json:"path"`
+	Size   int64  `json:"size"`
+	SHA256 string `json:"sha256"`
 }
 type DayStatistics struct {
 	Date               string `json:"date"`

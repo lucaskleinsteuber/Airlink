@@ -73,7 +73,7 @@ req.setTimeout(15000,()=>req.destroy(Error('timeout')));req.on('error',e=>{proce
         with urllib.request.urlopen(setup_url, timeout=15) as response:
             assert status["fingerprint"].encode() in response.read()
         print("PASS: final binary serves embedded production assets over verified TLS; private status requires pairing; public bootstrap fingerprint matches")
-        if status["version"] in ("0.2.0", "0.3.0"):
+        if status["version"] in ("0.2.0", "0.3.0", "0.4.0"):
             original = base / "shared-original.txt"
             content = b"AirLink private share smoke fixture.\n"
             original.write_bytes(content)
@@ -124,7 +124,7 @@ req.setTimeout(15000,()=>req.destroy(Error('timeout')));req.on('error',e=>{proce
             rpc(16, "device.revoke", {"id": device["id"]})
             assert not rpc(17, "status")["clipboard"]
             print("PASS: 0.2 protected share unlock/range/quota/revocation and explicit clipboard permission/guest delivery work in the packaged service")
-        if status["version"] == "0.3.0":
+        if status["version"] in ("0.3.0", "0.4.0"):
             def pair_browser(name, sequence):
                 request = json.loads(exchange("/api/v1/pair/request", "POST", {"name": name, "kind": "browser"})["data"])
                 rpc(sequence, "pair.approve", {"id": request["requestId"]})
@@ -195,6 +195,48 @@ req.setTimeout(15000,()=>req.destroy(Error('timeout')));req.on('error',e=>{proce
             current = rpc(54, "status")
             assert not current["relays"] and current["statistics"]["trafficSentBytes"] == before
             print("PASS: 0.3 explicit-accept browser relay, source-demand ACK, delivered Range retry, shared rate limits, metadata-only disk, history and lifetime statistics work in the packaged service")
+        if status["version"] == "0.4.0":
+            # Uses the paired browser from the relay test, without GUI actions.
+            settings = rpc(60, "status")["settings"]
+            assert not settings["organization"]["detectDuplicates"] and not settings["organization"]["sortEnabled"]
+            settings["organization"] = {"detectDuplicates": True, "sortEnabled": True, "rules": [{"id": "texts", "extensions": ["TXT"], "folder": "Documents"}]}
+            settings["sendLimitBytesPerSecond"] = 0
+            settings["receiveLimitBytesPerSecond"] = 0
+            rpc(61, "settings.update", settings)
+            content = b"Organization uses verified existing content, never filenames.\n"
+            def incoming(name, identifier, sequence):
+                created = exchange("/api/v1/transfers", "POST", {"files": [{"id": identifier, "path": name, "size": len(content)}]}, source_cookie)
+                assert created["status"] == 201
+                transfer = json.loads(created["data"])
+                assert not transfer["files"][0].get("destinationPath")
+                rpc(sequence, "transfer.accept", {"id": transfer["id"]})
+                return transfer, "/api/v1/transfers/" + transfer["id"] + "/files/" + identifier
+            first, route = incoming("first.txt", "first", 62)
+            sha = hashlib.sha256(content).hexdigest()
+            assert json.loads(exchange(route + "/prepare", "POST", {"sha256": sha}, source_cookie)["data"])["decision"] == "upload"
+            assert exchange(route + "/chunks/0", "PUT", cookie=source_cookie, headers={"X-Chunk-SHA256": sha}, raw=content)["status"] == 200
+            assert exchange(route + "/complete", "POST", {"sha256": sha}, source_cookie)["status"] == 200
+            private = rpc(63, "status")
+            received = next(t for t in private["transfers"] if t["id"] == first["id"])
+            actual = pathlib.Path(received["destination"]) / "Documents" / "first.txt"
+            assert actual.read_bytes() == content
+            second, route = incoming("renamed.txt", "second", 64)
+            check = exchange(route + "/prepare", "POST", {"sha256": sha}, source_cookie)
+            prepared = json.loads(check["data"])
+            assert check["status"] == 200 and prepared["decision"] == "pending"
+            assert b"duplicateCandidates" not in check["data"] and b"destinationPath" not in check["data"]
+            pending = next(t for t in rpc(65, "status")["transfers"] if t["id"] == second["id"])
+            candidate = pending["files"][0]["duplicateCandidates"][0]
+            assert rpc(66, "duplicate.path", {"candidateId": candidate["id"]})["path"] == str(actual)
+            finished = rpc(67, "duplicate.resolve", {"transferId": second["id"], "fileId": "second", "action": "skip", "candidateId": candidate["id"]})
+            assert finished["state"] == "completed" and finished["completedBytes"] == 0 and finished["skippedBytes"] == len(content)
+            assert not (pathlib.Path(finished["destination"]) / "Documents" / "renamed.txt").exists()
+            assert actual.read_bytes() == content
+            current = rpc(68, "status")
+            assert current["statistics"]["skippedFiles"] == 1 and current["statistics"]["skippedBytes"] == len(content)
+            shared = rpc(69, "share.create", {"transferId": first["id"]})
+            assert shared["files"][0]["path"] == "first.txt" and not shared["files"][0].get("destinationPath")
+            print("PASS: 0.4 opt-in sorting, private content-based duplicate approval/reveal, explicit zero-payload Skip, accurate avoided-byte counters, and organized share mapping work in the packaged service")
         rpc(2, "shutdown")
         assert process.wait(timeout=10) == 0
     finally:

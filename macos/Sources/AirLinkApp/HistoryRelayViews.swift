@@ -27,7 +27,7 @@ struct HistoryView: View {
                 HStack {
                     Picker(model.text("Status", "State"), selection: $filter.state) {
                         Text(model.text("Alle", "All")).tag("")
-                        ForEach(["offered", "ready", "queued", "running", "paused", "reconnecting", "verifying", "completed", "delivered", "failed", "cancelled"], id: \.self) { Text(model.stateLabel($0)).tag($0) }
+                        ForEach(["offered", "ready", "queued", "running", "paused", "reconnecting", "verifying", "checkingDuplicate", "waitingDuplicate", "completed", "delivered", "failed", "cancelled"], id: \.self) { Text(model.stateLabel($0)).tag($0) }
                     }
                     Picker(model.text("Richtung", "Direction"), selection: $filter.direction) {
                         Text(model.text("Alle", "All")).tag("")
@@ -111,6 +111,9 @@ private struct StatisticsView: View {
                         metric(model.text("Fehlgeschlagen", "Failed"), String(stats.failedTransfers))
                         metric(model.text("Abgebrochen", "Cancelled"), String(stats.cancelledTransfers))
                     }
+                    Text(model.text("Bewusst übersprungene neue Dateien", "Explicitly skipped new files")).font(.headline)
+                    HStack { metric(model.text("Dateien", "Files"), String(stats.skippedFiles ?? 0)); metric(model.text("Vermiedene Übertragung", "Transfer bytes avoided"), TransferFormatting.bytes(stats.skippedBytes ?? 0)) }
+                    Text(model.text("Übersprungene Bytes sind vermiedene Nutzdaten und werden weder bestätigten Empfangsbytes noch lebenslangem Netzwerkverkehr zugerechnet.", "Skipped bytes are avoided payload and do not inflate confirmed receive bytes or lifetime network traffic.")).font(.caption).foregroundStyle(.secondary)
                     Text(model.text("Browser-Relay · Transport", "Browser relay · transport")).font(.headline)
                     HStack { metric(model.text("Transportierte Daten", "Bytes handed to transport"), TransferFormatting.bytes(stats.relayedBytes)); metric(model.text("Transportierte Vorgänge", "Transport deliveries"), String(stats.relayDeliveries)) }
                     Text(model.text("Transportiert bedeutet: an die Browserverbindung übergeben. Der gespeicherte oder geprüfte Dateistand im Browser wird dadurch nicht bestätigt.", "Transport delivery means data was handed to the browser connection. It does not confirm that the browser saved or verified the file.")).font(.caption).foregroundStyle(.secondary)
@@ -191,7 +194,7 @@ struct RelayRow: View {
 
 extension AppModel {
     func stateLabel(_ state: String) -> String {
-        let labels: [String: (String, String)] = ["offered": ("Wartet auf Annahme", "Awaiting acceptance"), "ready": ("Bereit für den Download", "Ready to download"), "queued": ("In Warteschlange", "Queued"), "running": ("Wird übertragen", "Transferring"), "paused": ("Pausiert", "Paused"), "reconnecting": ("Verbindet erneut", "Reconnecting"), "verifying": ("Wird geprüft", "Verifying"), "completed": ("Abgeschlossen", "Completed"), "delivered": ("An Browser transportiert", "Delivered to browser transport"), "failed": ("Fehlgeschlagen", "Failed"), "cancelled": ("Abgebrochen", "Cancelled")]
+        let labels: [String: (String, String)] = ["offered": ("Wartet auf Annahme", "Awaiting acceptance"), "ready": ("Bereit für den Download", "Ready to download"), "queued": ("In Warteschlange", "Queued"), "running": ("Wird übertragen", "Transferring"), "paused": ("Pausiert", "Paused"), "reconnecting": ("Verbindet erneut", "Reconnecting"), "verifying": ("Wird geprüft", "Verifying"), "checkingDuplicate": ("Vorhandene Inhalte werden geprüft", "Checking existing contents"), "waitingDuplicate": ("Wartet auf Duplikatentscheidung", "Awaiting duplicate decision"), "completed": ("Abgeschlossen", "Completed"), "delivered": ("An Browser transportiert", "Delivered to browser transport"), "failed": ("Fehlgeschlagen", "Failed"), "cancelled": ("Abgebrochen", "Cancelled")]
         let label = labels[state] ?? (state, state)
         return text(label.0, label.1)
     }

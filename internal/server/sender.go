@@ -119,6 +119,9 @@ func (s *Server) sendTransfer(ctx context.Context, t model.Transfer, rec deviceR
 		if remote == "" {
 			files := append([]model.File(nil), t.Files...)
 			for i := range files {
+				files[i] = publicFile(files[i])
+				files[i].Skipped = false
+				files[i].DuplicateState = ""
 				files[i].Received = 0
 				files[i].Completed = false
 				files[i].SHA256 = ""
@@ -148,6 +151,9 @@ func (s *Server) sendTransfer(ctx context.Context, t model.Transfer, rec deviceR
 			return
 		}
 		if target.State != "running" && target.State != "completed" {
+			if target.State == "checkingDuplicate" || target.State == "waitingDuplicate" {
+				_ = s.engine.MarkOutgoingWaiting(t.ID, target.State)
+			}
 			if !sleepContext(ctx, time.Second) {
 				return
 			}
@@ -181,6 +187,30 @@ func (s *Server) sendTransfer(ctx context.Context, t model.Transfer, rec deviceR
 				_ = s.engine.CompleteOutgoingFile(t.ID, f.ID, "")
 				continue
 			}
+			var localFile *model.File
+			for i := range current.Files {
+				if current.Files[i].ID == f.ID {
+					localFile = &current.Files[i]
+					break
+				}
+			}
+			if localFile == nil {
+				_ = s.engine.Fail(t.ID, "Receiver changed the file manifest")
+				return
+			}
+			if localFile.Skipped {
+				// A later file may pause for a host decision or reconnect. Its
+				// next pass revisits prior Skip receipts, which deliberately have
+				// no downloadable payload. Reuse their pinned source identity.
+				if !f.Skipped || !f.Completed || f.SHA256 != localFile.SHA256 || f.Size != localFile.Size || f.Received != localFile.Received {
+					_ = s.engine.Fail(t.ID, "Receiver changed a confirmed skipped file")
+					return
+				}
+				if err = s.engine.MarkOutgoingSkipped(t.ID, f.ID, f.Received, localFile.SHA256); err != nil {
+					return
+				}
+				continue
+			}
 			hash, err := s.engine.SourceSHA256(ctx, t.ID, f.ID)
 			if err != nil {
 				if ctx.Err() != nil {
@@ -189,9 +219,38 @@ func (s *Server) sendTransfer(ctx context.Context, t model.Transfer, rec deviceR
 				_ = s.engine.Fail(t.ID, err.Error())
 				return
 			}
+			if f.Skipped {
+				if err = s.engine.MarkOutgoingSkipped(t.ID, f.ID, f.Received, hash); err != nil {
+					return
+				}
+				continue
+			}
 			if f.Completed {
 				_ = s.engine.MarkOutgoingProgress(t.ID, f.ID, f.Size, hash)
 				_ = s.engine.CompleteOutgoingFile(t.ID, f.ID, hash)
+				continue
+			}
+			decision, prepared, prepErr := prepareRemoteFile(ctx, client, base+"/"+remote+"/files/"+f.ID+"/prepare", rec.OutboundToken, hash, remote, f.ID)
+			if prepErr != nil {
+				if ctx.Err() != nil {
+					return
+				}
+				_ = s.engine.MarkReconnecting(t.ID, prepErr.Error())
+				retryTransfer = true
+				break
+			}
+			if decision == "pending" {
+				retryTransfer = true
+				break
+			}
+			if decision == "skip" {
+				for _, pf := range prepared.Files {
+					if pf.ID == f.ID && pf.Skipped {
+						if err = s.engine.MarkOutgoingSkipped(t.ID, f.ID, pf.Received, hash); err != nil {
+							return
+						}
+					}
+				}
 				continue
 			}
 			_ = s.engine.MarkOutgoingProgress(t.ID, f.ID, f.Received, hash)
@@ -258,7 +317,23 @@ func (s *Server) sendTransfer(ctx context.Context, t model.Transfer, rec deviceR
 				retryTransfer = true
 				break
 			}
-			if e = s.engine.CompleteOutgoingFile(t.ID, f.ID, hash); e != nil {
+			var finished *model.File
+			for i := range done.Files {
+				if done.Files[i].ID == f.ID {
+					finished = &done.Files[i]
+					break
+				}
+			}
+			if finished == nil || !finished.Completed {
+				retryTransfer = true
+				break
+			}
+			if finished.Skipped {
+				e = s.engine.MarkOutgoingSkipped(t.ID, f.ID, finished.Received, hash)
+			} else {
+				e = s.engine.CompleteOutgoingFile(t.ID, f.ID, hash)
+			}
+			if e != nil {
 				_ = s.engine.Fail(t.ID, e.Error())
 				return
 			}
@@ -273,6 +348,42 @@ func (s *Server) sendTransfer(ctx context.Context, t model.Transfer, rec deviceR
 			return
 		}
 	}
+}
+
+func prepareRemoteFile(ctx context.Context, client *http.Client, raw, token, hash, transferID, fileID string) (string, model.Transfer, error) {
+	var out struct {
+		Decision string         `json:"decision"`
+		Transfer model.Transfer `json:"transfer"`
+	}
+	err := requestJSON(ctx, client, "POST", raw, token, map[string]string{"sha256": hash}, &out)
+	var status *peerHTTPError
+	if errors.As(err, &status) && status.Code == http.StatusNotFound {
+		// Protocol 1 before 0.4 has no preflight route; full verification still
+		// happens on the receiving service's normal complete endpoint.
+		return "upload", model.Transfer{}, nil
+	}
+	if err != nil {
+		return "", model.Transfer{}, err
+	}
+	if out.Decision != "upload" && out.Decision != "pending" && out.Decision != "skip" {
+		return "", model.Transfer{}, errors.New("invalid duplicate preflight response")
+	}
+	if out.Transfer.ID != transferID {
+		return "", model.Transfer{}, errors.New("receiver changed transfer identity")
+	}
+	found := false
+	for _, f := range out.Transfer.Files {
+		if f.ID == fileID {
+			found = true
+			if out.Decision == "skip" && (!f.Completed || !f.Skipped) {
+				return "", model.Transfer{}, errors.New("receiver did not confirm skipped file")
+			}
+		}
+	}
+	if !found {
+		return "", model.Transfer{}, errors.New("receiver changed file manifest")
+	}
+	return out.Decision, out.Transfer, nil
 }
 func sleepContext(ctx context.Context, d time.Duration) bool {
 	timer := time.NewTimer(d)

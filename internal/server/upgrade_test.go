@@ -148,13 +148,19 @@ func TestUpgradeFromReleased010PreservesData(t *testing.T) {
 }
 
 func TestUpgradeFromReleased020PreservesSharesAndDefaults(t *testing.T) {
-	previous := os.Getenv("AIRLINK_PREVIOUS_HELPER_020")
+	testReleasedUpgrade(t, "AIRLINK_PREVIOUS_HELPER_020", "0.2.0")
+}
+func TestUpgradeFromReleased030PreservesOrganizationMigration(t *testing.T) {
+	testReleasedUpgrade(t, "AIRLINK_PREVIOUS_HELPER_030", "0.3.0")
+}
+func testReleasedUpgrade(t *testing.T, variable, expected string) {
+	previous := os.Getenv(variable)
 	if previous == "" {
-		t.Skip("set AIRLINK_PREVIOUS_HELPER_020 to a built 0.2.0 service")
+		t.Skip("set " + variable + " to a built " + expected + " service")
 	}
 	version, err := exec.Command(previous, "--version").Output()
-	if err != nil || strings.TrimSpace(string(version)) != "0.2.0" {
-		t.Fatal("previous helper must report0.2.0", err)
+	if err != nil || strings.TrimSpace(string(version)) != expected {
+		t.Fatal("previous helper must report "+expected, err)
 	}
 	base := t.TempDir()
 	state, receive := filepath.Join(base, "state"), filepath.Join(base, "receive")
@@ -202,6 +208,10 @@ func TestUpgradeFromReleased020PreservesSharesAndDefaults(t *testing.T) {
 	}
 	var old model.Status
 	rpc("status", nil, &old)
+	if expected == "0.3.0" {
+		rpc("settings.update", map[string]any{"sendLimitBytesPerSecond": int64(123456), "receiveLimitBytesPerSecond": int64(234567), "shortcut": model.Shortcut{Enabled: false, KeyCode: 40, Modifiers: 256}}, nil)
+		rpc("status", nil, &old)
+	}
 	var share model.Share
 	rpc("share.create", model.ShareCreate{Paths: []string{original}, Password: "upgrade-only-password", MaxDownloads: 1}, &share)
 	client := pinnedClient(old.Fingerprint)
@@ -231,6 +241,45 @@ func TestUpgradeFromReleased020PreservesSharesAndDefaults(t *testing.T) {
 	if res.StatusCode != 206 {
 		t.Fatal(res.Status)
 	}
+	// Receive and verify a file using the released protocol before migrating.
+	var pair struct {
+		ID   string `json:"requestId"`
+		Poll string `json:"pollToken"`
+	}
+	if err = requestJSON(context.Background(), client, "POST", baseURL+"/api/v1/pair/request", "", map[string]string{"name": "Upgrade browser", "kind": "browser"}, &pair); err != nil {
+		t.Fatal(err)
+	}
+	rpc("pair.approve", map[string]string{"id": pair.ID}, nil)
+	poll, _ := json.Marshal(map[string]string{"requestId": pair.ID, "pollToken": pair.Poll})
+	paired, err := client.Post(baseURL+"/api/v1/pair/poll", "application/json", bytes.NewReader(poll))
+	if err != nil {
+		t.Fatal(err)
+	}
+	browserCookies := paired.Cookies()
+	paired.Body.Close()
+	if len(browserCookies) == 0 {
+		t.Fatal("no browser session")
+	}
+	browserToken := browserCookies[0].Value
+	var received model.Transfer
+	if err = requestJSON(context.Background(), client, "POST", baseURL+"/api/v1/transfers", browserToken, model.Offer{Files: []model.File{{ID: "old-received", Path: "old.txt", Size: int64(len(payload))}}}, &received); err != nil {
+		t.Fatal(err)
+	}
+	rpc("transfer.accept", map[string]string{"id": received.ID}, nil)
+	chunk, _ := http.NewRequest("PUT", baseURL+"/api/v1/transfers/"+received.ID+"/files/old-received/chunks/0", bytes.NewReader(payload))
+	chunk.Header.Set("Authorization", "Bearer "+browserToken)
+	chunk.Header.Set("X-Chunk-SHA256", digest(payload))
+	uploaded, err := client.Do(chunk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uploaded.Body.Close()
+	if uploaded.StatusCode != 200 {
+		t.Fatal(uploaded.Status)
+	}
+	if err = requestJSON(context.Background(), client, "POST", baseURL+"/api/v1/transfers/"+received.ID+"/files/old-received/complete", browserToken, map[string]string{"sha256": digest(payload)}, nil); err != nil {
+		t.Fatal(err)
+	}
 	rpc("shutdown", nil, nil)
 	_ = in.Close()
 	if err = cmd.Wait(); err != nil {
@@ -243,7 +292,7 @@ func TestUpgradeFromReleased020PreservesSharesAndDefaults(t *testing.T) {
 	}
 	defer next.Close()
 	status := next.Status()
-	if status.Version != model.Version || status.ID != old.ID || status.Fingerprint != old.Fingerprint || status.Settings.ReceiveDirectory != receive || status.Settings.Shortcut != (model.Shortcut{Enabled: true, KeyCode: 37, Modifiers: 768}) || status.Settings.SendLimitBytesPerSecond != 0 {
+	if status.Version != model.Version || status.ID != old.ID || status.Fingerprint != old.Fingerprint || status.Settings.ReceiveDirectory != receive || status.Settings.Shortcut != old.Settings.Shortcut || status.Settings.SendLimitBytesPerSecond != old.Settings.SendLimitBytesPerSecond || status.Settings.ReceiveLimitBytesPerSecond != old.Settings.ReceiveLimitBytesPerSecond || status.Settings.Organization.DetectDuplicates || status.Settings.Organization.SortEnabled || status.Settings.Organization.Rules == nil {
 		t.Fatal("upgrade changed identity or defaults")
 	}
 	summary, err := next.shares.Session(share.ID, cookie.Value)
@@ -257,4 +306,26 @@ func TestUpgradeFromReleased020PreservesSharesAndDefaults(t *testing.T) {
 	if err != nil || !bytes.Equal(got, payload) {
 		t.Fatal("original changed")
 	}
+	device, ok := next.store.authenticate(browserToken)
+	if !ok || device.CanRelay || device.CanClipboard {
+		t.Fatal("migration lost trust or enabled rights")
+	}
+	historical, err := next.engine.Get(received.ID)
+	if err != nil || historical.State != "completed" {
+		t.Fatal("received history lost", err)
+	}
+	if data, err := os.ReadFile(filepath.Join(historical.Destination, "old.txt")); err != nil || !bytes.Equal(data, payload) {
+		t.Fatal("received file changed", err)
+	}
+	organizationSettings(t, next, model.Organization{DetectDuplicates: true})
+	device.AutoAccept = true
+	incoming, err := next.engine.CreateIncoming(device, []model.File{{ID: "new", Path: "renamed.txt", Size: int64(len(payload))}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision, err := next.engine.PrepareFile(context.Background(), incoming.ID, "new", digest(payload))
+	if err != nil || decision != "pending" {
+		t.Fatal("legacy verified file missing from duplicate index", decision, err)
+	}
+
 }

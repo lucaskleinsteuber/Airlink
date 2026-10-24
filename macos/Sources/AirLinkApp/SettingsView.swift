@@ -54,6 +54,7 @@ struct SettingsView: View {
                 }
                 Text(model.text("Originaldateien werden beim Senden nicht verschoben oder verändert.", "Sending never moves or changes your original files.")).font(.caption).foregroundStyle(.secondary)
             }
+            OrganizationSection(organization: $settings.organization).environmentObject(model)
             Section(model.text("Geschwindigkeit", "Speed")) {
                 RateLimitEditor(title: model.text("Senden begrenzen", "Limit sending"), enabled: $sendEnabled, amount: $sendAmount, unit: $sendUnit)
                 RateLimitEditor(title: model.text("Empfangen begrenzen", "Limit receiving"), enabled: $receiveEnabled, amount: $receiveAmount, unit: $receiveUnit)
@@ -82,7 +83,7 @@ struct SettingsView: View {
                 Text(model.text("Im Finder: Rechtsklick → Dienste → Mit AirLink senden. Die App läuft beim Schließen des Fensters in der Menüleiste weiter.", "In Finder: right-click → Services → Send with AirLink. Closing the window keeps the app running in the menu bar.")).font(.caption).foregroundStyle(.secondary)
             }
             if let settingsError { Text(settingsError).font(.callout).foregroundStyle(.red).textSelection(.enabled) }
-            HStack { Text("AirLink \(model.version)").font(.caption).foregroundStyle(.secondary); Spacer(); Button(saving ? model.text("Wird gespeichert …", "Saving …") : model.text("Speichern", "Save")) { save() }.buttonStyle(.borderedProminent).disabled(model.status == nil || settings.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || sendLimit == nil || receiveLimit == nil || recording || saving || !settings.shortcut.isValid) }
+            HStack { Text("AirLink \(model.version)").font(.caption).foregroundStyle(.secondary); Spacer(); Button(saving ? model.text("Wird gespeichert …", "Saving …") : model.text("Speichern", "Save")) { save() }.buttonStyle(.borderedProminent).disabled(model.status == nil || settings.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || sendLimit == nil || receiveLimit == nil || recording || saving || !settings.shortcut.isValid || !settings.organization.isValid) }
         }
         .formStyle(.grouped).padding(8).disabled(saving)
         .onAppear { loadSettings(); refreshLogin() }

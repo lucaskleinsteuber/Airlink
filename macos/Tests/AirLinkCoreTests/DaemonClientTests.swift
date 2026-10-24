@@ -34,3 +34,50 @@ import Testing
     await client.stop()
     #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("shutdown-complete").path))
 }
+
+@Test func slowDuplicateRPCAllowsOutOfOrderStatusResponse() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let helper = directory.appendingPathComponent("fake-parallel-helper")
+    let marker = directory.appendingPathComponent("duplicate-started")
+    let release = directory.appendingPathComponent("release-duplicate")
+    let script = #"""
+    #!/bin/sh
+    while IFS= read -r line; do
+      id="${line#*\"id\":\"}"
+      id="${id%%\"*}"
+      case "$line" in
+        *'"method":"duplicate.resolve"'*)
+          printf started > "$3/duplicate-started"
+          (while [ ! -f "$3/release-duplicate" ]; do sleep 0.01; done; printf '{"id":"%s","result":{"kind":"duplicate"}}\n' "$id") &
+          ;;
+        *'"method":"shutdown"'*) wait; printf '{"id":"%s","result":{}}\n' "$id"; exit 0 ;;
+        *) printf '{"id":"%s","result":{"kind":"status"}}\n' "$id" ;;
+      esac
+    done
+    """#
+    try Data(script.utf8).write(to: helper)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: helper.path)
+    let client = DaemonClient()
+    try await client.start(executable: helper, dataDirectory: directory)
+    let slow = Task { try await client.request("duplicate.resolve") }
+    do {
+        for _ in 0..<1000 {
+            if FileManager.default.fileExists(atPath: marker.path) { break }
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(FileManager.default.fileExists(atPath: marker.path))
+        let fast = try await client.request("status")
+        #expect((try JSONSerialization.jsonObject(with: fast) as? [String: String])?["kind"] == "status")
+        try Data().write(to: release)
+        let result = try await slow.value
+        #expect((try JSONSerialization.jsonObject(with: result) as? [String: String])?["kind"] == "duplicate")
+        await client.stop()
+    } catch {
+        try? Data().write(to: release)
+        _ = try? await slow.value
+        await client.stop()
+        throw error
+    }
+}

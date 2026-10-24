@@ -53,9 +53,11 @@ public actor DaemonClient {
             do { try input.write(contentsOf: line) } catch {
                 pending.removeValue(forKey: id)?.resume(throwing: error)
             }
-            Task { [weak self] in
-                try? await Task.sleep(for: .seconds(20))
-                await self?.timeout(id)
+            if method != "duplicate.resolve" {
+                Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(20))
+                    await self?.timeout(id)
+                }
             }
         }
     }

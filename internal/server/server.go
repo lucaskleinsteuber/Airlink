@@ -111,6 +111,10 @@ func New(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err = eng.SetOrganization(p.Settings.Organization); err != nil {
+		eng.Close()
+		return nil, err
+	}
 	shareStore, err := shares.New(opts.DataDir)
 	if err != nil {
 		eng.Close()
@@ -283,10 +287,7 @@ func (s *Server) guestStatus(d model.Device) model.Status {
 	host := model.Device{ID: p.ID, Name: p.Settings.Name, Kind: "engine", Paired: true, Online: true, CanClipboard: d.CanClipboard}
 	ts := s.engine.Transfers(d.ID)
 	for i := range ts {
-		ts[i].Destination = ""
-		if ts[i].Error != "" {
-			ts[i].Error = "Transfer needs attention. Check the source and destination on the host."
-		}
+		ts[i] = publicTransfer(ts[i])
 	}
 	messages := []model.ClipboardMessage{}
 	if d.CanClipboard {
@@ -514,6 +515,22 @@ func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(parts) >= 5 && parts[2] == "files" {
 		fid := parts[3]
+		if len(parts) == 5 && parts[4] == "prepare" && r.Method == "POST" {
+			var v struct {
+				SHA string `json:"sha256"`
+			}
+			if !decode(w, r, &v) {
+				return
+			}
+			decision, e := s.engine.PrepareFile(r.Context(), t.ID, fid, v.SHA)
+			if e != nil {
+				s.engineError(w, e)
+				return
+			}
+			fresh, _ := s.engine.Get(t.ID)
+			respond(w, 200, map[string]any{"decision": decision, "transfer": publicTransfer(fresh)})
+			return
+		}
 		if len(parts) == 6 && parts[4] == "chunks" && r.Method == "PUT" {
 			select {
 			case s.chunkSlots <- struct{}{}:
@@ -546,6 +563,14 @@ func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			fresh, _ := s.engine.Get(t.ID)
+			for _, file := range fresh.Files {
+				if file.ID == fid && !file.Completed {
+					// A legacy sender interprets any 2xx completion as final.
+					// Keep it waiting until the host decides about this duplicate.
+					fail(w, http.StatusConflict, errors.New("recipient must decide about an identical existing file"))
+					return
+				}
+			}
 			fresh = publicTransfer(fresh)
 			respond(w, 200, fresh)
 			return

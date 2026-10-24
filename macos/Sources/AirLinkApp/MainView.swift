@@ -170,7 +170,7 @@ struct TransferRow: View {
                 if transfer.state == "offered" && transfer.direction == "receive" {
                     Button(model.text("Annehmen", "Accept")) { model.command("transfer.accept", params: ["id": transfer.id]) }.buttonStyle(.borderedProminent)
                 }
-                if ["running", "queued", "reconnecting"].contains(transfer.state) {
+                if ["running", "queued", "reconnecting", "checkingDuplicate", "waitingDuplicate"].contains(transfer.state) {
                     Button { model.command("transfer.pause", params: ["id": transfer.id]) } label: { Image(systemName: "pause.fill") }.help(model.text("Pausieren", "Pause"))
                 }
                 if transfer.state == "paused" || transfer.state == "failed" {
@@ -179,22 +179,52 @@ struct TransferRow: View {
                 if transfer.isActive {
                     Button { model.command("transfer.cancel", params: ["id": transfer.id]) } label: { Image(systemName: "xmark") }.help(model.text("Abbrechen", "Cancel"))
                 }
-                if transfer.state == "completed", transfer.destination != nil {
+                if transfer.state == "completed", transfer.destination != nil, transfer.hasReceivedContent {
                     Button { model.revealDestination(transfer) } label: { Image(systemName: "folder") }.help(model.text("Im Finder öffnen", "Open in Finder"))
                 }
             }
             ProgressView(value: transfer.fractionCompleted).tint(transfer.state == "completed" ? .green : .accentColor)
             HStack {
-                Text("\(TransferFormatting.bytes(transfer.completedBytes)) / \(TransferFormatting.bytes(transfer.totalBytes))")
+                Text("\(TransferFormatting.bytes(transfer.accountedBytes)) / \(TransferFormatting.bytes(transfer.totalBytes))")
                 Spacer()
                 if transfer.state == "running" { Text(TransferFormatting.speed(transfer.bytesPerSecond)) }
                 Text(transfer.fractionCompleted, format: .percent.precision(.fractionLength(0)))
             }.font(.caption).monospacedDigit().foregroundStyle(.secondary)
+            if transfer.avoidedBytes > 0 {
+                Text(TransferFormatting.bytes(transfer.completedBytes) + model.text(" bestätigt · ", " confirmed · ") + TransferFormatting.bytes(transfer.avoidedBytes) + model.text(" durch Überspringen vermieden", " avoided by skipping")).font(.caption).foregroundStyle(.secondary)
+            }
+            if transfer.direction == "receive" {
+                ForEach(transfer.pendingDuplicateFiles) { file in
+                    DuplicateAttentionView(transfer: transfer, file: file).environmentObject(model)
+                }
+                let organized = transfer.files.filter { $0.isSkipped || ($0.destinationPath != nil && $0.destinationPath != $0.path) }
+                if !organized.isEmpty {
+                    DisclosureGroup(model.text("Empfangsdateien", "Received files")) {
+                        ForEach(organized) { file in
+                            if file.isSkipped {
+                                Label(file.path + model.text(" · übersprungen, keine neue Datei", " · skipped, no new file"), systemImage: "forward.end").font(.caption).foregroundStyle(.secondary)
+                            } else if let mapped = file.destinationPath {
+                                Text(file.path + " → " + mapped).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                            }
+                        }
+                    }
+                }
+            } else {
+                if ["checkingDuplicate", "waitingDuplicate"].contains(transfer.state) {
+                    Text(model.text("Der Empfänger prüft vorhandene Inhalte oder benötigt eine Entscheidung.", "The recipient is checking existing contents or needs a decision.")).font(.caption).foregroundStyle(.secondary)
+                }
+                let skipped = transfer.files.filter(\.isSkipped)
+                if !skipped.isEmpty {
+                    DisclosureGroup(model.text("Vom Empfänger übersprungen", "Skipped by recipient")) {
+                        ForEach(skipped) { file in Text(file.path).font(.caption).foregroundStyle(.secondary) }
+                    }
+                }
+            }
             if let error = transfer.error, !error.isEmpty { Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
         }.padding(16).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
     }
     private var stateLabel: String {
-        let names: [String: (String, String)] = ["offered": ("Wartet auf Annahme", "Awaiting approval"), "queued": ("In Warteschlange", "Queued"), "running": ("Wird übertragen", "Transferring"), "paused": ("Pausiert", "Paused"), "reconnecting": ("Verbindung wird wiederhergestellt", "Reconnecting"), "verifying": ("Wird geprüft", "Verifying"), "completed": ("Abgeschlossen", "Completed"), "failed": ("Fehlgeschlagen", "Failed"), "cancelled": ("Abgebrochen", "Cancelled")]
+        let names: [String: (String, String)] = ["offered": ("Wartet auf Annahme", "Awaiting approval"), "queued": ("In Warteschlange", "Queued"), "running": ("Wird übertragen", "Transferring"), "paused": ("Pausiert", "Paused"), "reconnecting": ("Verbindung wird wiederhergestellt", "Reconnecting"), "verifying": ("Wird geprüft", "Verifying"), "checkingDuplicate": ("Vorhandene Inhalte werden geprüft", "Checking existing contents"), "waitingDuplicate": ("Wartet auf Duplikatentscheidung", "Awaiting duplicate decision"), "completed": ("Abgeschlossen", "Completed"), "failed": ("Fehlgeschlagen", "Failed"), "cancelled": ("Abgebrochen", "Cancelled")]
         let pair = names[transfer.state] ?? (transfer.state, transfer.state)
         return model.text(pair.0, pair.1)
     }

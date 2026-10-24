@@ -145,6 +145,12 @@ func (s *Server) statistics(owner string) model.Statistics {
 	}
 	for _, t := range s.engine.Transfers(owner) {
 		d := day(t.CreatedAt, t.UpdatedAt)
+		result.SkippedBytes = plus(result.SkippedBytes, t.SkippedBytes)
+		for _, f := range t.Files {
+			if f.Skipped {
+				result.SkippedFiles++
+			}
+		}
 		if t.Direction == "send" {
 			result.SentBytes = plus(result.SentBytes, t.CompletedBytes)
 			d.SentBytes = plus(d.SentBytes, t.CompletedBytes)

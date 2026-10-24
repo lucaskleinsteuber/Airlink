@@ -1,6 +1,6 @@
 # Architecture
 
-AirLink 0.3 extends the shared local transfer service with browser relay, aggregate payload limits, and richer history/statistics, retaining Quick Share and explicit clipboard text. Native and browser interfaces use the same local host. Runtime resources are bundled; no hosted signaling service, external relay, account, or online asset server is required. Additions are specified in [API-0.2.md](API-0.2.md) and [API-0.3.md](API-0.3.md).
+AirLink 0.4 adds optional organization to desktop receives while retaining browser relay, aggregate payload limits, history/statistics, Quick Share and explicit clipboard text. Native and browser interfaces use the same local host. Runtime resources are bundled; no hosted signaling service, external relay, account, or online asset server is required. Additions are specified in [API-0.2.md](API-0.2.md), [API-0.3.md](API-0.3.md), and [API-0.4.md](API-0.4.md).
 
 ```mermaid
 flowchart LR
@@ -25,6 +25,24 @@ Incoming files remain partial until the receiver verifies the complete file. Pub
 
 The queue has independent pools of two incoming and two outgoing transfers. Verification counts against its direction's pool. This avoids a deadlock when both hosts have incoming offers waiting for each other's outgoing queues. Chunk I/O is additionally bounded to two incoming requests. Browser relay has its own two-file-stream bound and separate metadata, so a relay is not duplicated as a stored direct transfer.
 
+## Optional incoming-file organization
+
+The engine snapshots `Settings.organization` for every new incoming offer. Duplicate detection and sorting both default false, with an empty rule list, including migration from older settings. A disabled or older configuration does not silently acquire sorting rules. Explicit example presets are editable UI drafts. Sorting uses ordered normalized extensions and safe relative destination folders; the first matching rule wins.
+
+Only top-level individual source files are classified. A transferred folder and its descendants retain their hierarchy, including mixed offers containing both folders and individual files. Destinations are checked for unsafe components, symlinks, parent/file conflicts and case collisions before receiving. Each transfer already has its own unique receive root, and publication refuses replacement. Changing settings affects future offers only; it does not relocate active, resumed or completed data.
+
+`File.path` stays the immutable wire name used by the sender and file IDs. `File.destinationPath` records the private relative host mapping inside the unique receive root, falling back to `path` for historical records. Receive, recovery, verification, publication and eligible share creation must use that mapping consistently. Guest/peer DTOs omit destination mappings and duplicate candidate identities/paths. Only private host control resolves decisions or reveals an existing candidate path.
+
+The duplicate index covers AirLink-managed verified received files; it is not a general filesystem/library scan. Eligible existing completed incoming records can populate it, and its persistence is independent of clearing transfer history. Candidate lookup uses size and full SHA-256, then streams and revalidates the actual indexed file before exposing an actionable match. Missing, changed, replaced or symlink candidates are invalidated. An explicit Skip rechecks the chosen candidate again; filename equality alone never establishes a duplicate. These hashes use bounded buffers, without loading or copying a whole file into RAM.
+
+Updated sources persist their existing worker checksums and call `prepare` before payload. `checkingDuplicate` represents candidate validation outside the global engine lock; `waitingDuplicate` requires a host decision and releases receive scheduling capacity. Pause/cancel and request generations prevent a stale hash result or decision from reviving interrupted work. Source SSE processing must preserve an active checking request, and a pending decision must not become a repeated chunk-upload 409 loop.
+
+Host Keep receives a separate new file at the planned destination. Host Skip marks the incoming entry skipped/completed without copying the existing file, redirecting a download to it, or creating a placeholder payload. Original sources and indexed received files are not automatically deleted, overwritten, renamed or moved. Existing directory structure may remain. If a legacy sender already supplied and verified staging data, explicit Skip may remove only that transfer's private staging file.
+
+Legacy sources can omit `prepare`. Complete still verifies the full file, but returns HTTP 409 while duplicate checking or a host decision remains pending; it never reports completion before publication or Skip. Keep can publish already-verified staging in the background after the sender disconnects. Private `duplicate.resolve` work is bounded to two concurrent checks and may reply out of request order; consumers correlate request IDs. Long hash checks have no fixed client timeout, and status/pause/cancel remain responsive.
+
+`completedBytes` counts actual confirmed data. `skippedBytes` counts the avoided remainder (`size - received`), including the mixed case where a legacy sender transmitted a prefix before Skip. Progress uses their sum; skipped-file/avoided-byte statistics never inflate confirmed or lifetime traffic totals. Skipped entries have no new file to open. Direct downloads, archives and shares exclude them; an all-skipped transfer cannot create a file share. Relay payloads and browser-managed destination files are outside this organization subsystem.
+
 ## Browser relay
 
 `internal/relay` persists immutable manifests, acceptance/state, confirmed block hashes, and delivered byte-range metadata. Payload blocks stay in bounded RAM only; the host never writes a complete relay source or destination file. At most two active relay file streams request 8 MiB blocks, with a shorter final block. This bound is not a claim about total process RSS: HTTP, hashing, runtime, and metadata allocations remain separate.
@@ -41,7 +59,7 @@ After host/tab/network interruption, metadata survives but buffered data does no
 
 `internal/traffic` applies independent shared token buckets for host send and receive payloads. The persisted setting is zero for unlimited, otherwise 1,024 through 1 TiB/s. Normal file transfers, public share payloads, and relay I/O use the same directional budget. Payload metering excludes control and HTTP error response bodies. Share policy/source checks run after throttling waits and before output so a limit cannot defer delivery past expiry/revocation checks.
 
-Lifetime host payload counters persist separately from history and survive history clearing. Confirmed direct-file bytes, unique relayed transport bytes, and relay-delivery counts remain distinct. Guest statistics are computed only from owned/participant records and omit host-wide traffic counters.
+Lifetime host payload counters persist separately from history and survive history clearing. Confirmed direct-file bytes, skipped files/avoided bytes, unique relayed transport bytes, and relay-delivery counts remain distinct. Avoided bytes never increase payload traffic counters. Guest statistics are computed only from owned/participant records and omit host-wide traffic counters.
 
 History combines transfer and relay records newest first, with case-insensitive filename/device search and state/direction/device filters; the combined result limit defaults to 100 and is capped at 500. Clear removes terminal metadata only. Host control may clear all terminal records; a guest removes only its own terminal association, preserving the other relay participant's history. Originals, received files, active work, shares, and clipboard messages are not deleted.
 
@@ -61,7 +79,7 @@ Browser sessions use Secure, HttpOnly, SameSite cookies. A browser's pairing req
 
 ## Quick Share
 
-`internal/shares` stores share policy, ownership, original source references, and download-session state in a separate SQLite database. Local administration can capture selected original paths or an eligible existing transfer. A paired browser may supply only its own completed received transfer; it cannot choose arbitrary host paths or manage another device's shares. Source identity, size, and modification time are checked before serving and during active reads. Mismatches or unavailable originals fail without staging a whole-file copy. This is not a frozen content snapshot or a promise to detect arbitrary same-file writes that preserve all checked metadata; shared originals must remain unchanged.
+`internal/shares` stores share policy, ownership, original source references, and download-session state in a separate SQLite database. Local administration can capture selected original paths or an eligible existing transfer. A paired browser may supply only its own completed received transfer; it cannot choose arbitrary host paths or manage another device's shares. Organized received transfers use their private destination mapping while retaining public relative wire names. Skipped payloads are omitted, and an all-skipped transfer cannot produce a file share or expose its existing duplicate candidate. Source identity, size, and modification time are checked before serving and during active reads. Mismatches or unavailable originals fail without staging a whole-file copy. This is not a frozen content snapshot or a promise to detect arbitrary same-file writes that preserve all checked metadata; shared originals must remain unchanged.
 
 Links use `https://HOST/s/ID#SECRET`. The recipient app reads the fragment into session-scoped storage and removes it from the visible address. Unlock sends the secret and optional password over HTTPS; the secret never becomes an HTTP URL or referrer. Public pages disclose no filenames before successful authorization. The anonymous grant is read-only and limited to one share, independent of device pairing and local administrator privileges.
 
@@ -93,7 +111,7 @@ The app icon consists of written SVG layers and `AppIcon.icon/icon.json`. Icon C
 
 The React/TypeScript interface in `web/` is compiled into static assets embedded in the Go binary. A worker performs incremental SHA-256 hashing with bounded input blocks. IndexedDB stores resume manifests and integrity evidence; browser memory retains source `File` objects while access remains available.
 
-Reconnection reconciles the host's confirmed offsets. After reload or loss of file access, the user selects the same unchanged sources again. This requirement avoids pretending that every browser grants persistent filesystem access.
+For desktop receives, the source calls file preparation after hashing and before uploading. A 404 from an older host falls back only after refreshing the owned transfer. Pending duplicate checks/decisions show host attention without guest resolution controls; Keep resumes with saved checksums, while Skip requires no payload-completion request. Reconnection reconciles the host's confirmed offsets. After reload or loss of file access, the user selects the same unchanged sources again. This requirement avoids pretending that every browser grants persistent filesystem access.
 
 Individual downloads use HTTP Range/ETag support; ZIP64 folder downloads stream without a resumable-archive promise. The browser download manager owns saving and completion reporting. A download initiation acknowledgment is never treated as proof of saved or integrity-verified bytes on the client.
 
@@ -101,8 +119,8 @@ Paired browsers use the connected host for direct uploads/downloads or for autho
 
 ## Persistence and packaging
 
-Host settings, identity, and device records live in a private OS-specific AirLink configuration directory; SQLite stores transfer/relay metadata and durable share/session data, while traffic counters persist separately. Authorized share owners can recover links after restart, so link secrets remain private local application data. Relay payload blocks and clipboard messages are deliberately excluded from persistence. Received files live separately in the selected destination. A data-directory lock prevents two services from operating on the same local state concurrently.
+Host settings, identity, and device records live in a private OS-specific AirLink configuration directory; SQLite stores transfer/relay metadata, the independent managed verified-file duplicate index, and durable share/session data, while traffic counters persist separately. Authorized share owners can recover links after restart, so link secrets remain private local application data. Relay payload blocks and clipboard messages are deliberately excluded from persistence. Received files live separately in the selected destination. A data-directory lock prevents two services from operating on the same local state concurrently.
 
 The build pipeline compiles the web interface, embeds it, and cross-compiles portable Go services. On macOS it creates a universal native app with a universal helper and the compiled icon. Packaging creates platform archives, a DMG, and checksums. App replacement must preserve the separate state and receive directories.
 
-The current private macOS build uses ad hoc signing. Developer ID signing, notarization, physical cross-device acceptance, and public distribution remain separate delivery gates.
+Version 0.4 is an implemented private preview; final verification and artifact evidence belong in [TESTING.md](TESTING.md). Historical verification remains version-specific. The private macOS signing policy remains ad hoc. Developer ID signing, notarization, physical cross-device acceptance, and public distribution remain separate delivery gates.

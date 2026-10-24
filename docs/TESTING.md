@@ -30,7 +30,26 @@ Choose the matching architecture on an Intel Mac. The integration case starts on
 
 Set `AIRLINK_GO=/absolute/path/to/go` for the shell scripts if needed. For a direct Go command, invoke that Go binary explicitly.
 
-## 0.3 evidence — 2026-10-24
+## 0.4 evidence — 2026-10-24
+
+| Area | Completed observation | Scope and limits |
+| --- | --- | --- |
+| Go | Final `go test -race -count=1 -json ./...` passed **90 top-level tests, 119 cases including subtests**; `go vet ./...` passed | Includes the opt-in real 0.3 helper migration. The historical 0.1/0.2 helper cases and the 100 GiB stress were skipped. There are 24 engine, 49 server, seven relay, six share and four traffic suites. |
+| Organization engine | Eleven new suites plus stale-candidate subcases passed | Default-off migration, rule normalization/order, immutable incoming snapshots, preserved folder hierarchy, destination collision/symlink rejection, equal-content detection, candidate deletion/replacement/same-metadata content changes, second full hash at Skip, independent index after history clear, metadata-only historical import, partial skipped-byte accounting, prepared-source identity and pause/cancel epoch guards. Sparse fixtures establish cancellation/offset behavior, not whole large-file delivery. |
+| Protocol and sender | Seven new integration suites and their subcases passed, alongside existing transfer/share/relay regressions | Private candidate/destination redaction, owner boundaries, zero-payload Skip, mixed actual/avoided totals, organized share mapping, exclusion of skipped files, legacy completion HTTP 409 and source-independent Keep publication. Two-service multi-file Keep/Skip cases force revisiting a previously confirmed Skip; no re-open or false source failure occurs. |
+| Private control | Bounded asynchronous decisions and out-of-order replies passed Go and Swift tests | Status and transfer cancellation remain responsive while a Skip waits for receive capacity; cancellation does not revive work. The native client has no fixed timeout for full candidate revalidation, while ordinary RPC requests retain their timeout. |
+| Migration | Received data, identity, trust, settings, password share/session and quota survived a real released 0.3 helper -> current service upgrade | The final full race run used a headless helper built from the unchanged `v0.3.0` tag in ignored `build/compatibility-0.3/`; an earlier run also exercised the previously built 0.3 distribution helper. Existing received history becomes eligible for lazy duplicate checking, and both new opt-ins remain off. No app bundle was installed or launched. |
+| Web | All **57 Node tests across six files** and the production build passed | Pending/Keep/Skip, lost preparation responses, retry/restart, mixed skip/send, cached checksums, legacy 404-only fallback, rule/path/UTF-8 validation, optional presets, and all prior share/clipboard/relay cases. No browser UI automation. |
+| Native | All **26 Swift tests** passed against the final 0.4 helper | Additive defaults, organization validation and snapshots, private incoming decisions, paused/checking restrictions, 64-bit actual/avoided progress, separate statistics, real helper settings/share IPC, and deterministic out-of-order replies. Both native production architectures compile. No native GUI launch. |
+| Final binary smoke | Portable Apple Silicon service and bundled universal helper both passed `scripts/smoke-binary.py` | Independently verified TLS 1.3 and embedded production resources; existing protected shares/ranges/quotas/revocation, clipboard and relay behavior; new opt-in sorting, private content checks, explicit reveal/Skip, no skipped placeholder, avoided-byte counters and sorted received-share capture. Headless local protocol evidence, not physical mobile/browser interaction. |
+| Distribution | All six portable binaries compiled; universal macOS app/helper, DMG and four Windows/Linux archives created | App/helper report 0.4.0; bundle build 4, deep/strict ad hoc signature, Info.plist, both Mach-O architectures, all five SHA-256 package checks and DMG verification passed. Windows/Linux builds are cross-compilation evidence, not runtime execution. The written icon sources were preserved and compiled. |
+| Dependency scan | Zero affected code symbols or imported packages reported | The module-only advisory GO-2026-5932 for unused `golang.org/x/crypto/openpgp` remains; AirLink imports Argon2. This is not a claim that all required modules are advisory-free. |
+| Hosted CI | Hosted jobs did not execute | Local background evidence is recorded separately. |
+| Interactive and large-file acceptance | No GUI automation, installation, physical cross-device acceptance or new 100 GiB/RSS run | Manual native organization, Finder/login/shortcut behavior, real network/platform filesystems, large single-file behavior and public signing/notarization remain open. The historical 0.1 stress below is not a 0.4 result. |
+
+Final-source logs are ignored under `build/go-tests-0.4.jsonl`, `build/web-tests-0.4.log`, `build/swift-tests-0.4.log`, `build/platform-build-0.4.log`, `build/smoke-portable-0.4.log`, `build/smoke-bundled-0.4.log`, `build/package-0.4.log` and `build/govuln-0.4.log`. The final race run includes `TestUpgradeFromReleased030PreservesOrganizationMigration`; `build/upgrade-0.3-to-0.4.log` retains the earlier distribution-helper check. This remains a private development prerelease, separate from the physical 1.0 acceptance bar.
+
+## Historical 0.3 evidence — 2026-10-24
 
 | Area | Completed observation | Scope and limits |
 | --- | --- | --- |
@@ -90,7 +109,7 @@ The final background Go run was `go test -race -count=1 -json ./...`: 25 top-lev
 
 Final binary smoke commands: `python3 scripts/smoke-binary.py build/airlink-darwin-arm64` and `python3 scripts/smoke-binary.py build/AirLink.app/Contents/Helpers/airlink`. This uses Node's TLS 1.3 client because the Apple-bundled Python SSL library may lack TLS 1.3. No GUI process is launched.
 
-These observations belong to the private 0.1.0 development prerelease. Do not treat them as a 0.2/0.3 rerun, and do not treat a compiled binary as a completed device test. Full cross-device release acceptance remains open below.
+These observations belong to the private 0.1.0 development prerelease. Do not treat them as a 0.2/0.3/0.4 rerun, and do not treat a compiled binary as a completed device test. Full cross-device release acceptance remains open below.
 
 ## Large-transfer stress case
 
@@ -116,6 +135,7 @@ The value counts **sequential 1 GiB files**, each transferred in 8 MiB chunks. C
 - Explicit clipboard Paste/Edit/Send/Copy/Dismiss on native and browser clients, permission disabled for migrated pairings, permission on both desktop peers, UTF-8 size limits, and in-memory retention without automatic system clipboard access.
 - Two authorized browser participants through a single desktop host, mandatory recipient acceptance, source re-selection after access loss, simultaneous relay streams, host/tab/network restart, Range retry, and ZIP fallback without stored host payload.
 - Aggregate independent send/receive caps across normal files, shares and relays, including live changes and expiry/revocation during throttled output. Keep file-confirmed, relay-transport and lifetime payload totals distinct.
+- Optional organization on actual platform filesystems: default-off upgrades, private duplicate Keep/Skip/reveal actions, changed or removed candidates, extension-rule ordering, whole-folder preservation, new-offer-only snapshots, and separate actual/avoided byte displays.
 - History filtering/clearing for both relay participants without deleting the other party's association, preserving originals/received content/shares/active work, and interpreting daily groups as last-activity UTC rather than actual daily traffic.
 
 These checks must be described at their actual scope. They do not authorize adding desktop-controlling UI tests.
