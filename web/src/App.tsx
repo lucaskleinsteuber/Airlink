@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent, ReactNode } from 'react';
 import { api, APIError, post, transferPath } from './api';
 import { fromDrop, fromFiles } from './files';
-import { bytes, progressPercent, terminal } from './protocol';
+import { bytes, progressPercent, SelectionError, terminal } from './protocol';
+import { clearPendingPair, loadPendingPair, pollPair, requestPair } from './pairing';
 import { manifestsForHost } from './storage';
 import { messages, systemLanguage } from './i18n';
 import type { Language } from './i18n';
@@ -22,7 +23,6 @@ import { organizationText } from './organization-i18n';
 import type { LocalUpload } from './uploader';
 import type { HostInfo, PendingPair, Selection, Status, Transfer } from './types';
 function preference(key: string, fallback: string): string { try { return localStorage.getItem(key) || fallback; } catch { return fallback; } }
-function pendingPair(): PendingPair | null { try { const value = JSON.parse(sessionStorage.getItem('airlink-pair') || 'null') as PendingPair | null; return value?.requestId && value.pollToken ? value : null; } catch { return null; } }
 function Glyph({ name, size = 22 }: { name: 'link' | 'upload' | 'download' | 'device' | 'check' | 'file' | 'shield'; size?: number }) {
   const paths: Record<string, ReactNode> = {
     link: <><path d="M10 13a5 5 0 0 0 7 .2l3-3a5 5 0 0 0-7-7l-2 2" /><path d="M14 11a5 5 0 0 0-7-.2l-3 3a5 5 0 0 0 7 7l2-2" /></>,
@@ -51,7 +51,7 @@ export function App() {
   const [online, setOnline] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [pending, setPending] = useState<PendingPair | null>(pendingPair);
+  const [pending, setPending] = useState<PendingPair | null>(loadPendingPair);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState(() => /iPhone|iPad/.test(navigator.userAgent) ? 'iPhone / iPad' : /Android/.test(navigator.userAgent) ? 'Android' : /Windows/.test(navigator.userAgent) ? 'Windows' : /Mac/.test(navigator.userAgent) ? 'Mac' : 'Browser');
   const [dragging, setDragging] = useState(false);
@@ -67,7 +67,11 @@ export function App() {
   const [reselect, setReselect] = useState<string | null>(null);
   const tRef = useRef(t); tRef.current = t;
   const unauthorized = useCallback(() => { setAuthenticated(false); setStatus(undefined); setError(tRef.current.lostSession); }, []);
-  const showError = useCallback((failure: unknown) => { if (failure instanceof APIError && failure.status === 401) unauthorized(); else setError(failure instanceof Error ? failure.message : tRef.current.error); }, [unauthorized]);
+  const showError = useCallback((failure: unknown) => {
+    if (failure instanceof APIError && failure.status === 401) unauthorized();
+    else if (failure instanceof SelectionError) setError(tRef.current[failure.reason].replace('{path}', () => failure.path || ''));
+    else setError(failure instanceof Error ? failure.message : tRef.current.error);
+  }, [unauthorized]);
   const refresh = useCallback(async () => {
     try { const value = await api<Status>('/status'); setStatus(value); setHost(value); setAuthenticated(true); setOnline(true); }
     catch (failure) { if (failure instanceof APIError && failure.status === 401) { setAuthenticated(false); setStatus(undefined); } else { setOnline(false); } }
@@ -108,13 +112,13 @@ export function App() {
     let stopped = false; let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
-        const result = await post<{ state: string }>('/pair/poll', pending);
+        const result = await pollPair(pending);
         if (stopped) return;
         setOnline(true);
-        if (result.state === 'approved') { sessionStorage.removeItem('airlink-pair'); setPending(null); await refresh(); return; }
-        if (result.state === 'denied') { sessionStorage.removeItem('airlink-pair'); setPending(null); setError(tRef.current.denied); return; }
+        if (result.state === 'approved') { setPending(null); await refresh(); return; }
+        if (result.state === 'denied') { setPending(null); setError(tRef.current.denied); return; }
       } catch (failure) {
-        if (failure instanceof APIError && failure.status < 500 && failure.status !== 429) { sessionStorage.removeItem('airlink-pair'); setPending(null); showError(failure); return; }
+        if (failure instanceof APIError && failure.status < 500 && failure.status !== 429) { clearPendingPair(); setPending(null); showError(failure); return; }
         setOnline(false);
       }
       if (!stopped) timer = setTimeout(() => { void poll(); }, 1500);
@@ -124,7 +128,7 @@ export function App() {
   async function connect(event: React.FormEvent) {
     event.preventDefault(); if (!name.trim() || busy) return;
     setBusy(true); setError('');
-    try { const value = await post<PendingPair>('/pair/request', { name: name.trim(), kind: 'browser' }); sessionStorage.setItem('airlink-pair', JSON.stringify(value)); setPending(value); }
+    try { setPending(await requestPair(name)); }
     catch (failure) { showError(failure); } finally { setBusy(false); }
   }
   async function selected(values: Selection[], existingId: string | null = reselect, existingRelay: string | null = relayReselect) {
@@ -173,7 +177,7 @@ export function App() {
         <h1>{t.tagline}</h1><p className="intro">{t.subtitle}</p>
         {host && <div className="host-pill"><Glyph name="device" size={18} />{host.name}</div>}
         {!secure && <p className="warning" role="alert">{t.secureOnly}</p>}
-        {pending ? <div className="pair-pending" role="status"><span className="spinner" /><h2>{t.pending}</h2><p>{t.pendingHelp}</p><button className="text-button" onClick={() => { sessionStorage.removeItem('airlink-pair'); setPending(null); }}>{t.leavePending}</button></div>
+        {pending ? <div className="pair-pending" role="status"><span className="spinner" /><h2>{t.pending}</h2><p>{t.pendingHelp}</p><button className="text-button" onClick={() => { clearPendingPair(); setPending(null); }}>{t.leavePending}</button></div>
           : <form className="pair-form" onSubmit={connect}><label htmlFor="device-name">{t.deviceName}</label><input id="device-name" value={name} maxLength={80} autoComplete="off" onChange={e => setName(e.target.value)} /><button className="primary" disabled={!name.trim() || busy || !secure}>{busy ? t.connecting : t.connect}</button></form>}
         {!online && <p className="warning">{t.offline} <button className="text-button" onClick={() => { void refresh(); }}>{t.refresh}</button></p>}
       </section> : <>
@@ -218,6 +222,6 @@ export function App() {
       <input ref={filesInput} className="hidden-input" type="file" multiple onChange={inputChange} aria-label={t.chooseFiles} />
       <input ref={folderInput} className="hidden-input" type="file" multiple {...{ webkitdirectory: '' }} onChange={inputChange} aria-label={t.chooseFolder} />
     </main>
-    <footer><span>{t.privacy}</span><span>AirLink {host?.version || '0.4.0'}</span></footer>
+    <footer><span>{t.privacy}</span><span>AirLink {host?.version || '0.5.0'}</span></footer>
   </div>;
 }

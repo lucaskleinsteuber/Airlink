@@ -2,6 +2,22 @@
 
 AirLink uses MAJOR.MINOR.PATCH versions. Entries describe implemented changes; distribution and verification status are recorded separately.
 
+## 0.5.0 — 2026-10-24
+
+- Added explicit native helper retry using the same bundled service and application data directory, plus user-selected receive-directory recovery. An unavailable saved directory no longer requires discarding application state or silently choosing a different destination. Existing transfer destinations remain unchanged.
+- Kept the last native status snapshot visible after failure while disabling helper-dependent actions until fresh status arrives. Session identifiers isolate late callbacks and replies from earlier helper processes. Quit uses bounded cleanup stages and reports a helper that remains alive instead of waiting indefinitely or claiming successful shutdown.
+- Anchored new desktop source references to filesystem identity, size, and nanosecond modification time. Historical records with cached full hashes are lazily rehashed and compared before reuse; older records without a checksum acquire an identity on first use and a full checksum when needed. This does not add startup library hashing, whole-file staging, or a frozen snapshot of mutable originals.
+- Preserved explicit pauses against late reconnect/failure callbacks and committed state changes before updating their visible in-memory state. Failed SQLite writes no longer report a cancellation that disappears after restart.
+- Stopped permanent peer protocol, authorization, and identity failures with actionable attention rather than retrying indefinitely. Temporary network errors, pending decisions, and server outages remain resumable. Source payload checks run after limiter waits, and failed ZIP streams abort instead of being finalized as successful archives.
+- Preserved files added or reselected during an in-flight native send and prevented duplicate offers from repeated Send actions.
+- Made active HTTP work cancellable on pause, cancellation, and relevant permission revocation, including slow request bodies and throttled output. Payload limits retain their shared directional budgets.
+- Allowed browser pairing request/poll/approval to continue in memory when session storage reads, writes, removal, or property access fail. Reload recovery remains available when that optional session store works; saved upload integrity evidence still requires IndexedDB before payload transmission.
+- Made anonymous share access use the host's expiry/revocation decisions. A recipient clock ahead of the host no longer permanently closes a share after successful authorization. Authoritative removal, expiry, and revocation still stop polling; existing download-session allowances retain their semantics.
+- Rejected unsupported portable filenames, literal backslashes, case collisions, and file/parent conflicts before source hashing or offer creation. Names are never silently rewritten; German and English errors explain how to correct them on the source device.
+- Added a concrete [release readiness checklist](docs/RELEASE-READINESS.md), separating local background checks from physical platform, large-file, native interaction, certificate onboarding, and distribution evidence.
+
+This is a private stabilization preview, not a 1.0 acceptance claim. Final-source test results, package integrity, migration and any large-file/restart measurements belong in [TESTING.md](docs/TESTING.md) only after their runs finish. Historical checks and account-blocked hosted CI are retained at their actual scope. The MIT license, private repository policy and ad hoc macOS signing policy are unchanged.
+
 ## 0.4.0 — 2026-10-24
 
 - Added optional content-based duplicate decisions and ordered extension-to-folder sorting for desktop receives. Both default off with no rules for new and migrated settings; editable example rules never silently enable sorting.

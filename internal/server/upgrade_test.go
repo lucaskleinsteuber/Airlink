@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -153,6 +154,9 @@ func TestUpgradeFromReleased020PreservesSharesAndDefaults(t *testing.T) {
 func TestUpgradeFromReleased030PreservesOrganizationMigration(t *testing.T) {
 	testReleasedUpgrade(t, "AIRLINK_PREVIOUS_HELPER_030", "0.3.0")
 }
+func TestUpgradeFromReleased040PreservesOrganizationAndSessions(t *testing.T) {
+	testReleasedUpgrade(t, "AIRLINK_PREVIOUS_HELPER_040", "0.4.0")
+}
 func testReleasedUpgrade(t *testing.T, variable, expected string) {
 	previous := os.Getenv(variable)
 	if previous == "" {
@@ -165,7 +169,7 @@ func testReleasedUpgrade(t *testing.T, variable, expected string) {
 	base := t.TempDir()
 	state, receive := filepath.Join(base, "state"), filepath.Join(base, "receive")
 	original := filepath.Join(base, "original.txt")
-	payload := []byte("An original shared in0.2 remains accessible after upgrading.\n")
+	payload := []byte("An original shared by a released helper remains accessible after upgrading.\n")
 	_ = os.WriteFile(original, payload, 0600)
 	cmd := exec.Command(previous, "--stdio", "--no-discovery", "--data-dir", state, "--receive-dir", receive)
 	in, _ := cmd.StdinPipe()
@@ -208,9 +212,27 @@ func testReleasedUpgrade(t *testing.T, variable, expected string) {
 	}
 	var old model.Status
 	rpc("status", nil, &old)
-	if expected == "0.3.0" {
-		rpc("settings.update", map[string]any{"sendLimitBytesPerSecond": int64(123456), "receiveLimitBytesPerSecond": int64(234567), "shortcut": model.Shortcut{Enabled: false, KeyCode: 40, Modifiers: 256}}, nil)
+	if old.Version != expected {
+		t.Fatal("old helper status/version mismatch", old.Version, expected)
+	}
+	expectedOrganization := model.Organization{Rules: []model.SortRule{}}
+	if expected == "0.4.0" {
+		expectedOrganization = model.Organization{DetectDuplicates: true, SortEnabled: false, Rules: []model.SortRule{{ID: "preserved-editable-rule", Extensions: []string{"pdf", "txt"}, Folder: "Incoming Documents"}}}
+	}
+	if expected == "0.3.0" || expected == "0.4.0" {
+		settings := map[string]any{"sendLimitBytesPerSecond": int64(123456), "receiveLimitBytesPerSecond": int64(234567), "shortcut": model.Shortcut{Enabled: false, KeyCode: 40, Modifiers: 256}}
+		if expected == "0.4.0" {
+			settings["organization"] = model.Organization{DetectDuplicates: true, SortEnabled: false, Rules: []model.SortRule{{ID: "preserved-editable-rule", Extensions: []string{".PDF", "txt"}, Folder: "Incoming Documents"}}}
+		}
+		rpc("settings.update", settings, nil)
 		rpc("status", nil, &old)
+	}
+	if expected == "0.4.0" && !reflect.DeepEqual(old.Settings.Organization, expectedOrganization) {
+		t.Fatal("0.4 fixture did not retain the enabled detection and normalized editable rule", old.Settings.Organization)
+	}
+	expectedShortcut := old.Settings.Shortcut
+	if expected == "0.2.0" {
+		expectedShortcut = model.Shortcut{Enabled: true, KeyCode: 37, Modifiers: 768}
 	}
 	var share model.Share
 	rpc("share.create", model.ShareCreate{Paths: []string{original}, Password: "upgrade-only-password", MaxDownloads: 1}, &share)
@@ -292,7 +314,7 @@ func testReleasedUpgrade(t *testing.T, variable, expected string) {
 	}
 	defer next.Close()
 	status := next.Status()
-	if status.Version != model.Version || status.ID != old.ID || status.Fingerprint != old.Fingerprint || status.Settings.ReceiveDirectory != receive || status.Settings.Shortcut != old.Settings.Shortcut || status.Settings.SendLimitBytesPerSecond != old.Settings.SendLimitBytesPerSecond || status.Settings.ReceiveLimitBytesPerSecond != old.Settings.ReceiveLimitBytesPerSecond || status.Settings.Organization.DetectDuplicates || status.Settings.Organization.SortEnabled || status.Settings.Organization.Rules == nil {
+	if status.Version != model.Version || status.ID != old.ID || status.Fingerprint != old.Fingerprint || status.Settings.ReceiveDirectory != receive || status.Settings.Shortcut != expectedShortcut || status.Settings.SendLimitBytesPerSecond != old.Settings.SendLimitBytesPerSecond || status.Settings.ReceiveLimitBytesPerSecond != old.Settings.ReceiveLimitBytesPerSecond || !reflect.DeepEqual(status.Settings.Organization, expectedOrganization) {
 		t.Fatal("upgrade changed identity or defaults")
 	}
 	summary, err := next.shares.Session(share.ID, cookie.Value)

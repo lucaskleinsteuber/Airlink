@@ -14,7 +14,7 @@ struct ShareListView: View {
             HStack {
                 Text("Quick Share").font(.title2.weight(.semibold))
                 Spacer()
-                Button(model.text("Neue Freigabe …", "New share …")) { showCreator = true }.buttonStyle(.borderedProminent).disabled(model.status == nil || model.engineError != nil)
+                Button(model.text("Neue Freigabe …", "New share …")) { showCreator = true }.buttonStyle(.borderedProminent).disabled(!model.isReady)
                 Button(model.text("Fertig", "Done")) { dismiss() }
             }
             Text(model.text("Freigabelinks funktionieren im lokalen Netzwerk. Die Originaldateien bleiben an ihrem Platz.", "Share links work on your local network. Original files stay in place.")).foregroundStyle(.secondary)
@@ -42,7 +42,7 @@ struct ShareListView: View {
                                     Button(model.text("Link und QR-Code", "Link and QR code")) { selectedShare = share }.disabled(share.url == nil || share.revoked || share.isExpired())
                                     Spacer()
                                     if !share.revoked {
-                                        Button(model.text("Widerrufen …", "Revoke …"), role: .destructive) { revokeShare = share }
+                                        Button(model.text("Widerrufen …", "Revoke …"), role: .destructive) { revokeShare = share }.disabled(!model.isReady)
                                     }
                                 }
                             }.padding(16).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
@@ -109,7 +109,7 @@ struct ShareCreateView: View {
                 HStack {
                     Spacer()
                     Button(model.text("Abbrechen", "Cancel")) { dismiss() }.disabled(creating)
-                    Button(creating ? model.text("Wird erstellt …", "Creating …") : model.text("Link erstellen", "Create link")) { create() }.buttonStyle(.borderedProminent).disabled(!valid || creating || model.engineError != nil)
+                    Button(creating ? model.text("Wird erstellt …", "Creating …") : model.text("Link erstellen", "Create link")) { create() }.buttonStyle(.borderedProminent).disabled(!valid || creating || !model.isReady)
                 }
             }.padding(28).frame(width: 580)
         }

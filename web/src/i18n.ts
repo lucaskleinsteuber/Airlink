@@ -24,6 +24,9 @@ const de = {
   mobile: 'Lass diese Seite bei großen Übertragungen geöffnet. Mobile Browser können Transfers im Hintergrund anhalten. Nach der Rückkehr wird die Verbindung wieder aufgenommen.',
   storageError: 'Der Browser konnte die Fortsetzungsdaten nicht speichern. Erlaube lokalen Browserspeicher und versuche es erneut.',
   error: 'Das hat nicht funktioniert', dismiss: 'Schließen', secureOnly: 'Diese Seite benötigt eine vertrauenswürdige HTTPS-Verbindung. Richte zuerst das Zertifikat ein.',
+  invalidPath: '„{path}“ enthält einen Datei- oder Ordnernamen, der nicht auf allen Geräten unterstützt wird. Benenne ihn auf dem Quellgerät um und wähle die Dateien erneut aus.',
+  conflictingPaths: 'Die ausgewählten Pfade bei „{path}“ überschneiden sich oder unterscheiden sich nur in der Großschreibung. Benenne sie auf dem Quellgerät eindeutig und wähle sie erneut aus.',
+  invalidSource: 'Die Quelldatei „{path}“ kann nicht gelesen werden. Wähle sie erneut aus.', emptySelection: 'Wähle mindestens eine Datei oder einen Ordner aus.',
   awaitingHost: 'Der Host muss erreichbar sein und im selben lokalen Netzwerk bleiben.', total: 'Gesamt', transferred: 'Übertragen', privacy: 'Keine Cloud. Kein Konto. Deine Dateien bleiben im lokalen Netzwerk.',
   lostSession: 'Deine Gerätefreigabe ist nicht mehr gültig. Verbinde dieses Gerät erneut.', refresh: 'Erneut versuchen', leavePending: 'Anfrage verwerfen',
 };
@@ -52,6 +55,9 @@ const en: typeof de = {
   mobile: 'Keep this page open during large transfers. Mobile browsers can suspend transfers in the background. Reconnection starts when you return.',
   storageError: 'The browser could not save resume data. Allow local browser storage and try again.',
   error: 'Something went wrong', dismiss: 'Close', secureOnly: 'This page needs a trusted HTTPS connection. Set up the certificate first.',
+  invalidPath: '“{path}” contains a file or folder name that is not supported on all devices. Rename it on the source device and select the files again.',
+  conflictingPaths: 'The selected paths at “{path}” overlap or differ only in letter case. Give them distinct names on the source device and select them again.',
+  invalidSource: 'The source file “{path}” cannot be read. Select it again.', emptySelection: 'Select at least one file or folder.',
   awaitingHost: 'The host must stay reachable on the same local network.', total: 'Total', transferred: 'Transferred', privacy: 'No cloud. No account. Your files stay on the local network.',
   lostSession: 'This device is no longer authorized. Connect it again.', refresh: 'Try again', leavePending: 'Discard request',
 };

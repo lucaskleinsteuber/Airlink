@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { api, APIError, post } from './api';
+import { APIError, post } from './api';
 import { featureText } from './features-i18n';
 import { messages, systemLanguage } from './i18n';
 import type { Language } from './i18n';
 import { bytes } from './protocol';
 import { fileHasPayload } from './organization';
-import { publicSharePath, shareState } from './sharing';
+import { publicSharePath } from './sharing';
+import { recipientMetadata } from './share-recipient-state';
 import type { Share } from './types';
 function preference(key: string, fallback: string): string { try { return localStorage.getItem(key) || fallback; } catch { return fallback; } }
 export function ShareRecipient({ id, secret }: { id: string; secret: string }) {
@@ -36,17 +37,14 @@ export function ShareRecipient({ id, secret }: { id: string; secret: string }) {
       if (fetching || stopped || terminal.current) return;
       fetching = true; let repeat = true;
       try {
-        const value = await api<Share>(path);
+        const result = await recipientMetadata(path);
         if (stopped) return;
-        if (['expired', 'revoked'].includes(shareState(value))) { setShare(undefined); setPhase('gone'); terminal.current = true; repeat = false; }
-        else { setShare(value); setPhase('ready'); setProblem(''); }
+        setShare(result.phase === 'ready' ? result.share : undefined);
+        setPhase(result.phase); setProblem(result.phase === 'unavailable' ? texts.current.unavailable : ''); repeat = result.poll;
+        if (result.phase === 'gone') { setMissing(result.missing); terminal.current = true; }
       } catch (error) {
         if (stopped) return;
-        if (error instanceof APIError && [401, 403].includes(error.status)) { setShare(undefined); setPhase('locked'); setProblem(''); repeat = false; }
-        else if (error instanceof APIError && error.status === 410) { setShare(undefined); setPhase('gone'); setProblem(''); terminal.current = true; repeat = false; }
-        else if (error instanceof APIError && error.status === 404) { setShare(undefined); setPhase('gone'); setProblem(''); setMissing(true); terminal.current = true; repeat = false; }
-        else if (error instanceof APIError && error.status === 409) { setShare(undefined); setPhase('unavailable'); setProblem(texts.current.unavailable); }
-        else setProblem(texts.current.networkError);
+        setProblem(texts.current.networkError);
       } finally {
         fetching = false;
         if (!stopped && repeat) { if (timer) clearTimeout(timer); timer = setTimeout(() => { void load(); }, 15_000); }
@@ -71,7 +69,7 @@ export function ShareRecipient({ id, secret }: { id: string; secret: string }) {
     } finally { setBusy(false); }
   }
   const files = share?.files.filter(fileHasPayload) || [];
-  const state = share ? shareState(share) : undefined;
+  const exhausted = share && share.maxDownloads > 0 && share.downloads >= share.maxDownloads;
   return <div className="shell share-recipient">
     <header className="masthead"><a className="brand" href="/"><span className="brand-mark"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round"><path d="M10 13a5 5 0 0 0 7 .2l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7-.2l-3 3a5 5 0 0 0 7 7l2-2" /></svg></span>AirLink</a><div className="preferences">
       <label><span className="sr-only">{common.language}</span><select value={languageSetting} onChange={event => setLanguageSetting(event.target.value)}><option value="system">{common.system}</option><option value="de">Deutsch</option><option value="en">English</option></select></label>
@@ -89,13 +87,13 @@ export function ShareRecipient({ id, secret }: { id: string; secret: string }) {
       {problem && phase !== 'gone' && phase !== 'unavailable' && <button className="text-button" onClick={() => setRefreshKey(current => current + 1)}>{t.retry}</button>}
       {share && <section className="recipient-files"><div className="recipient-heading"><span className="eyebrow">Quick Share</span><h1>{share.name}</h1><p>{files.length} {t.files} · {bytes(share.totalBytes, language)}</p></div>
         <div className="share-policy-summary"><span>{share.downloads} / {share.maxDownloads || t.unlimitedShort} {t.downloads}</span><span>{share.expiresAt ? `${t.expires}: ${new Date(share.expiresAt).toLocaleString(language)}` : t.expiresNever}</span>{share.passwordProtected && <span>{t.passwordOn}</span>}</div>
-        {state === 'exhausted' && <p className="permission-hint">{t.exhausted}. {t.quotaHelp}</p>}
+        {exhausted && <p className="permission-hint">{t.exhausted}. {t.quotaHelp}</p>}
         <div className="download-files public-downloads">{files.map(file => <div key={file.id}><span title={file.path}>{file.path}</span><span>{bytes(file.size, language)}</span><a className="secondary small" href={`/api/v1${path}/files/${encodeURIComponent(file.id)}`} download onClick={() => setNotice(t.downloadStarted)}>{t.download}</a></div>)}</div>
         {(files.length > 1 || share.files.some(file => file.directory)) && <><a className="primary inline-button" href={`/api/v1${path}/archive`} download onClick={() => setNotice(t.downloadStarted)}>{t.archive}</a><p className="transfer-note">{t.archiveHelp}</p></>}
         <p className="mobile-note">{t.downloadHelp}</p><p className="mobile-note">{t.shareLocal}</p>
       </section>}
       <a className="text-link" href="/setup">{t.secureSetup}</a>
-    </main><footer><span>{t.privacy}</span><span>AirLink 0.4.0</span></footer>
+    </main><footer><span>{t.privacy}</span><span>AirLink 0.5.0</span></footer>
   </div>;
 }
 export function InvalidShare() {

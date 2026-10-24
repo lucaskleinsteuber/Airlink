@@ -138,6 +138,10 @@ func (s *Server) sendTransfer(ctx context.Context, t model.Transfer, rec deviceR
 			if ctx.Err() != nil {
 				return
 			}
+			if permanentPeerError(e) {
+				_ = s.engine.Fail(t.ID, e.Error())
+				return
+			}
 			_ = s.engine.MarkReconnecting(t.ID, e.Error())
 			if !sleepContext(ctx, retry) {
 				return
@@ -235,6 +239,10 @@ func (s *Server) sendTransfer(ctx context.Context, t model.Transfer, rec deviceR
 				if ctx.Err() != nil {
 					return
 				}
+				if permanentPeerError(prepErr) {
+					_ = s.engine.Fail(t.ID, prepErr.Error())
+					return
+				}
 				_ = s.engine.MarkReconnecting(t.ID, prepErr.Error())
 				retryTransfer = true
 				break
@@ -285,7 +293,7 @@ func (s *Server) sendTransfer(ctx context.Context, t model.Transfer, rec deviceR
 				if err == nil {
 					if res.StatusCode != 200 {
 						b, _ := io.ReadAll(io.LimitReader(res.Body, 1024))
-						err = fmt.Errorf("receiver HTTP %d: %s", res.StatusCode, b)
+						err = &peerHTTPError{Code: res.StatusCode, Message: string(b)}
 					}
 					_, _ = io.Copy(io.Discard, res.Body)
 					_ = res.Body.Close()
@@ -293,6 +301,10 @@ func (s *Server) sendTransfer(ctx context.Context, t model.Transfer, rec deviceR
 				chunkCancel()
 				if err != nil {
 					if ctx.Err() != nil {
+						return
+					}
+					if permanentPeerError(err) {
+						_ = s.engine.Fail(t.ID, err.Error())
 						return
 					}
 					_ = s.engine.MarkReconnecting(t.ID, err.Error())
@@ -311,6 +323,10 @@ func (s *Server) sendTransfer(ctx context.Context, t model.Transfer, rec deviceR
 			e = requestJSON(ctx, client, "POST", base+"/"+remote+"/files/"+f.ID+"/complete", rec.OutboundToken, map[string]string{"sha256": hash}, &done)
 			if e != nil {
 				if ctx.Err() != nil {
+					return
+				}
+				if permanentPeerError(e) {
+					_ = s.engine.Fail(t.ID, e.Error())
 					return
 				}
 				_ = s.engine.MarkReconnecting(t.ID, e.Error())
@@ -396,43 +412,57 @@ func sleepContext(ctx context.Context, d time.Duration) bool {
 	}
 }
 func (s *Server) archive(w http.ResponseWriter, r *http.Request, t model.Transfer) {
-	w = s.traffic.WrapWriter(r.Context(), w, "send")
 	if t.Direction != "send" || t.State == "cancelled" {
 		fail(w, 403, errors.New("archive unavailable"))
 		return
 	}
+	for _, file := range t.Files {
+		if file.Directory {
+			continue
+		}
+		opened, _, err := s.engine.OpenDownloadContext(r.Context(), t.ID, file.ID)
+		if err != nil {
+			s.engineError(w, err)
+			return
+		}
+		opened.Close()
+	}
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", `attachment; filename="AirLink.zip"`)
-	zw := zip.NewWriter(w)
+	policy := &sourcePolicyWriter{ResponseWriter: w, ctx: r.Context()}
+	zw := zip.NewWriter(s.traffic.WrapWriter(r.Context(), policy, "send"))
 	for _, m := range t.Files {
 		select {
 		case <-r.Context().Done():
-			_ = zw.Close()
-			return
+			panic(http.ErrAbortHandler)
 		default:
 		}
 		name := m.Path
 		if m.Directory {
 			name = strings.TrimSuffix(name, "/") + "/"
-			_, _ = zw.Create(name)
+			if _, err := zw.Create(name); err != nil {
+				panic(http.ErrAbortHandler)
+			}
 			continue
 		}
-		f, _, err := s.engine.OpenDownload(t.ID, m.ID)
+		f, _, err := s.engine.OpenDownloadContext(r.Context(), t.ID, m.ID)
 		if err != nil {
-			_ = zw.Close()
-			return
+			panic(http.ErrAbortHandler)
 		}
+		policy.validate = func() error { return s.engine.ValidateSource(t.ID, m.ID, f) }
 		h := &zip.FileHeader{Name: name, Method: zip.Store}
 		h.SetModTime(time.UnixMilli(m.Modified))
 		entry, err := zw.CreateHeader(h)
 		if err == nil {
-			_, err = io.Copy(entry, f)
+			_, err = io.Copy(entry, &sourceReader{Context: r.Context(), File: f, server: s, transferID: t.ID, fileID: m.ID})
 		}
 		_ = f.Close()
+		policy.validate = nil
 		if err != nil {
-			_ = zw.Close()
-			return
+			panic(http.ErrAbortHandler)
 		}
 	}
-	_ = zw.Close()
+	if err := zw.Close(); err != nil {
+		panic(http.ErrAbortHandler)
+	}
 }

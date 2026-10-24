@@ -63,6 +63,7 @@ type Server struct {
 	senders                              map[string]bool
 	senderCancels                        map[string]context.CancelFunc
 	active                               map[string]map[string]context.CancelFunc
+	transferRequests                     map[string]map[string]context.CancelFunc
 	chunkSlots                           chan struct{}
 	ctx                                  context.Context
 	cancel                               context.CancelFunc
@@ -404,6 +405,9 @@ func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithCancel(r.Context())
 	r = r.WithContext(ctx)
+	// Cancelled receive limiters and stalled HTTP bodies must release their
+	// connection as well as their logical transfer state.
+	stopIO := interruptRequestOnCancellation(ctx, w, r)
 	rid := randomID()
 	s.mu.Lock()
 	if s.active[d.ID] == nil {
@@ -412,6 +416,7 @@ func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) {
 	s.active[d.ID][rid] = cancel
 	s.mu.Unlock()
 	defer func() {
+		stopIO()
 		cancel()
 		s.mu.Lock()
 		delete(s.active[d.ID], rid)
@@ -481,6 +486,10 @@ func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) {
 		fail(w, 403, errors.New("device permission revoked"))
 		return
 	}
+	if len(parts) >= 5 && parts[2] == "files" || len(parts) == 3 && parts[2] == "archive" {
+		unregister := s.trackTransferRequest(t.ID, rid, cancel)
+		defer unregister()
+	}
 	if len(parts) == 2 && r.Method == "GET" {
 		t = publicTransfer(t)
 		respond(w, 200, t)
@@ -490,10 +499,14 @@ func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) {
 		switch parts[2] {
 		case "pause":
 			err = s.engine.Pause(t.ID)
+			s.stopSender(t.ID)
+			s.stopTransferRequests(t.ID)
 		case "resume":
 			err = s.engine.Resume(t.ID)
 		case "cancel":
 			err = s.engine.Cancel(t.ID)
+			s.stopSender(t.ID)
+			s.stopTransferRequests(t.ID)
 		case "downloaded":
 			err = s.engine.Downloaded(t.ID)
 		default:
@@ -576,7 +589,7 @@ func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if len(parts) == 5 && parts[4] == "download" && r.Method == "GET" {
-			f, m, e := s.engine.OpenDownload(t.ID, fid)
+			f, m, e := s.engine.OpenDownloadContext(r.Context(), t.ID, fid)
 			if e != nil {
 				s.engineError(w, e)
 				return
@@ -589,7 +602,8 @@ func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) {
 			}
 			w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(filepath.Base(m.Path)))
 			w.Header().Set("ETag", fmt.Sprintf(`"%s-%d-%d"`, m.ID, fi.Size(), fi.ModTime().UnixNano()))
-			http.ServeContent(s.traffic.WrapWriter(r.Context(), w, "send"), r, m.Path, fi.ModTime(), &cancelReader{Context: r.Context(), File: f})
+			policy := &sourcePolicyWriter{ResponseWriter: w, ctx: r.Context(), validate: func() error { return s.engine.ValidateSource(t.ID, fid, f) }}
+			http.ServeContent(s.traffic.WrapWriter(r.Context(), policy, "send"), r, m.Path, fi.ModTime(), &sourceReader{Context: r.Context(), File: f, server: s, transferID: t.ID, fileID: fid})
 			return
 		}
 	}

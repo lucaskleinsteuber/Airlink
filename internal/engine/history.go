@@ -17,6 +17,7 @@ func (e *Engine) ClearHistory(deviceID string) (int, error) {
 	}
 	defer tx.Rollback()
 	for _, id := range ids {
+		e.cancelSourceOperationsLocked(id)
 		if _, err = tx.Exec("DELETE FROM chunks WHERE transfer_id=?", id); err != nil {
 			return 0, err
 		}

@@ -27,7 +27,7 @@ struct ClipboardView: View {
                 Text("\(draft.utf8.count) / \(ClipboardText.maximumUTF8Bytes) UTF-8 bytes").font(.caption).foregroundStyle(draft.utf8.count > ClipboardText.maximumUTF8Bytes ? .red : .secondary)
                 Spacer()
                 Button(sending ? model.text("Wird gesendet …", "Sending …") : model.text("Senden", "Send")) { send() }.buttonStyle(.borderedProminent)
-                    .disabled(!ClipboardText.isValid(draft) || !devices.contains(where: { $0.id == target }) || sending || model.engineError != nil)
+                    .disabled(!ClipboardText.isValid(draft) || !devices.contains(where: { $0.id == target }) || sending || !model.isReady)
             }
             if let error { Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled) }
             Divider()
@@ -41,7 +41,7 @@ struct ClipboardView: View {
                                 HStack {
                                     Label((message.direction == "receive" ? model.text("Von ", "From ") : model.text("An ", "To ")) + message.deviceName, systemImage: message.direction == "receive" ? "arrow.down.left" : "arrow.up.right").font(.caption).foregroundStyle(.secondary)
                                     Spacer()
-                                    Button { model.command("clipboard.dismiss", params: ["id": message.id]) } label: { Image(systemName: "xmark") }.buttonStyle(.borderless).help(model.text("Verwerfen", "Dismiss"))
+                                    Button { model.command("clipboard.dismiss", params: ["id": message.id]) } label: { Image(systemName: "xmark") }.buttonStyle(.borderless).help(model.text("Verwerfen", "Dismiss")).disabled(!model.isReady)
                                 }
                                 Text(message.text).textSelection(.enabled).lineLimit(5).frame(maxWidth: .infinity, alignment: .leading)
                                 Button(model.text("Kopieren", "Copy")) {

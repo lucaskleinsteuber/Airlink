@@ -42,7 +42,7 @@ struct HistoryView: View {
                         ForEach(knownDevices.keys.sorted(), id: \.self) { Text(knownDevices[$0] ?? $0).tag($0) }
                     }
                     Picker(model.text("Einträge", "Entries"), selection: $filter.limit) { Text("100").tag(100); Text("250").tag(250); Text("500").tag(500) }.frame(width: 155)
-                    Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") }.disabled(loading)
+                    Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") }.disabled(loading || !model.isReady)
                 }
                 if loading { ProgressView().controlSize(.small) }
                 if let error { Text(error).foregroundStyle(.red).font(.callout).textSelection(.enabled) }
@@ -58,7 +58,7 @@ struct HistoryView: View {
                 HStack {
                     Text(model.text("Dateien bleiben erhalten.", "Files remain unchanged.")).font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    Button(model.text("Beendeten Verlauf löschen …", "Clear finished history …"), role: .destructive) { confirmClear = true }.disabled(model.status == nil)
+                    Button(model.text("Beendeten Verlauf löschen …", "Clear finished history …"), role: .destructive) { confirmClear = true }.disabled(!model.isReady)
                 }
             } else {
                 StatisticsView().environmentObject(model).frame(minHeight: 330, maxHeight: 490)
@@ -178,7 +178,7 @@ struct RelayRow: View {
                 if relay.isActive {
                     Button { model.command("relay.cancel", params: ["id": relay.id]) } label: { Image(systemName: "xmark") }.help(model.text("Abbrechen", "Cancel"))
                 }
-            }
+            }.disabled(!model.isReady)
             ProgressView(value: relay.fractionDelivered)
             HStack {
                 Text(model.stateLabel(relay.state))

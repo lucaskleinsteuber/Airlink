@@ -94,7 +94,7 @@ func (s *Server) createShare(owner string, input model.ShareCreate) (model.Share
 				// local creation time, which becomes the share's immutable snapshot.
 				ref.File.Modified = 0
 			} else if !file.Directory {
-				opened, _, openErr := s.engine.OpenDownload(t.ID, file.ID)
+				opened, _, openErr := s.engine.OpenDownloadContext(s.ctx, t.ID, file.ID)
 				if openErr != nil {
 					return model.Share{}, shares.ErrUnavailable
 				}

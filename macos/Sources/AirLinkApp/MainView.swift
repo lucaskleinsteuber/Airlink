@@ -42,7 +42,7 @@ struct MainView: View {
                 if !nearby.isEmpty {
                     Section(model.text("In der Nähe", "Nearby")) {
                         ForEach(nearby) { device in
-                            Button { model.showConnection = true } label: { Label(device.name, systemImage: "antenna.radiowaves.left.and.right") }
+                            Button { model.showConnection = true } label: { Label(device.name, systemImage: "antenna.radiowaves.left.and.right") }.disabled(!model.isReady)
                                 .contextMenu { Text(device.address ?? "").textSelection(.enabled) }
                         }
                     }
@@ -51,15 +51,13 @@ struct MainView: View {
             .navigationSplitViewColumnWidth(min: 200, ideal: 230, max: 290)
             .safeAreaInset(edge: .bottom) {
                 Button { model.showConnection = true } label: { Label(model.text("Gerät verbinden", "Connect device"), systemImage: "plus") }
-                    .buttonStyle(.plain).padding().frame(maxWidth: .infinity, alignment: .leading)
+                    .buttonStyle(.plain).padding().frame(maxWidth: .infinity, alignment: .leading).disabled(!model.isReady)
             }
         } detail: {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     title
-                    if let issue = model.engineError {
-                        Label(issue, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).textSelection(.enabled)
-                    }
+                    if !model.isReady { HelperAvailabilityView().environmentObject(model) }
                     pairingRequests
                     dropArea
                     transfers
@@ -67,11 +65,11 @@ struct MainView: View {
             }
             .background(Color(nsColor: .windowBackgroundColor))
             .toolbar {
-                ToolbarItem { Button { showHistory = true } label: { Label(model.text("Verlauf", "History"), systemImage: "clock") } }
-                ToolbarItem { Button { showRelays = true } label: { Label(model.text("Browser-Relays", "Browser relays"), systemImage: "arrow.triangle.branch") } }
-                ToolbarItem { Button { showShares = true } label: { Label("Quick Share", systemImage: "link") } }
-                ToolbarItem { Button { showClipboard = true } label: { Label(model.text("Zwischenablage", "Clipboard"), systemImage: "clipboard") } }
-                ToolbarItem { Button { showLocalConnection = true } label: { Label(model.text("Verbindung", "Connection"), systemImage: "qrcode") } }
+                ToolbarItem { Button { showHistory = true } label: { Label(model.text("Verlauf", "History"), systemImage: "clock") }.disabled(!model.isReady) }
+                ToolbarItem { Button { showRelays = true } label: { Label(model.text("Browser-Relays", "Browser relays"), systemImage: "arrow.triangle.branch") }.disabled(!model.isReady) }
+                ToolbarItem { Button { showShares = true } label: { Label("Quick Share", systemImage: "link") }.disabled(!model.isReady) }
+                ToolbarItem { Button { showClipboard = true } label: { Label(model.text("Zwischenablage", "Clipboard"), systemImage: "clipboard") }.disabled(!model.isReady) }
+                ToolbarItem { Button { showLocalConnection = true } label: { Label(model.text("Verbindung", "Connection"), systemImage: "qrcode") }.disabled(!model.isReady) }
                 ToolbarItem { SettingsLink { Label(model.text("Einstellungen", "Settings"), systemImage: "gearshape") } }
             }
         }
@@ -108,7 +106,7 @@ struct MainView: View {
                 HStack {
                     Button(model.text("Ablehnen", "Deny")) { model.command("pair.deny", params: ["id": request.id]) }
                     Button(model.text("Verbinden", "Approve")) { model.command("pair.approve", params: ["id": request.id]) }.buttonStyle(.borderedProminent)
-                }
+                }.disabled(!model.isReady)
             }.padding(18).frame(maxWidth: .infinity, alignment: .leading).background(.blue.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
         }
     }
@@ -124,9 +122,9 @@ struct MainView: View {
                 Button(model.text("Dateien auswählen …", "Choose files …")) { model.chooseFiles() }
                 if !model.pendingURLs.isEmpty {
                     Button(model.text("Leeren", "Clear")) { model.pendingURLs = [] }.buttonStyle(.borderless)
-                    Button(model.text("Freigabelink …", "Share link …")) { showShareCreator = true }.disabled(model.status == nil || model.engineError != nil)
-                    Button(model.text("Senden", "Send")) { model.send() }.buttonStyle(.borderedProminent)
-                        .disabled(model.selectedDevice?.canReceive != true || model.engineError != nil)
+                    Button(model.text("Freigabelink …", "Share link …")) { showShareCreator = true }.disabled(!model.isReady)
+                    Button(model.sendingFiles ? model.text("Wird gesendet …", "Sending …") : model.text("Senden", "Send")) { model.send() }.buttonStyle(.borderedProminent)
+                        .disabled(model.selectedDevice?.canReceive != true || !model.isReady || model.sendingFiles)
                 }
             }
         }
@@ -152,6 +150,35 @@ struct MainView: View {
             }
             ForEach(list) { transfer in TransferRow(transfer: transfer).environmentObject(model) }
         }
+    }
+}
+
+struct HelperAvailabilityView: View {
+    @EnvironmentObject var model: AppModel
+    var compact = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if model.lifecycle == .starting || model.lifecycle == .stopping {
+                HStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text(model.lifecycle == .starting ? model.text("AirLink wird gestartet …", "Starting AirLink …") : model.text("AirLink wird beendet …", "Stopping AirLink …"))
+                }.foregroundStyle(.secondary)
+            } else {
+                Label(model.text("AirLink ist nicht bereit", "AirLink is unavailable"), systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                if let issue = model.engineError {
+                    Text(issue).font(.caption).foregroundStyle(.secondary).lineLimit(compact ? 2 : 4).textSelection(.enabled)
+                    if !compact {
+                        DisclosureGroup(model.text("Fehlerdetails", "Error details")) {
+                            ScrollView { Text(issue).font(.caption).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 140)
+                        }.font(.caption)
+                    }
+                }
+                if model.canRetry {
+                    Button(model.text("Erneut versuchen", "Retry")) { Task { await model.start() } }
+                    if !compact { Button(model.text("Empfangsordner auswählen und erneut versuchen …", "Choose receive folder and retry …")) { model.chooseRecoveryFolder() } }
+                }
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -182,7 +209,7 @@ struct TransferRow: View {
                 if transfer.state == "completed", transfer.destination != nil, transfer.hasReceivedContent {
                     Button { model.revealDestination(transfer) } label: { Image(systemName: "folder") }.help(model.text("Im Finder öffnen", "Open in Finder"))
                 }
-            }
+            }.disabled(!model.isReady)
             ProgressView(value: transfer.fractionCompleted).tint(transfer.state == "completed" ? .green : .accentColor)
             HStack {
                 Text("\(TransferFormatting.bytes(transfer.accountedBytes)) / \(TransferFormatting.bytes(transfer.totalBytes))")
@@ -249,7 +276,7 @@ struct ConnectView: View {
                 Text(model.text("Auch bei automatisch erkannten Geräten den Fingerabdruck vergleichen.", "Compare the fingerprint even for discovered devices.")).font(.caption).foregroundStyle(.secondary)
             }
             Text(model.text("Danach die Anfrage am anderen Computer bestätigen. Ein Browser verbindet sich über den QR-Code dieser App.", "Then approve the request on the other computer. A browser connects using this app’s QR code.")).font(.caption).foregroundStyle(.secondary)
-            HStack { Spacer(); Button(model.text("Abbrechen", "Cancel")) { dismiss() }; Button(model.text("Anfrage senden", "Request pairing")) { model.connect(url: url, fingerprint: fingerprint); dismiss() }.buttonStyle(.borderedProminent).disabled(!valid || model.status == nil || model.engineError != nil) }
+            HStack { Spacer(); Button(model.text("Abbrechen", "Cancel")) { dismiss() }; Button(model.text("Anfrage senden", "Request pairing")) { model.connect(url: url, fingerprint: fingerprint); dismiss() }.buttonStyle(.borderedProminent).disabled(!valid || !model.isReady) }
         }.textFieldStyle(.roundedBorder).padding(28).frame(width: 510)
     }
     private var valid: Bool {
@@ -316,11 +343,11 @@ struct DeviceSettingsView: View {
             HStack {
                 Button(model.text("Vertrauen widerrufen …", "Revoke trust …"), role: .destructive) { confirmRevoke = true }
                 Spacer(); Button(model.text("Abbrechen", "Cancel")) { dismiss() }
-                Button(model.text("Speichern", "Save")) { model.update(device); dismiss() }.buttonStyle(.borderedProminent)
+                Button(model.text("Speichern", "Save")) { model.update(device); dismiss() }.buttonStyle(.borderedProminent).disabled(!model.isReady)
             }
         }.padding(28).frame(width: 540)
         .confirmationDialog(model.text("Vertrauen für \(device.name) widerrufen?", "Revoke trust for \(device.name)?"), isPresented: $confirmRevoke) {
-            Button(model.text("Widerrufen", "Revoke"), role: .destructive) { model.command("device.revoke", params: ["id": device.id]); dismiss() }
+            Button(model.text("Widerrufen", "Revoke"), role: .destructive) { model.command("device.revoke", params: ["id": device.id]); dismiss() }.disabled(!model.isReady)
         }
     }
 }

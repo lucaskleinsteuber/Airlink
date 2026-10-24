@@ -32,8 +32,7 @@ struct SettingsView: View {
                     Text("Deutsch").tag("de")
                     Text("English").tag("en")
                 }
-                Toggle(model.text("Benachrichtigungen", "Notifications"), isOn: $settings.notifications)
-                    .onChange(of: settings.notifications) { _, enabled in if enabled { model.notificationPermission() } }
+                Toggle(model.text("Benachrichtigungen", "Notifications"), isOn: Binding(get: { settings.notifications }, set: { enabled in settings.notifications = enabled; if enabled { model.notificationPermission() } }))
                 if settings.notifications {
                     Button(model.text("Benachrichtigungen im System erlauben …", "Allow system notifications …")) { model.notificationPermission() }
                 }
@@ -66,8 +65,8 @@ struct SettingsView: View {
                 HStack {
                     Text(ShortcutLabel.string(settings.shortcut)).font(.system(.body, design: .monospaced))
                     Spacer()
-                    Button(recording ? model.text("Abbrechen", "Cancel") : model.text("Aufnehmen …", "Record …")) { setRecording(!recording) }.disabled(!settings.shortcut.enabled || saving || model.status == nil)
-                    Button(model.text("Standard", "Default")) { setRecording(false); settings.shortcut = Shortcut() }.disabled(saving || model.status == nil)
+                    Button(recording ? model.text("Abbrechen", "Cancel") : model.text("Aufnehmen …", "Record …")) { setRecording(!recording) }.disabled(!settings.shortcut.enabled || saving || !model.isReady)
+                    Button(model.text("Standard", "Default")) { setRecording(false); settings.shortcut = Shortcut() }.disabled(saving || !model.isReady)
                 }
                 if recording {
                     ShortcutRecorder(captured: { shortcut in settings.shortcut = shortcut; setRecording(false) }, cancelled: { setRecording(false) }, invalid: { settingsError = model.text("Bitte ⌘ oder ⌃ zusammen mit einer Taste drücken.", "Press a key together with Command or Control.") })
@@ -82,14 +81,17 @@ struct SettingsView: View {
                 Text(model.text("⌘ oder ⌃ ist erforderlich; ⇧ und ⌥ sind optional. Die neue Kombination wird erst beim Speichern aktiviert.", "Command or Control is required; Shift and Option are optional. A new shortcut activates only when saved.")).font(.caption).foregroundStyle(.secondary)
                 Text(model.text("Im Finder: Rechtsklick → Dienste → Mit AirLink senden. Die App läuft beim Schließen des Fensters in der Menüleiste weiter.", "In Finder: right-click → Services → Send with AirLink. Closing the window keeps the app running in the menu bar.")).font(.caption).foregroundStyle(.secondary)
             }
+            if !model.isReady { HelperAvailabilityView().environmentObject(model) }
             if let settingsError { Text(settingsError).font(.callout).foregroundStyle(.red).textSelection(.enabled) }
-            HStack { Text("AirLink \(model.version)").font(.caption).foregroundStyle(.secondary); Spacer(); Button(saving ? model.text("Wird gespeichert …", "Saving …") : model.text("Speichern", "Save")) { save() }.buttonStyle(.borderedProminent).disabled(model.status == nil || settings.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || sendLimit == nil || receiveLimit == nil || recording || saving || !settings.shortcut.isValid || !settings.organization.isValid) }
+            HStack { Text("AirLink \(model.version)").font(.caption).foregroundStyle(.secondary); Spacer(); Button(saving ? model.text("Wird gespeichert …", "Saving …") : model.text("Speichern", "Save")) { save() }.buttonStyle(.borderedProminent).disabled(!model.isReady || settings.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || sendLimit == nil || receiveLimit == nil || recording || saving || !settings.shortcut.isValid || !settings.organization.isValid) }
         }
         .formStyle(.grouped).padding(8).disabled(saving)
         .onAppear { loadSettings(); refreshLogin() }
         .onDisappear { setRecording(false) }
         .onChange(of: scenePhase) { _, phase in if phase == .active { refreshLogin() } else { setRecording(false) } }
         .onChange(of: model.status?.id) { _, _ in if settings.name.isEmpty { loadSettings() } }
+        .onChange(of: model.isReady) { _, ready in if !ready { setRecording(false) } }
+        .onChange(of: model.recoveredReceiveFolder) { _, folder in if let folder { settings.receiveDirectory = folder.path } }
         .onChange(of: settings.shortcut.enabled) { _, enabled in if !enabled { setRecording(false) } }
     }
     private func setRecording(_ value: Bool) { recording = value; model.captureShortcut(value) }

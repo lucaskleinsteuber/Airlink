@@ -121,15 +121,15 @@ struct DuplicateAttentionView: View {
                         Button(model.text("Vorhandene Datei zeigen", "Show existing file")) {
                             working = true; revalidating = false; error = nil
                             Task { do { try await model.revealDuplicate(candidate.id) } catch { self.error = error.localizedDescription }; working = false }
-                        }.disabled(working)
-                        Button(model.text("Neue Datei überspringen", "Skip new file")) { resolve("skip", candidate: candidate.id) }.disabled(working || !transfer.canResolveDuplicates)
+                        }.disabled(working || !model.isReady)
+                        Button(model.text("Neue Datei überspringen", "Skip new file")) { resolve("skip", candidate: candidate.id) }.disabled(working || !model.isReady || !transfer.canResolveDuplicates)
                     }
                 }
             }
             HStack {
                 Text(model.text("Die vorhandene Datei bleibt unverändert. Überspringen erhält keine neue Dateikopie.", "The existing file stays unchanged. Skipping does not create a new copy.")).font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button(model.text("Weitere Kopie empfangen", "Receive another copy")) { resolve("keep") }.disabled(working || !transfer.canResolveDuplicates)
+                Button(model.text("Weitere Kopie empfangen", "Receive another copy")) { resolve("keep") }.disabled(working || !model.isReady || !transfer.canResolveDuplicates)
             }
             if !transfer.canResolveDuplicates { Text(model.text("Zum Entscheiden die Übertragung fortsetzen und die Prüfung abwarten.", "Resume the transfer and wait for checking before choosing.")).font(.caption).foregroundStyle(.secondary) }
             if let error { Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }

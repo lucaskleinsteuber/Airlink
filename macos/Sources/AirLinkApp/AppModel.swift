@@ -4,13 +4,17 @@ import Combine
 import ServiceManagement
 import UserNotifications
 
+enum HelperLifecycle { case stopped, starting, ready, failed, stopping }
+
 @MainActor final class AppModel: ObservableObject {
     static let shared = AppModel()
     @Published var status: HostStatus?
     @Published var selectedDeviceID: String?
     @Published var error: String?
     @Published var engineError: String?
-    @Published var pendingURLs: [URL] = []
+    @Published private(set) var lifecycle = HelperLifecycle.stopped
+    @Published private(set) var recoveredReceiveFolder: URL?
+    @Published private var sendSelection = FileSendSelection()
     @Published var showConnection = false
     @Published var registeredShortcut = Shortcut(enabled: false)
     @Published var shortcutError: String?
@@ -19,8 +23,8 @@ import UserNotifications
     var openMainWindow: (() -> Void)?
     private let client = DaemonClient()
     private var polling: Task<Void, Never>?
-    private var didStart = false
-    private var refreshing = false
+    private var lifecycleGeneration = UUID()
+    private var refreshID: UUID?
     private var notified = Set<String>()
     private var lastShortcutAttempt: Shortcut?
 
@@ -33,37 +37,74 @@ import UserNotifications
     var version: String { status?.version ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "" }
     var shares: [Share] { status?.shares ?? [] }
     var clipboardMessages: [ClipboardMessage] { status?.clipboard ?? [] }
+    var pendingURLs: [URL] {
+        get { sendSelection.urls }
+        set { sendSelection.replace(newValue) }
+    }
+    var sendingFiles: Bool { sendSelection.isSending }
+    var isReady: Bool { lifecycle == .ready && engineError == nil && status != nil }
+    var canRetry: Bool { lifecycle == .failed }
 
-    func start() async {
-        guard !didStart else { return }; didStart = true
+    func start(receiveDirectory: URL? = nil) async {
+        guard lifecycle == .stopped || lifecycle == .failed else { return }
+        let generation = UUID(); lifecycleGeneration = generation
+        lifecycle = .starting; engineError = nil; recoveredReceiveFolder = nil
+        polling?.cancel(); polling = nil; refreshID = nil
         do {
+            guard await client.stop() else { throw NativeError.unavailable(text("Der vorherige AirLink-Helfer konnte nicht beendet werden. Bitte erneut versuchen.", "The previous AirLink helper could not be stopped. Please try again.")) }
+            guard lifecycleGeneration == generation, lifecycle != .stopping else { return }
             let helper = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/airlink")
             guard FileManager.default.isExecutableFile(atPath: helper.path) else {
                 throw NativeError.unavailable(text("Der AirLink-Helfer fehlt. Bitte die vollständige App verwenden.", "AirLink helper is missing. Please use the complete app bundle."))
             }
             let data = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("AirLink", isDirectory: true)
             try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
-            try await client.start(executable: helper, dataDirectory: data)
+            try await client.start(executable: helper, dataDirectory: data, receiveDirectory: receiveDirectory)
             await refresh()
+            guard lifecycleGeneration == generation, lifecycle == .ready else { return }
+            if receiveDirectory != nil, let path = status?.settings.receiveDirectory { recoveredReceiveFolder = URL(fileURLWithPath: path, isDirectory: true) }
             polling = Task { [weak self] in
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(1))
                     guard !Task.isCancelled else { return }
+                    guard self?.lifecycleGeneration == generation, self?.lifecycle == .ready else { return }
                     await self?.refresh()
                 }
             }
-        } catch { engineError = error.localizedDescription }
+        } catch {
+            guard lifecycleGeneration == generation else { return }
+            engineError = error.localizedDescription; lifecycle = .failed
+        }
     }
-    func stop() async { polling?.cancel(); await client.stop() }
+    @discardableResult func stop() async -> Bool {
+        lifecycle = .stopping; lifecycleGeneration = UUID()
+        polling?.cancel(); polling = nil; refreshID = nil
+        let exited = await client.stop()
+        lifecycle = exited ? .stopped : .failed
+        if !exited { engineError = text("Der AirLink-Helfer konnte nicht beendet werden. Bitte erneut versuchen.", "AirLink helper could not be stopped. Please try again.") }
+        return exited
+    }
+    func chooseRecoveryFolder() {
+        guard canRetry else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.canCreateDirectories = true
+        panel.message = text("Wähle den Zielordner für neue eingehende Übertragungen. Bereits empfangene Dateien und bisherige Übertragungsziele bleiben an ihrem Platz.", "Choose the destination for new incoming transfers. Existing received files and transfer destinations stay in place.")
+        panel.begin { [weak self] response in
+            guard response == .OK, let url = panel.url, url.isFileURL else { return }
+            Task { @MainActor in await self?.start(receiveDirectory: url) }
+        }
+    }
     func refresh() async {
-        guard !refreshing else { return }
-        refreshing = true
-        defer { refreshing = false }
+        guard lifecycle == .starting || lifecycle == .ready, refreshID == nil else { return }
+        let requestID = UUID(), generation = lifecycleGeneration
+        refreshID = requestID
+        defer { if refreshID == requestID { refreshID = nil } }
         do {
             let data = try await client.request("status")
             let next = try JSONDecoder().decode(HostStatus.self, from: data)
+            guard lifecycleGeneration == generation, lifecycle != .stopping else { return }
             let previous = status
-            status = next; engineError = nil
+            status = next; engineError = nil; lifecycle = .ready
             if lastShortcutAttempt != next.settings.shortcut, let controller = shortcutController {
                 lastShortcutAttempt = next.settings.shortcut
                 do { try controller.apply(next.settings.shortcut); registeredShortcut = controller.actual; if next.settings.shortcut.enabled { shortcutError = nil } }
@@ -71,8 +112,9 @@ import UserNotifications
                     registeredShortcut = controller.actual; shortcutError = error.localizedDescription
                     var rollback = next.settings; rollback.shortcut = controller.actual
                     Task { [weak self] in
-                        do { _ = try await self?.client.request("settings.update", params: JSONEncoder().encode(rollback)) }
-                        catch { self?.shortcutError = error.localizedDescription }
+                        guard let self, self.lifecycleGeneration == generation, self.isReady else { return }
+                        do { _ = try await self.client.request("settings.update", params: JSONEncoder().encode(rollback)) }
+                        catch { if self.lifecycleGeneration == generation { self.shortcutError = error.localizedDescription } }
                     }
                 }
             }
@@ -94,20 +136,25 @@ import UserNotifications
                     }
                 }
             }
-        } catch { engineError = error.localizedDescription }
+        } catch {
+            guard lifecycleGeneration == generation else { return }
+            engineError = error.localizedDescription; lifecycle = .failed
+        }
     }
     func command(_ method: String, params: [String: String]) {
         perform(method, data: try? JSONEncoder().encode(params))
     }
     func perform(_ method: String, data: Data?) {
+        guard isReady else { error = engineError ?? text("AirLink ist noch nicht bereit.", "AirLink is not ready yet."); return }
         Task {
-            do { _ = try await client.request(method, params: data); await refresh() }
-            catch { self.error = error.localizedDescription }
+            do { try requireReady(); _ = try await client.request(method, params: data); await refresh() }
+            catch { self.error = error.localizedDescription; await refresh() }
         }
     }
     func update(_ device: Device) { perform("device.update", data: try? JSONEncoder().encode(device)) }
     func update(_ settings: HostSettings) { Task { do { try await saveSettings(settings) } catch { self.error = error.localizedDescription } } }
     func saveSettings(_ settings: HostSettings) async throws {
+        try requireReady()
         guard settings.shortcut.isValid, RateLimit.isValid(settings.sendLimitBytesPerSecond), RateLimit.isValid(settings.receiveLimitBytesPerSecond) else { throw NativeError.unavailable(text("Ungültige Tastenkombination oder Geschwindigkeitsgrenze.", "Invalid shortcut or speed limit.")) }
         guard settings.organization.isValid else { throw NativeError.unavailable(text("Bitte gültige Dateiendungen und sichere relative Ordner für die Sortierregeln verwenden.", "Use valid extensions and safe relative folders for sorting rules.")) }
         guard let controller = shortcutController else { throw NativeError.unavailable(text("Die Tastenkombination ist noch nicht bereit.", "The shortcut handler is not ready yet.")) }
@@ -135,13 +182,16 @@ import UserNotifications
         registeredShortcut = shortcutController?.actual ?? Shortcut(enabled: false)
     }
     func history(_ filter: HistoryFilter) async throws -> History {
-        try JSONDecoder().decode(History.self, from: await client.request("history.list", params: JSONEncoder().encode(filter)))
+        try requireReady()
+        return try JSONDecoder().decode(History.self, from: await client.request("history.list", params: JSONEncoder().encode(filter)))
     }
     func clearHistory() async throws {
+        try requireReady()
         _ = try await client.request("history.clear")
         await refresh()
     }
     func resolveDuplicate(transferID: String, fileID: String, action: String, candidateID: String? = nil) async throws {
+        try requireReady()
         guard let transfer = status?.transfers.first(where: { $0.id == transferID }), transfer.canResolveDuplicates,
               let file = transfer.pendingDuplicateFiles.first(where: { $0.id == fileID }), action == "keep" || action == "skip" else {
             throw NativeError.unavailable(text("Die Übertragung benötigt eine aktuelle, nicht pausierte Duplikatentscheidung.", "Refresh or resume the transfer before resolving this duplicate."))
@@ -155,6 +205,7 @@ import UserNotifications
         await refresh()
     }
     func revealDuplicate(_ candidateID: String) async throws {
+        try requireReady()
         struct CandidatePath: Decodable { var path: String }
         let response = try await client.request("duplicate.path", params: JSONEncoder().encode(["candidateId": candidateID]))
         let path = try JSONDecoder().decode(CandidatePath.self, from: response).path
@@ -164,6 +215,7 @@ import UserNotifications
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
     }
     func createShare(_ request: ShareCreate) async throws -> Share {
+        try requireReady()
         guard request.hasValidSource else { throw NativeError.unavailable(text("Bitte Dateien oder einen Ordner auswählen.", "Please choose files or a folder.")) }
         let result = try await client.request("share.create", params: JSONEncoder().encode(request))
         let share = try JSONDecoder().decode(Share.self, from: result)
@@ -171,6 +223,7 @@ import UserNotifications
         return share
     }
     func sendClipboard(_ text: String, to deviceID: String) async throws {
+        try requireReady()
         guard ClipboardText.isValid(text) else { throw NativeError.unavailable(self.text("Text muss 1 bis 65.536 UTF-8-Bytes enthalten.", "Text must contain 1 to 65,536 UTF-8 bytes.")) }
         guard status?.devices.contains(where: { $0.id == deviceID && $0.paired && $0.canClipboard }) == true else {
             throw NativeError.unavailable(self.text("Zwischenablage ist für dieses Gerät nicht freigegeben.", "Clipboard sharing is not enabled for this device."))
@@ -183,16 +236,23 @@ import UserNotifications
         command("peer.connect", params: ["url": url.trimmingCharacters(in: .whitespacesAndNewlines), "fingerprint": fingerprint.replacingOccurrences(of: " ", with: "").replacingOccurrences(of: ":", with: "").lowercased()])
     }
     func add(_ urls: [URL]) {
-        pendingURLs += urls.filter { url in !pendingURLs.contains(url) }
+        sendSelection.append(urls)
         showMainWindow()
     }
     func send() {
-        guard let id = selectedDeviceID, !pendingURLs.isEmpty else { return }
-        struct Offer: Encodable { var deviceId: String; var paths: [String] }
-        let data = try? JSONEncoder().encode(Offer(deviceId: id, paths: pendingURLs.map(\.path)))
+        guard isReady, let device = selectedDevice, device.canReceive,
+              let submission = sendSelection.begin(deviceID: device.id) else { return }
         Task {
-            do { _ = try await client.request("offer", params: data); pendingURLs = []; await refresh() }
-            catch { self.error = error.localizedDescription }
+            do {
+                try requireReady()
+                _ = try await client.request("offer", params: JSONEncoder().encode(submission))
+                sendSelection.acknowledge(submission)
+                await refresh()
+            } catch {
+                sendSelection.fail(submission)
+                self.error = error.localizedDescription
+                await refresh()
+            }
         }
     }
     func chooseFiles() {
@@ -210,6 +270,9 @@ import UserNotifications
     }
     func notificationPermission() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+    }
+    private func requireReady() throws {
+        guard isReady else { throw NativeError.unavailable(engineError ?? text("AirLink ist noch nicht bereit.", "AirLink is not ready yet.")) }
     }
     private func notify(id: String, title: String, body: String) {
         guard notified.insert(id).inserted else { return }

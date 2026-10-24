@@ -1,6 +1,6 @@
 # AirLink roadmap
 
-This roadmap separates the established 0.1/0.2 baseline, implemented 0.3/0.4 preview capabilities, and future capabilities. Milestones are capability boundaries, not release dates. Version numbers use MAJOR.MINOR.PATCH; patch releases fix the current minor release without claiming a later milestone is complete. Source implementation, final automated verification, private release packaging, and physical acceptance are separate states.
+This roadmap separates the established 0.1/0.2 baseline, implemented 0.3/0.4 preview capabilities, the 0.5 stabilization work, and future acceptance. Milestones are capability boundaries, not release dates. Version numbers use MAJOR.MINOR.PATCH; patch releases fix the current minor release without claiming a later milestone is complete. Source implementation, final automated verification, private release packaging, and physical acceptance are separate states.
 
 ## 0.1 — Local transfer foundation
 
@@ -40,8 +40,20 @@ Consolidated local 0.3 verification and private package creation are complete; s
 
 Implementation is present in the private 0.4 preview. Final automated verification, packages and delivery evidence are recorded separately in [TESTING.md](TESTING.md). Manual organization decisions, real filesystem/platform behavior and cross-device acceptance remain part of the 1.0 acceptance work; no desktop-controlling UI tests are added.
 
+## 0.5 — Failure recovery and stability (private stabilization preview)
+
+- Explicit native helper Retry with the same data directory and user-selected recovery for an unavailable receive folder. Existing destinations remain fixed; the app retains the last snapshot without claiming the failed helper is ready.
+- Bounded helper shutdown and session-scoped callbacks/replies, so failed startup, a stuck process, or an old helper cannot leave the current app waiting indefinitely or apply stale state.
+- Stable desktop source identity with size/modification checks and lazy full-hash validation of historical cached checksums before reuse, without copying whole source files or hashing the library at startup.
+- Active slow/throttled HTTP work interrupted by pause, cancellation, or revoked permissions, while retaining shared directional limits and checkpoint-based recovery.
+- Browser pairing despite optional session-storage failures, server-authoritative share lifetime despite recipient clock skew, and portable source-name validation before hashing or transfer without silent renaming.
+
+Historical hosted CI jobs did not execute; local test and build results are recorded separately.
+
 ## 1.0 — Accepted and maintainable (physical acceptance pending)
 
 Still pending: reach the full agreed platform, reliability, integrity, security, usability, and distribution acceptance bar. Stable release claims require completed evidence, including real cross-device transfers, large single files, interrupted transfers, platform-specific file handling, and macOS distribution checks.
+
+The concrete platform roles, failure cases, evidence records, and signing/notarization gates are listed in [RELEASE-READINESS.md](RELEASE-READINESS.md). Completed background checks do not close manual physical-device or native-runtime gates. No completion percentage or fixed 1.0 date is assigned.
 
 Native Windows, Linux, Android, or iOS UI clients beyond the portable desktop service and browser interface remain possible future work; no delivery date is assigned.

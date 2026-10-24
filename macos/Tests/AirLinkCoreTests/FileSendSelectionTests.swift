@@ -1,0 +1,66 @@
+import Foundation
+import Testing
+@testable import AirLinkCore
+
+@Test func sendSubmissionPinsDeviceAndPathsWhileNewSelectionsWaitForNextSend() throws {
+    let first = URL(fileURLWithPath: "/tmp/first file.bin"), added = URL(fileURLWithPath: "/tmp/new folder", isDirectory: true)
+    var selection = FileSendSelection()
+    selection.append([first, first, URL(string: "https://example.invalid/file")!])
+    let firstAttempt = selection.begin(deviceID: "device-first")
+    let submitted = try #require(firstAttempt)
+    #expect(selection.isSending)
+    selection.append([added])
+    let overlapping = selection.begin(deviceID: "device-second")
+    #expect(overlapping == nil)
+    let wire = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(submitted)) as? [String: Any])
+    #expect(Set(wire.keys) == ["deviceId", "paths"])
+    #expect(wire["deviceId"] as? String == "device-first")
+    #expect(wire["paths"] as? [String] == [first.path])
+    selection.acknowledge(submitted)
+    #expect(!selection.isSending)
+    #expect(selection.urls == [added])
+    let nextAttempt = selection.begin(deviceID: "device-second")
+    let next = try #require(nextAttempt)
+    #expect(next.deviceId == "device-second")
+    #expect(next.paths == [added.path])
+}
+
+@Test func failedSendPreservesSelectionAndPermitsExplicitRetry() throws {
+    let first = URL(fileURLWithPath: "/tmp/first.bin"), added = URL(fileURLWithPath: "/tmp/added.bin")
+    var selection = FileSendSelection()
+    selection.append([first])
+    let firstAttempt = selection.begin(deviceID: "device")
+    let submitted = try #require(firstAttempt)
+    selection.append([added])
+    selection.fail(submitted)
+    #expect(!selection.isSending)
+    #expect(selection.urls == [first, added])
+    let retryAttempt = selection.begin(deviceID: "other-device")
+    let retry = try #require(retryAttempt)
+    #expect(retry.deviceId == "other-device")
+    #expect(retry.paths == [first.path, added.path])
+    selection.fail(submitted)
+    #expect(selection.isSending)
+    selection.acknowledge(submitted)
+    #expect(selection.urls == [first, added])
+    #expect(selection.isSending)
+    selection.acknowledge(retry)
+    #expect(selection.urls.isEmpty && !selection.isSending)
+}
+
+@Test func clearingThenReselectingSameFileCreatesIndependentSelection() throws {
+    let file = URL(fileURLWithPath: "/tmp/same-file.bin")
+    var selection = FileSendSelection()
+    let emptyAttempt = selection.begin(deviceID: "device")
+    #expect(emptyAttempt == nil)
+    selection.append([file])
+    let noDeviceAttempt = selection.begin(deviceID: "")
+    #expect(noDeviceAttempt == nil)
+    let firstAttempt = selection.begin(deviceID: "device")
+    let submitted = try #require(firstAttempt)
+    selection.replace([])
+    selection.append([file])
+    selection.acknowledge(submitted)
+    #expect(selection.urls == [file])
+    #expect(!selection.isSending)
+}

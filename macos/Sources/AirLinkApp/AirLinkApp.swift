@@ -37,7 +37,9 @@ struct MenuContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack { Text("AirLink").font(.headline); Spacer(); Text(model.version).foregroundStyle(.secondary) }
-            if model.activeTransfers.isEmpty && model.activeRelays.isEmpty {
+            if !model.isReady {
+                HelperAvailabilityView(compact: true).environmentObject(model)
+            } else if model.activeTransfers.isEmpty && model.activeRelays.isEmpty {
                 Label(model.text("Bereit zum Teilen", "Ready to share"), systemImage: "checkmark.circle").foregroundStyle(.secondary)
             } else {
                 ForEach(model.activeTransfers.prefix(4)) { transfer in
@@ -65,6 +67,7 @@ struct MenuContent: View {
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
     private let services = FileService()
     private let shortcuts = ShortcutController()
+    private var terminating = false
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.servicesProvider = services
         AppModel.shared.shortcutController = shortcuts
@@ -72,6 +75,7 @@ struct MenuContent: View {
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !terminating else { return .terminateLater }
         if !AppModel.shared.activeTransfers.isEmpty || !AppModel.shared.activeRelays.isEmpty {
             let alert = NSAlert()
             alert.messageText = AppModel.shared.text("Aktive Übertragungen anhalten?", "Stop active transfers?")
@@ -79,8 +83,13 @@ struct MenuContent: View {
             alert.addButton(withTitle: AppModel.shared.text("Beenden", "Quit")); alert.addButton(withTitle: AppModel.shared.text("Abbrechen", "Cancel"))
             if alert.runModal() != .alertFirstButtonReturn { return .terminateCancel }
         }
-        shortcuts.stop()
-        Task { await AppModel.shared.stop(); NSApp.reply(toApplicationShouldTerminate: true) }
+        terminating = true
+        Task {
+            let stopped = await AppModel.shared.stop()
+            if stopped { shortcuts.stop() }
+            terminating = false
+            NSApp.reply(toApplicationShouldTerminate: stopped)
+        }
         return .terminateLater
     }
     func applicationWillTerminate(_ notification: Notification) { shortcuts.stop() }

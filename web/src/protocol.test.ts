@@ -1,14 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { bytes, canUpload, progressPercent, resumeIndex, retryDelay, safePath, shouldAbortUpload, verifySource } from './protocol';
+import { bytes, canUpload, progressPercent, resumeIndex, retryDelay, safePath, shouldAbortUpload, validateSelection, verifySource } from './protocol';
 import { CHUNK_SIZE } from './types';
 import type { RemoteFile, SavedFile, Transfer } from './types';
 const base: SavedFile = { id: 'file', path: 'Photos/test.jpg', size: CHUNK_SIZE * 2 + 17, modified: 123, directory: false, sha256: 'full', chunks: ['a', 'b', 'c'] };
 const remote = (received: number): RemoteFile => ({ ...base, received, completed: false });
 describe('relative paths', () => {
   it('preserves nested and Unicode file names', () => { expect(safePath('Fotos/Urlaub/Grüße 🏖.jpg')).toBe('Fotos/Urlaub/Grüße 🏖.jpg'); });
-  it('normalizes separators without allowing traversal or absolute paths', () => {
-    expect(safePath('Fotos\\Urlaub.jpg')).toBe('Fotos/Urlaub.jpg');
-    for (const path of ['../secret', '/etc/passwd', 'C:\\Users\\example\\secret', 'one/../../two', 'one//two', 'one/./two', 'a\0b', '\\server\\share', 'folder/']) expect(() => safePath(path)).toThrow();
+  it('rejects literal backslashes without renaming a Unix file or allowing traversal', () => {
+    for (const path of ['Fotos\\Urlaub.jpg', '../secret', '/etc/passwd', 'C:\\Users\\example\\secret', 'one/../../two', 'one//two', 'one/./two', 'a\0b', '\\server\\share', 'folder/']) expect(() => safePath(path)).toThrow();
+  });
+  it('rejects the same reserved names and unsupported characters as the host', () => {
+    for (const path of ['CON', 'nested/nul.txt', 'PrN.zip', 'AUX', 'COM1.log', 'lpt9', 'folder/.AIRLINK-PARTIALS/file', 'folder/name.', 'name ', 'notes?.txt', 'a:b', 'a<b', 'a>b', 'a"b', 'a|b', 'a*b', 'C1\u0085control.txt', 'DEL\u007f.txt']) expect(() => safePath(path), path).toThrow();
+    for (const path of ['CONSOLE.txt', 'COM0.txt', 'COM10.txt', '.airlink-partials-other', 'folder/.hidden', 'Datei e\u0301.txt', 'Datei é.txt']) expect(safePath(path)).toBe(path);
+  });
+  it('rejects duplicate letter case and files that occupy a parent directory before IO', () => {
+    const source = (path: string) => ({ path, directory: false, file: new File(['data'], path) });
+    for (const paths of [['Readme.md', 'README.md'], ['Folder', 'folder/file.txt'], ['İ.txt', 'i.txt'], ['ΟΣ.txt', 'οσ.txt']]) expect(() => validateSelection(paths.map(source))).toThrow(/Conflicting/);
+    expect(() => validateSelection([{ path: 'Folder', directory: true }, source('Folder/file.txt')])).not.toThrow();
+    expect(() => validateSelection([source('é.txt'), source('e\u0301.txt')])).not.toThrow();
   });
 });
 describe('resume safety', () => {

@@ -6,7 +6,7 @@
 
 AirLink transfers files and folders between computers and browsers on the same local network. It combines a native macOS app with a portable Windows/Linux service and a web interface for macOS, Windows, Linux, Android, and iOS.
 
-**Current version: 0.4.0. Repository status: private development preview.** Source and release downloads are available only to people with access to this repository. The source is MIT licensed; repository visibility remains private. Version 0.4 implements optional incoming-file organization. Final automated verification, private packaging, physical acceptance limits, and historical results remain separate delivery states recorded in [TESTING.md](docs/TESTING.md).
+**Current version: 0.5.0. Repository status: private development preview.** Source and release downloads are available only to people with access to this repository. The source is MIT licensed; repository visibility remains private. Version 0.5 focuses on failure recovery and transfer stability while retaining the 0.4 organization features. Automated verification, private packaging, physical acceptance, and historical results remain separate delivery states recorded in [TESTING.md](docs/TESTING.md). The [release readiness gates](docs/RELEASE-READINESS.md) define the evidence still needed before 1.0; no release date is assigned.
 
 ## The local transfer foundation
 
@@ -25,6 +25,15 @@ The complete web interface is embedded in the desktop service. Normal use needs 
 
 Version 0.4 adds **optional duplicate decisions and extension-based sorting for new desktop receives**. Both are off by default, including upgrades. They do not organize browser-managed downloads or relay payloads. See the [organization workflow](#optional-incoming-file-organization) and [roadmap](docs/ROADMAP.md).
 
+## Recovery in 0.5
+
+- The Mac app can explicitly retry a failed helper using the same application data directory. If the saved receive directory is unavailable, choose a replacement through **Choose receive folder and retry…**. AirLink does not silently fall back to another folder; existing transfers retain their planned destinations. The last status snapshot remains visible, but actions that need the helper wait for a fresh connection.
+- Helper cleanup has bounded graceful, termination, and final kill stages. If macOS still reports a running helper after cleanup, AirLink reports that failure and keeps the app open. Session identifiers keep late replies from an earlier helper from changing the current connection.
+- Desktop sources retain filesystem identity as well as size and modification time. Historical records with a saved full checksum are validated before that checksum is trusted again. Source originals must still remain unchanged; AirLink does not create a frozen copy or promise to detect deliberate in-place edits that also forge the checked metadata.
+- Pause, cancellation, and revoked permissions interrupt active HTTP work, including slow or throttled streams. Browser pairing can continue in the active page when session storage is blocked. A recipient's incorrect clock no longer closes an otherwise valid share; the host enforces expiry and revocation. Unsupported cross-platform filenames are rejected before source hashing or upload, with no silent renaming.
+
+These are implementation boundaries, not evidence that every physical device or macOS interaction has passed acceptance. Current verification belongs in [TESTING.md](docs/TESTING.md); the required physical and distribution checks are listed in [RELEASE-READINESS.md](docs/RELEASE-READINESS.md).
+
 ## Choose how to run it
 
 | Device | AirLink role |
@@ -38,9 +47,11 @@ At least one computer must run AirLink. Two paired desktop services communicate 
 
 Platform builds are distinct from platform runtime verification. The current evidence and remaining checks are recorded in [TESTING.md](docs/TESTING.md).
 
+For a manual check with a Mac, Windows laptop, iPhone and iPad, follow the [German device test guide](docs/DEVICE-CHECK.md). It starts with small test files and checksum round trips before larger transfers on the physical network.
+
 ### macOS
 
-1. Download `AirLink-0.4.0-macos-universal.dmg` from the repository's [Releases](https://github.com/lucasfd3/Airlink/releases) when that version's asset is available.
+1. Download `AirLink-0.5.0-macos-universal.dmg` from the repository's [Releases](https://github.com/lucasfd3/Airlink/releases) when that version's asset is available.
 2. Open the disk image and drag **AirLink.app** to **Applications**, replacing the previous AirLink app if present.
 3. Open AirLink. Keep only the intended current app in `/Applications`; app updates preserve the separate AirLink data directory and received files.
 4. Open the QR button to connect a browser, or **Connect device** to pair another computer.
@@ -149,6 +160,8 @@ Finder Services accepts modern file URLs and the legacy selected-filename format
 
 Browser uploads read and hash bounded chunks. If the connection breaks while the page remains available, AirLink reconnects and resumes at the host's confirmed checkpoint. After a reload, browser restart, or loss of file access, choose the same unchanged source files again. AirLink verifies the saved integrity evidence before continuing.
 
+Resume manifests require IndexedDB storage; AirLink cancels a new upload if it cannot save that evidence before sending bytes. Pairing itself does not require session storage while the page remains open, although a blocked session store prevents restoring a pending request after reload. Unsupported portable names, paths that differ only in letter case, and file/parent-directory conflicts must be fixed on the source device; AirLink does not rename them automatically.
+
 Keep mobile browsers in the foreground during large transfers. iOS and Android can suspend background pages; reconnection starts when the page becomes active again. Folder selection depends on the browser's file picker and drag-and-drop support. Empty directories are preserved by native selection and recursive drag-and-drop; ordinary browser folder pickers do not expose empty directories.
 
 Browser downloads are saved by the browser's download manager. Individual downloads support HTTP Range; the browser decides whether and how to resume. Folder ZIP downloads are streamed and cannot be resumed. AirLink reports download initiation separately and does not claim that a browser finished saving or verified a received file.
@@ -195,10 +208,10 @@ bash scripts/package.sh
 
 Set `AIRLINK_GO=/absolute/path/to/go` when Go is not on your PATH. To rebuild only the macOS app after both macOS helpers exist, use `bash scripts/build-macos.sh`.
 
-All automated tests run in the background. There are no UI automation tests that take over the desktop. See [testing instructions and verification limits](docs/TESTING.md), the [architecture](docs/ARCHITECTURE.md), the [base protocol](docs/API.md), the [0.2 additions](docs/API-0.2.md), the [0.3 additions](docs/API-0.3.md), and the [0.4 organization contract](docs/API-0.4.md).
+All automated tests run in the background. There are no UI automation tests that take over the desktop. See [testing instructions and verification limits](docs/TESTING.md), the [release readiness gates](docs/RELEASE-READINESS.md), the [architecture](docs/ARCHITECTURE.md), the [base protocol](docs/API.md), the [0.2 additions](docs/API-0.2.md), the [0.3 additions](docs/API-0.3.md), and the [0.4 organization contract](docs/API-0.4.md).
 
 ## Versions and license
 
-AirLink uses **MAJOR.MINOR.PATCH** versions. New pre-1.0 capabilities advance the minor version; fixes advance the patch version. Release tags use `v0.4.0` form. A compiled binary, local package, GitHub release, and public release are separate delivery states.
+AirLink uses **MAJOR.MINOR.PATCH** versions. Pre-1.0 milestones advance the minor version; fixes within a milestone advance the patch version. Release tags use `v0.5.0` form. A compiled binary, local package, GitHub release, and public release are separate delivery states.
 
 Copyright © 2026 lucasfd3. Licensed under the [MIT License](LICENSE).

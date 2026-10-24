@@ -1,21 +1,36 @@
 import { CHUNK_SIZE } from './types';
 import type { RemoteFile, SavedFile, Selection, Transfer } from './types';
 
-export function safePath(input: string): string {
-  const path = input.replaceAll('\\', '/');
-  const parts = path.split('/');
-  if (!path || path.startsWith('/') || /^[a-z]:/i.test(path) || parts.some(p => !p || p === '.' || p === '..' || /[\u0000-\u001f]/.test(p))) throw new Error('Unsafe relative path');
-  return parts.join('/');
+export class SelectionError extends Error {
+  constructor(public reason: 'invalidPath' | 'conflictingPaths' | 'invalidSource' | 'emptySelection', public path?: string) {
+    super(reason === 'invalidPath' ? `Unsupported file or folder name: ${path}` : reason === 'conflictingPaths' ? `Conflicting file or folder paths: ${path}` : reason === 'invalidSource' ? `Invalid source file: ${path}` : 'No files selected');
+  }
 }
+
+export function safePath(input: string): string {
+  const parts = input.split('/');
+  if (!input || input.startsWith('/') || /[\\:]/.test(input) || parts.some(part => !part || part === '.' || part === '..' || /[. ]$/.test(part) || part.toLowerCase() === '.airlink-partials' || /[\p{Cc}<>"|?*]/u.test(part) || /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(part))) throw new SelectionError('invalidPath', input);
+  return input;
+}
+// Go uses simple Unicode lowercase per rune. Lowercase each code point here to
+// avoid JavaScript's contextual final sigma and expanding dotted-I mappings.
+function pathKey(path: string): string { return Array.from(path, character => character === '\u0130' ? 'i' : character.toLowerCase()).join(''); }
 export function validateSelection(items: Selection[]): void {
-  const paths = new Set<string>();
+  const paths = new Map<string, boolean>();
   for (const item of items) {
     const path = safePath(item.path);
-    if (paths.has(path)) throw new Error('Duplicate relative path');
-    if (!item.directory && (!item.file || !Number.isSafeInteger(item.file.size))) throw new Error('Invalid source file');
-    paths.add(path);
+    const key = pathKey(path);
+    if (paths.has(key)) throw new SelectionError('conflictingPaths', path);
+    if (!item.directory && (!item.file || !Number.isSafeInteger(item.file.size) || item.file.size < 0)) throw new SelectionError('invalidSource', path);
+    paths.set(key, item.directory);
   }
-  if (!items.length) throw new Error('No files selected');
+  for (const item of items) {
+    const parts = pathKey(item.path).split('/');
+    for (let count = 1; count < parts.length; count++) {
+      if (paths.get(parts.slice(0, count).join('/')) === false) throw new SelectionError('conflictingPaths', item.path);
+    }
+  }
+  if (!items.length) throw new SelectionError('emptySelection');
 }
 export function resumeIndex(file: Pick<RemoteFile, 'received' | 'size'>, chunkSize = CHUNK_SIZE): number {
   if (!Number.isSafeInteger(file.size) || file.size < 0 || !Number.isSafeInteger(file.received) || file.received < 0 || file.received > file.size || (file.received !== file.size && file.received % chunkSize !== 0)) throw new Error('Invalid confirmed offset');

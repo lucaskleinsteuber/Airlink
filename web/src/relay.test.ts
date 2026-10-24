@@ -54,6 +54,14 @@ describe('relay request and identity rules', () => {
   });
 });
 describe('demand-driven relay source', () => {
+  it('rejects nonportable paths before hashing source contents or publishing an offer', async () => {
+    const { manager: source } = manager(); source.update(status());
+    const network = vi.fn(); vi.stubGlobal('fetch', network);
+    for (const path of ['a\\b.bin', 'CON.bin', 'a?.bin']) {
+      await expect(source.create('receiver', [{ path, file: new File(['data'], path), directory: false }])).rejects.toThrow(/Unsupported/);
+    }
+    expect(hashFile).not.toHaveBeenCalled(); expect(network).not.toHaveBeenCalled(); expect(saveRelayManifest).not.toHaveBeenCalled();
+  });
   it('finishes checksums before publishing an offer and persists no payload or File objects', async () => {
     const value = fixture(); const { manager: source } = manager(); source.update(status());
     let release!: (result: typeof value.checksums) => void;

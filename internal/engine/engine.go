@@ -27,16 +27,18 @@ import (
 )
 
 var (
-	ErrNotFound  = errors.New("not found")
-	ErrConflict  = errors.New("transfer state conflict")
-	ErrInvalid   = errors.New("invalid transfer input")
-	ErrIntegrity = errors.New("file integrity check failed")
+	ErrNotFound      = errors.New("not found")
+	ErrConflict      = errors.New("transfer state conflict")
+	ErrInvalid       = errors.New("invalid transfer input")
+	ErrIntegrity     = errors.New("file integrity check failed")
+	ErrSourceChanged = fmt.Errorf("%w: source changed or became unavailable; select the original file again", ErrConflict)
 )
 
 type source struct {
 	Path     string `json:"path"`
 	Size     int64  `json:"size"`
 	Modified int64  `json:"modified"`
+	Identity string `json:"identity,omitempty"`
 }
 type record struct {
 	Transfer       model.Transfer     `json:"transfer"`
@@ -47,21 +49,22 @@ type record struct {
 }
 
 type Engine struct {
-	mu             sync.Mutex
-	db             *sql.DB
-	records        map[string]*record
-	locks          sync.Map
-	receiveDir     string
-	closed         bool
-	progress       map[string]progressSample
-	verifications  map[string]*verificationOperation
-	organization   model.Organization
-	managed        map[string]managedFile
-	managedSeen    map[string]bool
-	ctx            context.Context
-	cancel         context.CancelFunc
-	autoWG         sync.WaitGroup
-	autoPublishing map[string]bool
+	mu               sync.Mutex
+	db               *sql.DB
+	records          map[string]*record
+	locks            sync.Map
+	receiveDir       string
+	closed           bool
+	progress         map[string]progressSample
+	verifications    map[string]*verificationOperation
+	organization     model.Organization
+	managed          map[string]managedFile
+	managedSeen      map[string]bool
+	ctx              context.Context
+	cancel           context.CancelFunc
+	autoWG           sync.WaitGroup
+	autoPublishing   map[string]bool
+	sourceOperations map[string]map[string]context.CancelFunc
 }
 type verificationOperation struct {
 	ctx    context.Context
@@ -105,7 +108,7 @@ CREATE TABLE IF NOT EXISTS chunks(transfer_id TEXT NOT NULL,file_id TEXT NOT NUL
 		return nil, err
 	}
 	engineCtx, cancel := context.WithCancel(context.Background())
-	e := &Engine{db: db, records: map[string]*record{}, receiveDir: canonicalReceive, progress: map[string]progressSample{}, verifications: map[string]*verificationOperation{}, organization: model.Organization{Rules: []model.SortRule{}}, managed: map[string]managedFile{}, managedSeen: map[string]bool{}, ctx: engineCtx, cancel: cancel, autoPublishing: map[string]bool{}}
+	e := &Engine{db: db, records: map[string]*record{}, receiveDir: canonicalReceive, progress: map[string]progressSample{}, verifications: map[string]*verificationOperation{}, organization: model.Organization{Rules: []model.SortRule{}}, managed: map[string]managedFile{}, managedSeen: map[string]bool{}, ctx: engineCtx, cancel: cancel, autoPublishing: map[string]bool{}, sourceOperations: map[string]map[string]context.CancelFunc{}}
 	if err = e.loadManaged(); err != nil {
 		cancel()
 		db.Close()
@@ -181,6 +184,9 @@ func (e *Engine) Close() error {
 	e.cancel()
 	for id := range e.verifications {
 		e.cancelVerificationLocked(id)
+	}
+	for id := range e.sourceOperations {
+		e.cancelSourceOperationsLocked(id)
 	}
 	e.mu.Unlock()
 	e.autoWG.Wait()
@@ -522,13 +528,23 @@ func (e *Engine) stateChange(id, state, reason string) error {
 	if state == "paused" && r.Transfer.State == "offered" {
 		return ErrConflict
 	}
-	e.cancelVerificationLocked(id)
-	r.Transfer.State = state
-	r.Transfer.Error = reason
-	r.Transfer.BytesPerSecond = 0
-	if err = e.saveLocked(r); err != nil {
+	if r.Transfer.State == "paused" && (state == "reconnecting" || state == "failed") {
+		return ErrConflict
+	}
+	// A failed durable write is a failed operation, not a committed in-memory
+	// cancellation that unexpectedly resurrects after restart. Readers cannot
+	// commit between this transaction and the following context cancellation.
+	updated := *r
+	updated.Transfer = clone(r.Transfer)
+	updated.Transfer.State = state
+	updated.Transfer.Error = reason
+	updated.Transfer.BytesPerSecond = 0
+	if err = e.saveLocked(&updated); err != nil {
 		return err
 	}
+	*r = updated
+	e.cancelVerificationLocked(id)
+	e.cancelSourceOperationsLocked(id)
 	return e.scheduleLocked()
 }
 func (e *Engine) Resume(id string) error {
@@ -1079,7 +1095,11 @@ func (e *Engine) Offer(device model.Device, paths []string) (model.Transfer, err
 			f := model.File{ID: identifier(), Path: name, Directory: info.IsDir(), Modified: info.ModTime().UnixMilli()}
 			if !f.Directory {
 				f.Size = info.Size()
-				sources[f.ID] = source{Path: p, Size: info.Size(), Modified: info.ModTime().UnixNano()}
+				captured, captureErr := captureSource(p, info)
+				if captureErr != nil {
+					return captureErr
+				}
+				sources[f.ID] = captured
 			}
 			files = append(files, f)
 			return nil
@@ -1108,89 +1128,16 @@ func (e *Engine) Offer(device model.Device, paths []string) (model.Transfer, err
 }
 
 func (e *Engine) OpenDownload(id, fileID string) (*os.File, model.File, error) {
-	e.mu.Lock()
-	r, err := e.getLocked(id)
-	if err != nil {
-		e.mu.Unlock()
-		return nil, model.File{}, err
-	}
-	i, err := fileIndex(&r.Transfer, fileID)
-	if err != nil {
-		e.mu.Unlock()
-		return nil, model.File{}, err
-	}
-	f := r.Transfer.Files[i]
-	src, ok := r.Sources[fileID]
-	if r.Transfer.Direction != "send" || !ok || f.Directory || f.Skipped || r.Transfer.State == "cancelled" || r.Transfer.State == "failed" {
-		e.mu.Unlock()
-		return nil, model.File{}, ErrConflict
-	}
-	e.mu.Unlock()
-	// Reject link replacement as well as changes since the original offer.
-	for p := src.Path; ; p = filepath.Dir(p) {
-		info, err := os.Lstat(p)
-		if err != nil {
-			return nil, f, err
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return nil, f, fmt.Errorf("%w: source contains symbolic link", ErrConflict)
-		}
-		if p == filepath.Dir(p) {
-			break
-		}
-	}
-	before, err := os.Lstat(src.Path)
-	if err != nil {
-		return nil, f, err
-	}
-	in, err := os.Open(src.Path)
-	if err != nil {
-		return nil, f, err
-	}
-	info, err := in.Stat()
-	if err != nil {
-		in.Close()
-		return nil, f, err
-	}
-	if !info.Mode().IsRegular() || !os.SameFile(before, info) || info.Size() != src.Size || info.ModTime().UnixNano() != src.Modified {
-		in.Close()
-		return nil, f, fmt.Errorf("%w: source changed; create a new offer", ErrConflict)
-	}
-	return in, f, nil
+	return e.OpenDownloadContext(e.ctx, id, fileID)
 }
 func (e *Engine) SourceSHA256(ctx context.Context, id, fileID string) (string, error) {
-	in, offered, err := e.OpenDownload(id, fileID)
-	if err != nil {
-		return "", err
-	}
-	defer in.Close()
-	// OpenDownload revalidates source size/modification before using a durable
-	// checksum. Reconnects must not repeatedly rehash a 100 GB unchanged file.
-	if validHash(offered.SHA256) {
-		return offered.SHA256, nil
-	}
-	before, err := in.Stat()
-	if err != nil {
-		return "", err
-	}
-	h := sha256.New()
-	if _, err = io.CopyBuffer(h, contextReader{ctx, in}, make([]byte, 256*1024)); err != nil {
-		return "", err
-	}
-	after, err := in.Stat()
-	if err != nil {
-		return "", err
-	}
-	if before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
-		return "", fmt.Errorf("%w: source changed while hashing", ErrConflict)
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	return e.hashSource(ctx, id, fileID)
 }
 func (e *Engine) ReadSourceChunk(ctx context.Context, id, fileID string, index int64) ([]byte, string, error) {
 	if index < 0 {
 		return nil, "", ErrInvalid
 	}
-	in, f, err := e.OpenDownload(id, fileID)
+	in, f, err := e.OpenDownloadContext(ctx, id, fileID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -1211,7 +1158,13 @@ func (e *Engine) ReadSourceChunk(ctx context.Context, id, fileID string, index i
 		return nil, "", err
 	}
 	if int64(len(b)) != size {
-		return nil, "", ErrConflict
+		return nil, "", ErrSourceChanged
+	}
+	if err = ctx.Err(); err != nil {
+		return nil, "", err
+	}
+	if err = e.ValidateSource(id, fileID, in); err != nil {
+		return nil, "", err
 	}
 	sum := sha256.Sum256(b)
 	return b, hex.EncodeToString(sum[:]), nil
@@ -1233,6 +1186,9 @@ func (e *Engine) MarkOutgoingProgress(id, fileID string, received int64, hash st
 	f := &r.Transfer.Files[i]
 	if r.Transfer.Direction != "send" || terminal(r.Transfer.State) || received < 0 || received > f.Size {
 		return ErrConflict
+	}
+	if hash != "" && f.SHA256 != "" && hash != f.SHA256 {
+		return ErrSourceChanged
 	}
 	if f.Skipped {
 		if received == f.Received && (hash == "" || hash == f.SHA256) {
@@ -1272,6 +1228,9 @@ func (e *Engine) CompleteOutgoingFile(id, fileID, hash string) error {
 	f := &r.Transfer.Files[i]
 	if r.Transfer.Direction == "send" && f.Completed && f.SHA256 == hash {
 		return nil
+	}
+	if f.SHA256 != "" && f.SHA256 != hash {
+		return ErrSourceChanged
 	}
 	if r.Transfer.Direction != "send" || r.Transfer.State == "paused" || terminal(r.Transfer.State) || f.Received != f.Size {
 		return ErrConflict

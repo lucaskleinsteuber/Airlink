@@ -73,7 +73,7 @@ req.setTimeout(15000,()=>req.destroy(Error('timeout')));req.on('error',e=>{proce
         with urllib.request.urlopen(setup_url, timeout=15) as response:
             assert status["fingerprint"].encode() in response.read()
         print("PASS: final binary serves embedded production assets over verified TLS; private status requires pairing; public bootstrap fingerprint matches")
-        if status["version"] in ("0.2.0", "0.3.0", "0.4.0"):
+        if status["version"] in ("0.2.0", "0.3.0", "0.4.0", "0.5.0"):
             original = base / "shared-original.txt"
             content = b"AirLink private share smoke fixture.\n"
             original.write_bytes(content)
@@ -124,7 +124,7 @@ req.setTimeout(15000,()=>req.destroy(Error('timeout')));req.on('error',e=>{proce
             rpc(16, "device.revoke", {"id": device["id"]})
             assert not rpc(17, "status")["clipboard"]
             print("PASS: 0.2 protected share unlock/range/quota/revocation and explicit clipboard permission/guest delivery work in the packaged service")
-        if status["version"] in ("0.3.0", "0.4.0"):
+        if status["version"] in ("0.3.0", "0.4.0", "0.5.0"):
             def pair_browser(name, sequence):
                 request = json.loads(exchange("/api/v1/pair/request", "POST", {"name": name, "kind": "browser"})["data"])
                 rpc(sequence, "pair.approve", {"id": request["requestId"]})
@@ -195,7 +195,7 @@ req.setTimeout(15000,()=>req.destroy(Error('timeout')));req.on('error',e=>{proce
             current = rpc(54, "status")
             assert not current["relays"] and current["statistics"]["trafficSentBytes"] == before
             print("PASS: 0.3 explicit-accept browser relay, source-demand ACK, delivered Range retry, shared rate limits, metadata-only disk, history and lifetime statistics work in the packaged service")
-        if status["version"] == "0.4.0":
+        if status["version"] in ("0.4.0", "0.5.0"):
             # Uses the paired browser from the relay test, without GUI actions.
             settings = rpc(60, "status")["settings"]
             assert not settings["organization"]["detectDuplicates"] and not settings["organization"]["sortEnabled"]

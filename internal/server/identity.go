@@ -141,11 +141,11 @@ func pinnedClient(fingerprint string) *http.Client {
 	fp := strings.ToLower(strings.ReplaceAll(fingerprint, ":", ""))
 	return &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }, Transport: &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS13, InsecureSkipVerify: true, VerifyConnection: func(c tls.ConnectionState) error {
 		if len(c.PeerCertificates) < 2 {
-			return fmt.Errorf("peer omitted identity certificate")
+			return fmt.Errorf("%w: peer omitted identity certificate", errPeerIdentity)
 		}
 		root := c.PeerCertificates[len(c.PeerCertificates)-1]
 		if digest(root.Raw) != fp {
-			return fmt.Errorf("device identity changed: pairing required")
+			return fmt.Errorf("%w: device identity changed: pairing required", errPeerIdentity)
 		}
 		roots := x509.NewCertPool()
 		roots.AddCert(root)
@@ -154,6 +154,9 @@ func pinnedClient(fingerprint string) *http.Client {
 			inter.AddCert(cert)
 		}
 		_, err := c.PeerCertificates[0].Verify(x509.VerifyOptions{Roots: roots, Intermediates: inter, DNSName: c.ServerName})
-		return err
+		if err != nil {
+			return fmt.Errorf("%w: %w", errPeerIdentity, err)
+		}
+		return nil
 	}}, DialContext: (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext, TLSHandshakeTimeout: 10 * time.Second, IdleConnTimeout: 30 * time.Second, MaxIdleConnsPerHost: 4}}
 }

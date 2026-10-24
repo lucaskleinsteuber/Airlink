@@ -1,6 +1,6 @@
 # Architecture
 
-AirLink 0.4 adds optional organization to desktop receives while retaining browser relay, aggregate payload limits, history/statistics, Quick Share and explicit clipboard text. Native and browser interfaces use the same local host. Runtime resources are bundled; no hosted signaling service, external relay, account, or online asset server is required. Additions are specified in [API-0.2.md](API-0.2.md), [API-0.3.md](API-0.3.md), and [API-0.4.md](API-0.4.md).
+AirLink 0.5 focuses on recovery, source identity, and interruption handling while retaining 0.4 optional organization, browser relay, aggregate payload limits, history/statistics, Quick Share and explicit clipboard text. Native and browser interfaces use the same local host. Runtime resources are bundled; no hosted signaling service, external relay, account, or online asset server is required. Feature additions are specified in [API-0.2.md](API-0.2.md), [API-0.3.md](API-0.3.md), and [API-0.4.md](API-0.4.md).
 
 ```mermaid
 flowchart LR
@@ -22,6 +22,10 @@ flowchart LR
 Each uploaded chunk carries a SHA-256 checksum. Confirmed chunks and transfer metadata are persisted in SQLite with WAL and full synchronization. Retransmitted confirmed chunks are idempotent; unapproved, out-of-order, changed, or inconsistent data is rejected. Startup recovery reconciles file data with confirmed checkpoints rather than trusting a sender's local progress estimate.
 
 Incoming files remain partial until the receiver verifies the complete file. Publication uses an atomic operation that refuses to overwrite an existing destination. Relative path validation and filesystem-root operations constrain received content to its destination. Source manifests reference original files and verify their identity before reuse; sending does not move or replace them.
+
+New desktop outgoing references capture filesystem identity (device/inode on Unix; volume/file index on Windows), size, and nanosecond modification time before payload use. Opens and native chunk reads validate that anchor. Full source SHA-256 values persist; cached hashes are reusable only with the same anchored source. Historical records with a cached checksum but no identity are lazily streamed and compared against that checksum before anchoring and serving. Historical records with neither checksum nor identity have no earlier content proof: they validate saved size/time, acquire an identity on first use, and compute a full checksum when required. No full-library startup hash or whole-file payload staging is added.
+
+Source hashing is cancellable, and pause/cancel/close invalidate its active operation. Original sources must remain unchanged. Filesystem identity and metadata do not establish a frozen snapshot or detect every deliberate in-place edit with forged original size/time; receiver full-file verification remains necessary before publication.
 
 The queue has independent pools of two incoming and two outgoing transfers. Verification counts against its direction's pool. This avoids a deadlock when both hosts have incoming offers waiting for each other's outgoing queues. Chunk I/O is additionally bounded to two incoming requests. Browser relay has its own two-file-stream bound and separate metadata, so a relay is not duplicated as a stored direct transfer.
 
@@ -77,6 +81,8 @@ Each host keeps a local CA identity and issues a server certificate covering its
 
 Browser sessions use Secure, HttpOnly, SameSite cookies. A browser's pairing request grants no access until approved locally. Device send/receive rights and auto-accept are independently managed; revocation invalidates future authenticated access and cancels associated active work.
 
+Active transfer HTTP requests carry cancellation tied to their transfer and device. Pause/cancel, access revocation, and removal of a relevant send/receive right stop affected request-body reads and response writes, including operations waiting on a directional payload limit. Checkpoints remain authoritative after interruption; a client-side cancel signal alone does not count as confirmed transferred data.
+
 ## Quick Share
 
 `internal/shares` stores share policy, ownership, original source references, and download-session state in a separate SQLite database. Local administration can capture selected original paths or an eligible existing transfer. A paired browser may supply only its own completed received transfer; it cannot choose arbitrary host paths or manage another device's shares. Organized received transfers use their private destination mapping while retaining public relative wire names. Skipped payloads are omitted, and an all-skipped transfer cannot produce a file share or expose its existing duplicate candidate. Source identity, size, and modification time are checked before serving and during active reads. Mismatches or unavailable originals fail without staging a whole-file copy. This is not a frozen content snapshot or a promise to detect arbitrary same-file writes that preserve all checked metadata; shared originals must remain unchanged.
@@ -86,6 +92,8 @@ Links use `https://HOST/s/ID#SECRET`. The recipient app reads the fragment into 
 Optional passwords are hashed with Argon2id. Unlock attempts and concurrent password derivation are bounded. A successful unlock establishes a Secure, HttpOnly, SameSite share-scoped cookie; it does not consume download quota. The first successful body write atomically claims one session allowance. Additional files, Range requests, and retries in that session reuse the allowance; HEAD and invalid ranges do not consume it. Session counters and share ownership persist across restart. Private owner status can reconstruct the link, while anonymous status never returns the secret.
 
 UI defaults are a 24-hour expiry, no password, and unlimited downloads. The service supports no expiry and explicit maximum downloads. Revocation is persistent; both revocation and expiry are checked during streaming to stop further output. A new share does not bypass host certificate trust or expose an internet-accessible relay. Individual downloads support Range, while ZIP64 downloads are streamed without resumable archive support.
+
+Recipient lifetime decisions use host responses rather than the recipient's clock. A successful authorized metadata response remains usable even when the client clock is ahead; HTTP 410, removal, or explicit revoked metadata closes the view and stops polling. Local display of an expiry timestamp does not override host authorization. An already counted download session can still use its remaining authorized file/Range requests when the share's session limit has been reached.
 
 ## Clipboard text
 
@@ -101,6 +109,10 @@ The Swift package in `macos/` separates Codable protocol models and subprocess t
 
 The app remains available in the menu bar after window closure. The menu and quit warning include active host relays as well as direct transfers. Explicit quit awaits helper checkpoint/process cleanup. File selection, drag-and-drop, and user-invoked Finder Services provide source URLs, with a legacy filename-list fallback; the helper handles the transfer. Login startup uses `SMAppService`. Status is read again when Settings opens or the app becomes active, using a user-action binding so refresh never registers/unregisters a login item. Notification authorization is requested only after a user action.
 
+Failed-helper recovery is explicit: Retry starts the same bundled helper against the same Application Support data directory after bounded cleanup. A separate Choose receive folder and retry action supplies `--receive-dir` only after the user selects a replacement for an invalid or unavailable saved destination. There is no automatic Downloads fallback; existing incoming transfer destinations remain unchanged. The last decoded snapshot may stay visible, but helper-dependent actions require a fresh live status. Retry does not automatically focus or open a window.
+
+Every helper session has an identifier, so an old reader, termination callback, or late reply cannot mutate the current session. Shutdown proceeds through bounded graceful, termination, and final kill stages. The app does not report a clean exit if the OS still identifies the helper as running; it reports failure and keeps the app available. Background transport tests and compilation remain separate from manual window/menu/login acceptance.
+
 Compact share/clipboard sheets remain, with new history/statistics and relay oversight sheets. Shares need no paired target; the host relay view has no recipient-accept button. Additive Codable fields tolerate older status/device/settings fixtures, including false relay permission, unlimited rates, and the migrated enabled ⇧⌘L shortcut unless an explicit disabled setting exists. Version labels come from helper status or app bundle.
 
 Shortcut settings persist Carbon key codes/modifier bits (default key code 37, modifiers 768). The Settings recorder receives local key events only while explicitly focused; no global keystroke monitor is installed. Command or Control is required, with optional Shift/Option. The current hotkey is suspended during capture and restored afterward. A replacement is registered before the old registration is removed; failure keeps the working registration, shows the actual registration state, and rolls back the conflicting preference. Quitting unregisters the hotkey and event handler. These paths compile and have pure model tests; actual OS registration/conflicts, Finder interaction, and login startup have not been exercised through a native GUI session.
@@ -110,6 +122,10 @@ The app icon consists of written SVG layers and `AppIcon.icon/icon.json`. Icon C
 ## Browser interface
 
 The React/TypeScript interface in `web/` is compiled into static assets embedded in the Go binary. A worker performs incremental SHA-256 hashing with bounded input blocks. IndexedDB stores resume manifests and integrity evidence; browser memory retains source `File` objects while access remains available.
+
+Pairing request state always survives in memory for the current page. Session storage provides optional reload recovery; denied storage property access, reads, writes, or removal must not prevent polling or completing an approved pairing. This is separate from the upload manifest requirement: a new upload must save its IndexedDB integrity evidence before sending payload or cancel the new offer.
+
+Source path validation mirrors the engine's conservative portable names before hashing or offer creation. A literal backslash is rejected instead of converted into a separator. Control characters, reserved Windows names, unsupported punctuation, unsafe/traversal components, trailing dots/spaces, direct case collisions, and files occupying a parent directory are rejected with actionable localized errors. Original Unicode spelling is retained; the browser does not invent normalization or silently rename selected files.
 
 For desktop receives, the source calls file preparation after hashing and before uploading. A 404 from an older host falls back only after refreshing the owned transfer. Pending duplicate checks/decisions show host attention without guest resolution controls; Keep resumes with saved checksums, while Skip requires no payload-completion request. Reconnection reconciles the host's confirmed offsets. After reload or loss of file access, the user selects the same unchanged sources again. This requirement avoids pretending that every browser grants persistent filesystem access.
 
@@ -123,4 +139,4 @@ Host settings, identity, and device records live in a private OS-specific AirLin
 
 The build pipeline compiles the web interface, embeds it, and cross-compiles portable Go services. On macOS it creates a universal native app with a universal helper and the compiled icon. Packaging creates platform archives, a DMG, and checksums. App replacement must preserve the separate state and receive directories.
 
-Version 0.4 is an implemented private preview; final verification and artifact evidence belong in [TESTING.md](TESTING.md). Historical verification remains version-specific. The private macOS signing policy remains ad hoc. Developer ID signing, notarization, physical cross-device acceptance, and public distribution remain separate delivery gates.
+Version 0.5 is a private stabilization preview; final verification and artifact evidence belong in [TESTING.md](TESTING.md). Historical verification remains version-specific. The private macOS signing policy remains ad hoc. Developer ID signing, notarization, physical cross-device acceptance, and public distribution remain separate delivery gates, defined in [RELEASE-READINESS.md](RELEASE-READINESS.md).

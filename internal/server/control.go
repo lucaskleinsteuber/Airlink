@@ -59,6 +59,7 @@ func (s *Server) Control(method string, params json.RawMessage) (any, error) {
 		if err := s.store.updateDevice(d); err != nil {
 			return nil, err
 		}
+		s.pauseDisallowedTransfers(d)
 		if !d.CanRelay {
 			s.cancelDeviceRelays(d.ID)
 		} else {
@@ -92,12 +93,16 @@ func (s *Server) Control(method string, params json.RawMessage) (any, error) {
 		return map[string]bool{"ok": true}, s.engine.Accept(id.ID)
 	case "transfer.pause":
 		s.stopSender(id.ID)
-		return map[string]bool{"ok": true}, s.engine.Pause(id.ID)
+		err := s.engine.Pause(id.ID)
+		s.stopTransferRequests(id.ID)
+		return map[string]bool{"ok": true}, err
 	case "transfer.resume":
 		return map[string]bool{"ok": true}, s.engine.Resume(id.ID)
 	case "transfer.cancel":
 		s.stopSender(id.ID)
-		return map[string]bool{"ok": true}, s.engine.Cancel(id.ID)
+		err := s.engine.Cancel(id.ID)
+		s.stopTransferRequests(id.ID)
+		return map[string]bool{"ok": true}, err
 	case "offer":
 		var v struct {
 			DeviceID string   `json:"deviceId"`
