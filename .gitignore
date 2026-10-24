@@ -9,6 +9,8 @@ xcuserdata/
 .swiftpm/
 *.log
 .env
+__pycache__/
+*.pyc
 web/*.tsbuildinfo
 internal/server/assets/*
 !internal/server/assets/README.txt

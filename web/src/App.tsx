@@ -7,6 +7,9 @@ import { manifestsForHost } from './storage';
 import { messages, systemLanguage } from './i18n';
 import type { Language } from './i18n';
 import { UploadManager } from './uploader';
+import { SharesPanel } from './SharesPanel';
+import { ClipboardPanel } from './ClipboardPanel';
+import { featureText } from './features-i18n';
 import type { LocalUpload } from './uploader';
 import type { HostInfo, PendingPair, Selection, Status, Transfer } from './types';
 function preference(key: string, fallback: string): string { try { return localStorage.getItem(key) || fallback; } catch { return fallback; } }
@@ -28,6 +31,8 @@ export function App() {
   const [languageSetting, setLanguageSetting] = useState(() => preference('airlink-language', 'system'));
   const [appearance, setAppearance] = useState(() => preference('airlink-appearance', 'system'));
   const t = messages[language] || messages.de;
+  const ft = featureText(language);
+  const [section, setSection] = useState<'transfers' | 'shares' | 'clipboard'>('transfers');
   const [host, setHost] = useState<HostInfo>();
   const [status, setStatus] = useState<Status>();
   const statusRef = useRef<Status | undefined>(undefined); statusRef.current = status;
@@ -149,6 +154,8 @@ export function App() {
         {!online && <p className="warning">{t.offline} <button className="text-button" onClick={() => { void refresh(); }}>{t.refresh}</button></p>}
       </section> : <>
         <section className="connection"><div className="connection-icon"><Glyph name="device" size={28} /></div><div><h1>{host?.name}</h1><p><span className={`status-dot ${online ? '' : 'offline'}`} />{online ? t.paired : t.offline}<span className="connection-detail">{online ? t.onlineHelp : t.offlineHelp}</span></p></div><Glyph name="shield" /></section>
+        <nav className="feature-tabs" aria-label="AirLink"><button aria-pressed={section === 'transfers'} onClick={() => setSection('transfers')}>{ft.transfers}</button><button aria-pressed={section === 'shares'} onClick={() => setSection('shares')}>{ft.shares}</button><button aria-pressed={section === 'clipboard'} onClick={() => setSection('clipboard')}>{ft.clipboard}</button></nav>
+        <div hidden={section !== 'transfers'}>
         <section className={`dropzone ${dragging ? 'dragging' : ''}`} aria-label={t.send} onDragOver={event => { event.preventDefault(); setDragging(true); }} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }} onDrop={event => { void drop(event); }}>
           <div className="drop-symbol"><Glyph name="upload" size={30} /></div><h2>{t.drop}</h2><p>{t.dropHelp}</p><div className="button-row"><button className="primary" onClick={() => { setReselect(null); filesInput.current?.click(); }}>{t.chooseFiles}</button><button className="secondary" onClick={() => { setReselect(null); folderInput.current?.click(); }}>{t.chooseFolder}</button></div>
         </section>
@@ -170,11 +177,14 @@ export function App() {
           })}</div>}
         </section>
         <p className="mobile-note">{t.mobile}</p>
+        </div>
+        <div hidden={section !== 'shares'}><SharesPanel shares={status?.shares || []} transfers={transfers} language={language} refresh={refresh} showError={showError} notice={setNotice} /></div>
+        <div hidden={section !== 'clipboard'}><ClipboardPanel allowed={status?.clipboardAllowed || false} messages={status?.clipboard || []} hostName={host?.name || 'Host'} language={language} refresh={refresh} showError={showError} notice={setNotice} /></div>
       </>}
       <details className="trust-details"><summary><Glyph name="shield" size={17} />{t.trust}</summary><div className="trust-content"><p>{t.trustIntro}</p><p>{t.trustCompare}</p>{host?.fingerprint && <div className="fingerprint"><span>{t.fingerprint}</span><code>{host.fingerprint}</code></div>}<a className="secondary small inline-button" href="/certificate.cer" download>{t.certificate}</a><a className="secondary small inline-button" href="/certificate.mobileconfig">{t.certificateIOS}</a><p>{t.trustSafety}</p><p>{t.trustDesktop}</p><p>{t.trustIOS}</p><p>{t.trustAndroid}</p><p>{t.awaitingHost}</p></div></details>
       <input ref={filesInput} className="hidden-input" type="file" multiple onChange={inputChange} aria-label={t.chooseFiles} />
       <input ref={folderInput} className="hidden-input" type="file" multiple {...{ webkitdirectory: '' }} onChange={inputChange} aria-label={t.chooseFolder} />
     </main>
-    <footer><span>{t.privacy}</span><span>AirLink {host?.version || '0.1.0'}</span></footer>
+    <footer><span>{t.privacy}</span><span>AirLink {host?.version || '0.2.0'}</span></footer>
   </div>;
 }

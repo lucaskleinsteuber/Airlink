@@ -23,4 +23,4 @@ if [[ "$(uname -s)" == Darwin ]]; then
  if [[ ! -L "$STAGE/Applications" ]]; then ln -s /Applications "$STAGE/Applications"; fi
  hdiutil create -volname AirLink -srcfolder "$STAGE" -ov -format UDZO "dist/AirLink-$VERSION-macos-universal.dmg"
 fi
-(cd dist && shopt -s nullglob && shasum -a 256 ./*.dmg ./*.zip ./*.tar.gz > SHA256SUMS.txt)
+(cd dist && shopt -s nullglob && shasum -a 256 ./*-"$VERSION"-*.dmg ./*-"$VERSION"-*.zip ./*-"$VERSION"-*.tar.gz > SHA256SUMS.txt)

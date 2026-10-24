@@ -61,11 +61,17 @@ public actor DaemonClient {
     }
 
     public func stop() async {
-        if let process, process.isRunning { _ = try? await request("shutdown") }
+        let stopping = process
+        if let stopping, stopping.isRunning { _ = try? await request("shutdown") }
         reader?.cancel(); reader = nil
-        diagnostics?.readabilityHandler = nil
         try? input?.close()
         input = nil
+        if let stopping {
+            // The ACK precedes the helper's deferred checkpoint/lock cleanup.
+            // Wait off the actor and main thread before allowing app termination.
+            await Task.detached(priority: .utility) { stopping.waitUntilExit() }.value
+        }
+        diagnostics?.readabilityHandler = nil
     }
 
     private func consume(_ bytes: Data) {

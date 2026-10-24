@@ -45,8 +45,18 @@ public struct Device: Codable, Identifiable, Sendable {
     public var online: Bool
     public var canSend: Bool
     public var canReceive: Bool
+    private var storedCanClipboard: Bool?
+    public var canClipboard: Bool {
+        get { storedCanClipboard ?? false }
+        set { storedCanClipboard = newValue }
+    }
     public var autoAccept: Bool
     public var lastSeen: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, kind, address, fingerprint, paired, online, canSend, canReceive, autoAccept, lastSeen
+        case storedCanClipboard = "canClipboard"
+    }
 }
 
 public struct PairRequest: Codable, Identifiable, Sendable {
@@ -80,6 +90,68 @@ public struct HostStatus: Codable, Sendable {
     public var transfers: [Transfer]
     public var pairRequests: [PairRequest]
     public var settings: HostSettings
+    public var shares: [Share]?
+    public var clipboard: [ClipboardMessage]?
+    public var clipboardAllowed: Bool?
+}
+
+public struct Share: Codable, Identifiable, Sendable {
+    public var id: String
+    public var name: String
+    public var url: String?
+    public var files: [TransferFile]
+    public var totalBytes: Int64
+    public var createdAt: String
+    public var expiresAt: String?
+    public var maxDownloads: Int64
+    public var downloads: Int64
+    public var passwordProtected: Bool
+    public var revoked: Bool
+
+    public var expirationDate: Date? { expiresAt.flatMap(ShareDate.parse) }
+    public func isExpired(at now: Date = Date()) -> Bool { expirationDate.map { $0 <= now } ?? false }
+    public var exhausted: Bool { maxDownloads > 0 && downloads >= maxDownloads }
+}
+
+public struct ShareCreate: Codable, Sendable {
+    public var name: String
+    public var paths: [String]?
+    public var transferId: String?
+    public var password: String?
+    public var expiresAt: String?
+    public var maxDownloads: Int64
+    public init(name: String, paths: [String]? = nil, transferId: String? = nil, password: String? = nil, expiresAt: String? = nil, maxDownloads: Int64 = 0) {
+        self.name = name; self.paths = paths; self.transferId = transferId; self.password = password; self.expiresAt = expiresAt; self.maxDownloads = maxDownloads
+    }
+    public var hasValidSource: Bool {
+        let local = paths?.isEmpty == false
+        let transfer = transferId?.isEmpty == false
+        return local != transfer
+    }
+}
+
+public struct ClipboardMessage: Codable, Identifiable, Sendable {
+    public var id: String
+    public var deviceId: String
+    public var deviceName: String
+    public var direction: String
+    public var text: String
+    public var createdAt: String
+}
+
+public enum ClipboardText {
+    public static let maximumUTF8Bytes = 64 * 1024
+    public static func isValid(_ text: String) -> Bool { !text.isEmpty && text.utf8.count <= maximumUTF8Bytes }
+}
+
+public enum ShareDate {
+    public static func parse(_ string: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        if let date = formatter.date(from: string) { return date }
+        formatter.formatOptions.insert(.withFractionalSeconds)
+        return formatter.date(from: string)
+    }
+    public static func string(_ date: Date) -> String { ISO8601DateFormatter().string(from: date) }
 }
 
 public enum NativeError: LocalizedError {

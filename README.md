@@ -6,9 +6,9 @@
 
 AirLink transfers files and folders between computers and browsers on the same local network. It combines a native macOS app with a portable Windows/Linux service and a web interface for macOS, Windows, Linux, Android, and iOS.
 
-**Current version: 0.1.0. Repository status: private development.** Source and release downloads are available only to people with access to this repository. The source is MIT licensed; repository visibility remains private.
+**Current source version: 0.2.0. Repository status: private development.** Source and release downloads are available only to people with access to this repository. The source is MIT licensed; repository visibility remains private. Final 0.2 verification and packaging are in progress; historical 0.1 results and current 0.2 evidence are separated in [TESTING.md](docs/TESTING.md).
 
-## What works in 0.1.0
+## The local transfer foundation
 
 - Send files and folders through drag-and-drop or a file picker. Source files stay in place.
 - Upload and download concurrently, with a transfer queue, progress, speed, pause/resume, and reconnection from confirmed checkpoints.
@@ -19,9 +19,11 @@ AirLink transfers files and folders between computers and browsers on the same l
 - Use German or English and system, light, or dark appearance.
 - On macOS, use a native window and menu bar, Finder **Services → Send with AirLink**, the fixed **⇧⌘L** shortcut, optional notifications, and optional launch at login.
 
+Version 0.2 adds **Quick Share** links with optional passwords, expiry, download limits, and revocation, plus **explicit clipboard text sharing** between authorized devices. The native app, browser interface, and portable host console expose the applicable controls. Their final 0.2 verification results are recorded separately from the 0.1 baseline.
+
 The complete web interface is embedded in the desktop service. Normal use needs no account, cloud relay, external website, CDN, or internet connection. Downloading dependencies and building from source requires internet access initially.
 
-Quick Share links, clipboard transfer, phone-to-phone relay, configurable shortcuts, speed limits, richer statistics, content-based duplicate handling, and automatic sorting are planned additions. See the [roadmap](docs/ROADMAP.md).
+Phone-to-phone relay, configurable shortcuts, speed limits, richer statistics, content-based duplicate handling, and automatic sorting remain planned additions. See the [roadmap](docs/ROADMAP.md).
 
 ## Choose how to run it
 
@@ -32,13 +34,13 @@ Quick Share links, clipboard transfer, phone-to-phone relay, configurable shortc
 | Linux | Portable service with a private local administration page; amd64 and arm64 builds |
 | Android / iPhone / iPad | Browser client connecting to a running desktop service |
 
-At least one computer must run AirLink. Two paired desktop services communicate directly. Browser clients send to and download from their connected desktop host. Browser-to-browser relay is not implemented in 0.1.0.
+At least one computer must run AirLink. Two paired desktop services communicate directly. Browser clients send to and download from their connected desktop host. Browser-to-browser relay is not implemented in 0.2.0.
 
 Platform builds are distinct from platform runtime verification. The current evidence and remaining checks are recorded in [TESTING.md](docs/TESTING.md).
 
 ### macOS
 
-1. Download `AirLink-0.1.0-macos-universal.dmg` from the repository's [Releases](https://github.com/lucasfd3/Airlink/releases) when an asset is available.
+1. Download `AirLink-0.2.0-macos-universal.dmg` from the repository's [Releases](https://github.com/lucasfd3/Airlink/releases) when that version's asset is available.
 2. Open the disk image and drag **AirLink.app** to **Applications**, replacing the previous AirLink app if present.
 3. Open AirLink. Keep only the intended current app in `/Applications`; app updates preserve the separate AirLink data directory and received files.
 4. Open the QR button to connect a browser, or **Connect device** to pair another computer.
@@ -80,6 +82,28 @@ QR codes carry local connection addresses, not automatic authorization. A discov
 
 Some guest Wi-Fi networks isolate devices or block multicast discovery. Use the displayed address when discovery is unavailable; the devices still need a reachable local connection. AirLink does not configure router forwarding or provide internet sharing.
 
+## Quick Share
+
+Create a link from files or folders in the native app's **Quick Share** panel, or use **Share link** for the current selection. The portable Windows/Linux host console provides local path selection and share controls. Local shares reference the original files in place and do not copy an entire source file into a staging area.
+
+The default policy is **24-hour expiry, no password, and unlimited downloads**. Set a different expiry, choose no expiry, add an optional password, or set a download limit. Passwords are protected with Argon2id; plaintext passwords are not stored or returned in status. Keep originals available and unchanged while sharing them. The host checks source identity, size, and modification time and rejects mismatches or unavailable sources; it does not create a frozen content snapshot of a mutable original.
+
+Share the full link, including its fragment after `#`. The recipient opens a read-only share page and does not need device pairing. The random link secret is consumed from the fragment and removed from the address bar; it is not placed in an HTTP URL or referrer. Filenames are hidden until the link and any password are authorized. A share session grants access only to that share's files, not to the host's device administration or arbitrary filesystem paths.
+
+The recipient still needs a reachable local network and trust in the host's HTTPS certificate. Complete the same fingerprint comparison and certificate setup described above. Quick Share does not create an internet link or remove the certificate setup requirement.
+
+Opening or unlocking a share does not consume a download. The first successful download body counts **one session**; additional files, HTTP Range requests, and resumptions within that session do not consume additional allowances. A new browser session can count separately. Revocation or expiry blocks further downloads and stops active streams. Folder ZIP downloads retain the browser limitations below.
+
+A paired browser may create a share only from its own completed upload and may revoke its own shares. It cannot submit arbitrary paths on the host. Local host control can share selected original paths or an eligible existing transfer. Share definitions, ownership, revocations, and counters persist across host restarts; clipboard text does not.
+
+## Explicit clipboard text
+
+Open **Clipboard**, choose a paired device, explicitly **Paste** or type editable text, and select **Send**. At the receiving device, inspect the message and choose **Copy** to write it to the operating system clipboard. Receiving a message never automatically reads, monitors, synchronizes, or replaces the system clipboard. A selectable-text/manual-paste fallback is available when a browser's clipboard API is unavailable.
+
+Clipboard permission is **off by default**, including devices paired before 0.2. Enable it in the device's permissions. Desktop-to-desktop clipboard exchange requires permission on both hosts. File send/receive permissions and clipboard permission remain separate.
+
+Each text must contain **1 to 65,536 UTF-8 bytes (64 KiB)**. AirLink keeps up to **100 recent text messages for at most one hour in process memory**, with no database persistence. Restarting the host clears those messages; dismiss removes a message, and revoking a device removes its messages. Copying text remains an explicit user action.
+
 ## Browser behavior with large files
 
 Browser uploads read and hash bounded chunks. If the connection breaks while the page remains available, AirLink reconnects and resumes at the host's confirmed checkpoint. After a reload, browser restart, or loss of file access, choose the same unchanged source files again. AirLink verifies the saved integrity evidence before continuing.
@@ -97,7 +121,7 @@ Browser downloads are saved by the browser's download manager. Individual downlo
 | Linux settings, pairing identity, transfer database | `$XDG_CONFIG_HOME/AirLink`, or `~/.config/AirLink` |
 | Received files | `~/Downloads/AirLink`, configurable locally |
 
-The private state directory contains the TLS identity, device credentials, settings, and SQLite transfer checkpoints. Keep it separate from the application bundle. Sending references selected source files; it does not move, replace, or create a whole-file staging copy of the originals.
+The private state directory contains the TLS identity, device credentials, settings, SQLite transfer checkpoints, and durable share definitions/sessions. Authorized owners can recover their share links after restart, so protect this directory as private application data. Clipboard messages are not persisted there. Keep application state separate from the bundle. Sending and sharing reference selected source files; they do not move, replace, or create a whole-file staging copy of the originals.
 
 Portable service options:
 
@@ -130,10 +154,10 @@ bash scripts/package.sh
 
 Set `AIRLINK_GO=/absolute/path/to/go` when Go is not on your PATH. To rebuild only the macOS app after both macOS helpers exist, use `bash scripts/build-macos.sh`.
 
-All automated tests run in the background. There are no UI automation tests that take over the desktop. See [testing instructions and verification limits](docs/TESTING.md), the [architecture](docs/ARCHITECTURE.md), and the [protocol reference](docs/API.md).
+All automated tests run in the background. There are no UI automation tests that take over the desktop. See [testing instructions and verification limits](docs/TESTING.md), the [architecture](docs/ARCHITECTURE.md), the [base protocol](docs/API.md), and the [0.2 protocol additions](docs/API-0.2.md).
 
 ## Versions and license
 
-AirLink uses **MAJOR.MINOR.PATCH** versions. New pre-1.0 capabilities advance the minor version; fixes advance the patch version. Release tags use `v0.1.0` form. A compiled binary, local package, GitHub release, and public release are separate delivery states.
+AirLink uses **MAJOR.MINOR.PATCH** versions. New pre-1.0 capabilities advance the minor version; fixes advance the patch version. Release tags use `v0.2.0` form. A compiled binary, local package, GitHub release, and public release are separate delivery states.
 
 Copyright © 2026 lucasfd3. Licensed under the [MIT License](LICENSE).

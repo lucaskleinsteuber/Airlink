@@ -14,7 +14,7 @@ import Testing
       id="${id%%\"*}"
       case "$line" in
         *'"method":"bad"'*) printf '{"id":"%s","error":"permission denied"}\n' "$id" ;;
-        *'"method":"shutdown"'*) printf '{"id":"%s","result":{}}\n' "$id"; exit 0 ;;
+        *'"method":"shutdown"'*) printf '{"id":"%s","result":{}}\n' "$id"; sleep 0.1; printf done > "$3/shutdown-complete"; exit 0 ;;
         *) printf '{"id":"%s","result":' "$id"; printf '{"ok":true}}\n' ;;
       esac
     done
@@ -32,4 +32,5 @@ import Testing
         #expect(error.localizedDescription == "permission denied")
     }
     await client.stop()
+    #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("shutdown-complete").path))
 }

@@ -23,6 +23,7 @@ import (
 	"github.com/gofrs/flock"
 	"github.com/lucasfd3/Airlink/internal/engine"
 	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucasfd3/Airlink/internal/shares"
 )
 
 //go:embed assets/*
@@ -42,6 +43,9 @@ type pendingPair struct {
 }
 type Server struct {
 	engine                               *engine.Engine
+	shares                               *shares.Store
+	clipboardMu                          sync.Mutex
+	clipboardMessages                    []model.ClipboardMessage
 	store                                *stateStore
 	opts                                 Options
 	fingerprint                          string
@@ -103,13 +107,18 @@ func New(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	shareStore, err := shares.New(opts.DataDir)
+	if err != nil {
+		eng.Close()
+		return nil, err
+	}
 	for _, t := range eng.Transfers("") {
 		if t.Direction == "receive" && t.State == "reconnecting" {
 			_ = eng.Resume(t.ID)
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Server{engine: eng, store: store, opts: opts, fingerprint: fp, certificate: ca, pending: map[string]*pendingPair{}, discovered: map[string]model.Device{}, rate: map[string][]time.Time{}, senders: map[string]bool{}, senderCancels: map[string]context.CancelFunc{}, active: map[string]map[string]context.CancelFunc{}, chunkSlots: make(chan struct{}, 2), ctx: ctx, cancel: cancel, lock: lock}
+	s := &Server{engine: eng, shares: shareStore, store: store, opts: opts, fingerprint: fp, certificate: ca, pending: map[string]*pendingPair{}, discovered: map[string]model.Device{}, rate: map[string][]time.Time{}, senders: map[string]bool{}, senderCancels: map[string]context.CancelFunc{}, active: map[string]map[string]context.CancelFunc{}, chunkSlots: make(chan struct{}, 2), ctx: ctx, cancel: cancel, lock: lock}
 	port := opts.Port
 	if port == 0 {
 		port = 43871
@@ -120,6 +129,7 @@ func New(opts Options) (*Server, error) {
 	}
 	if err != nil {
 		eng.Close()
+		shareStore.Close()
 		cancel()
 		return nil, err
 	}
@@ -171,6 +181,8 @@ func New(opts Options) (*Server, error) {
 	go s.confirmationLoop()
 	s.wg.Add(1)
 	go s.heartbeatLoop()
+	s.wg.Add(1)
+	go s.clipboardLoop()
 	success = true
 	return s, nil
 }
@@ -193,6 +205,11 @@ func (s *Server) Close() error {
 	}
 	s.wg.Wait()
 	e := s.engine.Close()
+	if s.shares != nil {
+		if shareErr := s.shares.Close(); e == nil {
+			e = shareErr
+		}
+	}
 	if s.lock != nil {
 		_ = s.lock.Unlock()
 	}
@@ -223,11 +240,11 @@ func (s *Server) Status() model.Status {
 		}
 	}
 	s.mu.Unlock()
-	return model.Status{Version: model.Version, ID: p.ID, Name: p.Settings.Name, URLs: s.currentURLs(s.urls), SetupURLs: s.currentURLs(s.setupURLs), Fingerprint: s.fingerprint, CertificatePath: filepath.Join(s.opts.DataDir, "certificate.pem"), ChunkSize: model.ChunkSize, Devices: ds, Transfers: s.engine.Transfers(""), PairRequests: requests, Settings: p.Settings}
+	return model.Status{Version: model.Version, ID: p.ID, Name: p.Settings.Name, URLs: s.currentURLs(s.urls), SetupURLs: s.currentURLs(s.setupURLs), Fingerprint: s.fingerprint, CertificatePath: filepath.Join(s.opts.DataDir, "certificate.pem"), ChunkSize: model.ChunkSize, Devices: ds, Transfers: s.engine.Transfers(""), PairRequests: requests, Settings: p.Settings, Shares: s.shareSummaries(""), Clipboard: s.clipboardSnapshot(""), ClipboardAllowed: true}
 }
 func (s *Server) guestStatus(d model.Device) model.Status {
 	p := s.store.snapshot()
-	host := model.Device{ID: p.ID, Name: p.Settings.Name, Kind: "engine", Paired: true, Online: true}
+	host := model.Device{ID: p.ID, Name: p.Settings.Name, Kind: "engine", Paired: true, Online: true, CanClipboard: d.CanClipboard}
 	ts := s.engine.Transfers(d.ID)
 	for i := range ts {
 		ts[i].Destination = ""
@@ -235,7 +252,11 @@ func (s *Server) guestStatus(d model.Device) model.Status {
 			ts[i].Error = "Transfer needs attention. Check the source and destination on the host."
 		}
 	}
-	return model.Status{Version: model.Version, ID: p.ID, Name: p.Settings.Name, URLs: s.currentURLs(s.urls), Fingerprint: s.fingerprint, ChunkSize: model.ChunkSize, Devices: []model.Device{host}, Transfers: ts, PairRequests: []model.PairRequest{}}
+	messages := []model.ClipboardMessage{}
+	if d.CanClipboard {
+		messages = s.clipboardSnapshot(d.ID)
+	}
+	return model.Status{Version: model.Version, ID: p.ID, Name: p.Settings.Name, URLs: s.currentURLs(s.urls), Fingerprint: s.fingerprint, ChunkSize: model.ChunkSize, Devices: []model.Device{host}, Transfers: ts, PairRequests: []model.PairRequest{}, Shares: s.shareSummaries(d.ID), Clipboard: messages, ClipboardAllowed: d.CanClipboard}
 }
 func respond(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -256,6 +277,7 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 }
 func (s *Server) handler() http.Handler {
 	mux := http.NewServeMux()
+	s.registerShareRoutes(mux)
 	mux.HandleFunc("GET /certificate.cer", func(w http.ResponseWriter, r *http.Request) { s.serveCertificate(w, r) })
 	mux.HandleFunc("GET /certificate.mobileconfig", func(w http.ResponseWriter, r *http.Request) { s.serveCertificate(w, r) })
 	mux.HandleFunc("GET /api/v1/info", func(w http.ResponseWriter, r *http.Request) {
@@ -276,6 +298,12 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" && r.Method != "HEAD" {
 			http.Error(w, "method not allowed", 405)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/s/") && len(strings.Split(strings.Trim(r.URL.Path, "/"), "/")) == 2 {
+			clone := r.Clone(r.Context())
+			clone.URL.Path = "/"
+			files.ServeHTTP(w, clone)
 			return
 		}
 		if r.URL.Path != "/" {
@@ -356,6 +384,12 @@ func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 	}()
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/")
+	if s.handleShareAPI(w, r, d) {
+		return
+	}
+	if s.handleClipboardAPI(w, r, d) {
+		return
+	}
 	if path == "status" && r.Method == "GET" {
 		respond(w, 200, s.guestStatus(d))
 		return

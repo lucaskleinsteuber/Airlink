@@ -30,7 +30,26 @@ Choose the matching architecture on an Intel Mac. The integration case starts on
 
 Set `AIRLINK_GO=/absolute/path/to/go` for the shell scripts if needed. For a direct Go command, invoke that Go binary explicitly.
 
-## Current evidence — 2026-10-24
+## 0.2 evidence — 2026-10-24
+
+| Area | Completed observation | Scope and limits |
+| --- | --- | --- |
+| Go service, share store, clipboard | `go test -race -count=1 -json ./...` passed 44 top-level tests, 57 passing cases including subtests; `go vet ./...` passed | Includes the existing transfer regression suite, six share-store suites, seven HTTPS share suites, clipboard ACL/deduplication/retention and native peer delivery. The optional 100 GiB stress and previous-helper compatibility case were skipped in this ordinary run. |
+| Compatibility with released 0.1.0 | An additional opt-in test executed the real built 0.1.0 helper, created a pairing and received file, stopped it, then opened that state with the new 0.2 service | Identity/CA fingerprint, pairing cookie, receive folder, completed history and file bytes survived; new clipboard permission defaulted false; old received content could be shared. Log: `build/upgrade-0.1-to-0.2.log`. |
+| Share protocol | Password hash/nonplaintext persistence, 12 concurrent recipient sessions against a limit of one, session reuse/restart/expiry/revocation, ownership and path privacy passed | Sparse >2 GiB fixture validates distant Range offsets, not a complete multi-GiB transfer. HEAD, 304 and invalid ranges do not consume quota; ordinary empty GET does. Active streams stop after revocation. |
+| Web | 29 Node tests across four files and the production build passed | Covers isolated share routing, fragment removal/session-only storage, policy defaults/expiry, Unicode text bounds, existing upload recovery, local-console syntax and path handling. No browser UI automation. |
+| Native Swift | All eleven tests passed against the final 0.2 helper | Includes real private IPC/share create/revoke, source preservation, backward-compatible decoding, UTF-8 limits, policy counts, and waiting for helper checkpoint/exit after shutdown acknowledgement. |
+| Final binary smoke | Both portable Apple Silicon binary and bundled universal helper passed `scripts/smoke-binary.py` | Verified embedded assets over independently verified TLS 1.3, anonymous protected-share unlock/range/quota/revocation, empty-file invalid-Range regression, explicit clipboard grant/delivery/revoke. No GUI process launched. |
+| Native builds | arm64 and x86_64 app and helper assembled; deep/strict ad hoc signature and Info.plist checks passed | Universal code compilation/package consistency, not interactive macOS acceptance or notarization. |
+| Portable builds and packaging | All six service binaries cross-compiled; universal DMG and four portable archives created | Windows/Linux runtime execution remains open. All five package SHA-256 checks and `hdiutil verify` passed. |
+| Dependency scan | `govulncheck` reported zero affected code symbols and zero affected imported packages | One module-level advisory, GO-2026-5932, covers the unused `golang.org/x/crypto/openpgp` package. AirLink imports Argon2, not OpenPGP. This is not a claim that every module is advisory-free. |
+| Hosted CI | Hosted jobs did not execute | Local background evidence is recorded separately. |
+| Native GUI / physical device runtime | No 0.2 GUI launch, installation, UI automation or physical cross-device acceptance performed | Browser interaction, native UI/clipboard presentation, real LAN/mobile behavior and the runtime scenarios below remain open. |
+| Large-transfer stress | No 100 GiB test was repeated for 0.2 | The 0.1 aggregate result below is historical evidence only. |
+
+Local logs are outside Git under `build/go-tests-0.2.jsonl`, `build/web-tests-0.2.log`, `build/swift-tests-0.2.log`, `build/platform-build-0.2.log` and `build/govuln-0.2-verbose.log`. The private 0.2 package remains a development prerelease; these observations do not complete the physical cross-device 1.0 acceptance.
+
+## Historical 0.1 evidence — 2026-10-24
 
 | Area | Observed evidence | What it establishes |
 | --- | --- | --- |
@@ -52,7 +71,7 @@ The final background Go run was `go test -race -count=1 -json ./...`: 25 top-lev
 
 Final binary smoke commands: `python3 scripts/smoke-binary.py build/airlink-darwin-arm64` and `python3 scripts/smoke-binary.py build/AirLink.app/Contents/Helpers/airlink`. This uses Node's TLS 1.3 client because the Apple-bundled Python SSL library may lack TLS 1.3. No GUI process is launched.
 
-Do not treat a compiled binary as a completed device test. The private 0.1.0 package is a development prerelease; full cross-device release acceptance remains open below.
+These observations belong to the private 0.1.0 development prerelease. Do not treat them as a 0.2 rerun, and do not treat a compiled binary as a completed device test. Full cross-device release acceptance remains open below.
 
 ## Large-transfer stress case
 
@@ -73,6 +92,9 @@ The value counts **sequential 1 GiB files**, each transferred in 8 MiB chunks. C
 - Disk full, unavailable destination, source change, filesystem name/permission differences, and checksum failure without premature publication or overwriting.
 - Native window closure/menu bar access, Finder Services, the fixed shortcut, login-item approval/startup, notification authorization/presentation, and all appearance variants.
 - DMG installation/update preserving state, first launch under normal Gatekeeper settings, and a future Developer ID/notarized package.
+- Quick Share recipient certificate onboarding, fragment-link handling, optional passwords, expiry/revocation during downloads, session-based quotas across multiple files/Range/resume, and access limited to the chosen share.
+- Paired-browser ownership boundaries for creating/revoking shares from completed uploads, source unavailability/change without copying originals, and share persistence after host restart.
+- Explicit clipboard Paste/Edit/Send/Copy/Dismiss on native and browser clients, permission disabled for migrated pairings, permission on both desktop peers, UTF-8 size limits, and in-memory retention without automatic system clipboard access.
 
 These checks must be described at their actual scope. They do not authorize adding desktop-controlling UI tests.
 

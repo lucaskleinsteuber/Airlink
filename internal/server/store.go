@@ -111,6 +111,7 @@ func (s *stateStore) updateDevice(d model.Device) error {
 	}
 	r.Device.CanSend = d.CanSend
 	r.Device.CanReceive = d.CanReceive
+	r.Device.CanClipboard = d.CanClipboard
 	r.Device.AutoAccept = d.AutoAccept
 	if d.Name != "" {
 		r.Device.Name = d.Name

@@ -24,6 +24,9 @@ import UserNotifications
     var selectedDevice: Device? { status?.devices.first { $0.id == selectedDeviceID } }
     var activeTransfers: [Transfer] { status?.transfers.filter(\.isActive) ?? [] }
     var colorSchemeName: String { status?.settings.appearance ?? "system" }
+    var version: String { status?.version ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "" }
+    var shares: [Share] { status?.shares ?? [] }
+    var clipboardMessages: [ClipboardMessage] { status?.clipboard ?? [] }
 
     func start() async {
         guard !didStart else { return }; didStart = true
@@ -76,6 +79,22 @@ import UserNotifications
     }
     func update(_ device: Device) { perform("device.update", data: try? JSONEncoder().encode(device)) }
     func update(_ settings: HostSettings) { perform("settings.update", data: try? JSONEncoder().encode(settings)) }
+    func createShare(_ request: ShareCreate) async throws -> Share {
+        guard request.hasValidSource else { throw NativeError.unavailable(text("Bitte Dateien oder einen Ordner auswählen.", "Please choose files or a folder.")) }
+        let result = try await client.request("share.create", params: JSONEncoder().encode(request))
+        let share = try JSONDecoder().decode(Share.self, from: result)
+        await refresh()
+        return share
+    }
+    func sendClipboard(_ text: String, to deviceID: String) async throws {
+        guard ClipboardText.isValid(text) else { throw NativeError.unavailable(self.text("Text muss 1 bis 65.536 UTF-8-Bytes enthalten.", "Text must contain 1 to 65,536 UTF-8 bytes.")) }
+        guard status?.devices.contains(where: { $0.id == deviceID && $0.paired && $0.canClipboard }) == true else {
+            throw NativeError.unavailable(self.text("Zwischenablage ist für dieses Gerät nicht freigegeben.", "Clipboard sharing is not enabled for this device."))
+        }
+        let request = ["deviceId": deviceID, "text": text]
+        _ = try await client.request("clipboard.send", params: JSONEncoder().encode(request))
+        await refresh()
+    }
     func connect(url: String, fingerprint: String) {
         command("peer.connect", params: ["url": url.trimmingCharacters(in: .whitespacesAndNewlines), "fingerprint": fingerprint.replacingOccurrences(of: " ", with: "").replacingOccurrences(of: ":", with: "").lowercased()])
     }

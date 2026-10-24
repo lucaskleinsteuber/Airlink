@@ -36,7 +36,7 @@ struct MenuContent: View {
     @Environment(\.openWindow) private var openWindow
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack { Text("AirLink").font(.headline); Spacer(); Text("0.1.0").foregroundStyle(.secondary) }
+            HStack { Text("AirLink").font(.headline); Spacer(); Text(model.version).foregroundStyle(.secondary) }
             if model.activeTransfers.isEmpty {
                 Label(model.text("Bereit zum Teilen", "Ready to share"), systemImage: "checkmark.circle").foregroundStyle(.secondary)
             } else {

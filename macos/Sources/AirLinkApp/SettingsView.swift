@@ -53,7 +53,7 @@ struct SettingsView: View {
                 LabeledContent(model.text("Schnell senden", "Quick send"), value: "⇧⌘L")
                 Text(model.text("Im Finder: Rechtsklick → Dienste → Mit AirLink senden. Die App läuft beim Schließen des Fensters in der Menüleiste weiter.", "In Finder: right-click → Services → Send with AirLink. Closing the window keeps the app running in the menu bar.")).font(.caption).foregroundStyle(.secondary)
             }
-            HStack { Text("AirLink 0.1.0").font(.caption).foregroundStyle(.secondary); Spacer(); Button(model.text("Speichern", "Save")) { model.update(settings) }.buttonStyle(.borderedProminent).disabled(model.status == nil || settings.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+            HStack { Text("AirLink \(model.version)").font(.caption).foregroundStyle(.secondary); Spacer(); Button(model.text("Speichern", "Save")) { model.update(settings) }.buttonStyle(.borderedProminent).disabled(model.status == nil || settings.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
         }
         .formStyle(.grouped).padding(8)
         .onAppear { if let current = model.status?.settings { settings = current } }
