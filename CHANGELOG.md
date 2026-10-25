@@ -2,6 +2,16 @@
 
 AirLink uses MAJOR.MINOR.PATCH versions. Entries describe implemented changes; distribution and verification status are recorded separately.
 
+## 0.9.0 — 2026-10-25
+
+- Replace portable Windows downloads with real x64/ARM64 Setup executables. Setup installs the self-contained app in `%LOCALAPPDATA%\Programs\AirLink`, creates a current-user Start menu shortcut and registers an Installed apps uninstall entry without administrator privileges.
+- Stage Windows installation files before replacing the app, refuse changes while the desktop is running, and preserve settings, pairings, history, runtime caches, received files and unknown installation-folder files on uninstall.
+- Add manual **Check for Updates…** to the macOS AirLink menu and menu-bar panel, and to Windows Settings and the tray menu. macOS uses Sparkle 2.10; Windows uses NetSparkle 3.1 and the new Setup package.
+- Pin an Ed25519 public key and require signed feeds and signed update archives/installers. Checks are user initiated; scheduled checks, automatic downloads and system profiling are disabled. An unavailable private feed is reported as unavailable, not as an up-to-date result.
+- Add an offline release-signing/public-verification tool and background installer/privacy/signature checks. The private signing seed stays outside Git; reviewed upstream licenses are preserved.
+
+GitHub feeds and downloads require public access for token-free updating. Repository visibility remains a separate owner decision. Background, build and cryptographic verification are recorded in [TESTING.md](docs/TESTING.md); this entry does not claim a physical Windows installer or interactive native updater acceptance run.
+
 ## 0.8.1 — 2026-10-25
 
 - Use `lucasfd3` for first-party copyright and app metadata, with neutral setup examples and fixtures. Remove owner-specific observations and account details from publication documentation.

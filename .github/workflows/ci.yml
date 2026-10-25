@@ -68,7 +68,46 @@ jobs:
           AIRLINK_TEST_HELPER="$HELPER" dotnet run --project windows/AirLink.Core.Tests/AirLink.Core.Tests.csproj --configuration Release
       - name: Compile portable platform binaries
         if: runner.os == 'Linux'
-        run: bash scripts/build.sh
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nsis 7zip
+          bash scripts/build.sh
+      - name: Install Windows setup compiler
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install nsis --yes --no-progress
+          $nsis = Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'
+          $sevenzip = Join-Path $env:ProgramFiles '7-Zip\7z.exe'
+          if (-not (Test-Path -LiteralPath $nsis) -or -not (Test-Path -LiteralPath $sevenzip)) { throw 'NSIS or 7-Zip is unavailable.' }
+          "AIRLINK_NSIS=$nsis" >> $env:GITHUB_ENV
+          "AIRLINK_7ZIP=$sevenzip" >> $env:GITHUB_ENV
+      - name: Build native Windows setup packages
+        if: runner.os == 'Windows'
+        run: |
+          for ARCH in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=windows GOARCH="$ARCH" go build -buildvcs=false -trimpath -ldflags='-s -w' -o "build/airlink-windows-$ARCH.exe" ./cmd/airlink
+          done
+          bash scripts/build-windows.sh
+      - name: Create installer upgrade fixture
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force 'build/installer-fixture' > $null
+          Set-Content -LiteralPath 'build/installer-fixture/main.go' -Encoding utf8 -Value 'package main; func main() {}'
+          $env:GOOS = 'windows'; $env:GOARCH = 'amd64'; $env:CGO_ENABLED = '0'
+          go build -buildvcs=false -trimpath '-ldflags=-H=windowsgui -s -w' -o build/installer-fixture/AirLink.exe build/installer-fixture/main.go
+          if ($LASTEXITCODE -ne 0) { throw 'Could not build the synthetic baseline payload.' }
+          $payload = (Resolve-Path 'build/installer-fixture/AirLink.exe').Path
+          $output = Join-Path (Get-Location) 'build/installer-fixture/baseline-setup.exe'
+          $icon = (Resolve-Path 'windows/AirLink.Windows/Assets/AirLink.ico').Path
+          & $env:AIRLINK_NSIS -V2 -INPUTCHARSET UTF8 '-DAIRLINK_VERSION=0.0.0' '-DAIRLINK_ARCH=x64' "-DAIRLINK_PAYLOAD=$payload" "-DAIRLINK_OUTPUT=$output" "-DAIRLINK_ICON=$icon" windows/installer/AirLink.nsi
+          if ($LASTEXITCODE -ne 0) { throw 'Could not compile the synthetic baseline installer.' }
+      - name: Silent Windows installation, upgrade and uninstall acceptance
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./scripts/test-windows-installer.ps1 -InstallerPath build/windows-x64/AirLink-Setup.exe -PayloadPath build/windows-x64/AirLink.exe -ExpectedVersion (Get-Content VERSION -Raw).Trim() -BaselineInstallerPath build/installer-fixture/baseline-setup.exe -BaselinePayloadPath build/installer-fixture/AirLink.exe -BaselineVersion 0.0.0 -ReportPath build/installer-acceptance.json
       - name: Native Swift tests with the actual helper
         if: runner.os == 'macOS'
         run: |

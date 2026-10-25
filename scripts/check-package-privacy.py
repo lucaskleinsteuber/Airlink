@@ -2,23 +2,35 @@
 """Read-only privacy gate for release assets; never executes packaged code.
 
 Usage: check-package-privacy.py PATH [PATH ...] or --self-test.
-Accepts Windows single-file EXEs/ZIPs, Linux TARs, app bundles, and macOS DMGs.
+Accepts Windows single-file/NSIS EXEs/ZIPs, Linux TARs, app bundles, and macOS DMGs.
+NSIS installers require 7zz/7z (or AIRLINK_7ZIP/--seven-zip). Installer code is
+never executed; compressed control data and extracted payloads are inspected.
 DMGs are mounted read-only without opening Finder and only audit-created mounts
 are detached. Findings name categories, never matched personal values. This is a
 regression guard for known metadata channels, not a guarantee of anonymity.
 """
 import argparse
+import hashlib
 import io
+import lzma
+import os
 import plistlib
+import queue
 import re
+import shutil
+import stat
 import struct
 import subprocess
 import sys
 import tarfile
+import tempfile
+import threading
+import time
 import unittest
 import zipfile
 import zlib
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from unittest import mock
 
 MAINTAINER = 'lucasfd3'
 COMMIT_EMAIL = '307191020+lucasfd3@users.noreply.github.com'
@@ -29,8 +41,194 @@ EMAIL = re.compile(r'[A-Za-z0-9_.+%\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}')
 TOKEN = re.compile(r'\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}|AKIA[A-Z0-9]{16})\b')
 KEY = re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----\s+[A-Za-z0-9+/=\s]{64,}-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----')
 COPYRIGHT = re.compile(r'copyright\s*(?:\(c\)|©)?\s*\d{4}(?:\s*[-–]\s*\d{4})?\s+([^\r\n]+)', re.I)
-PRIVATE_FILE = re.compile(r'(?:^|/)(?:\.env(?:\.[^/]+)?|identity-key\.pem|certificate\.pem|settings\.json|transfers\.sqlite(?:-[^/]+)?|.*\.(?:p12|pfx|mobileprovision|keychain-db))$', re.I)
+PRIVATE_FILE = re.compile(r'(?:^|/)(?:\.env(?:\.[^/]+)?|identity-key\.pem|certificate\.pem|settings\.json|transfers\.sqlite(?:-[^/]+)?|.*\.(?:seed|key|priv|p8|p12|pfx|mobileprovision|keychain-db))$', re.I)
 LIMIT = 512 * 1024 * 1024
+NSIS_MAGIC = bytes.fromhex('efbeadde4e756c6c736f6674496e7374')
+NSIS_ENTRY_LIMIT = 10000
+NSIS_TOTAL_LIMIT = 1024 * 1024 * 1024
+NSIS_LIST_LIMIT = 16 * 1024 * 1024
+NSIS_DEPTH_LIMIT = 4
+NSIS_PROCESS_SECONDS = 60
+
+
+def is_nsis(data):
+    return data[:2] == b'MZ' and NSIS_MAGIC in data
+
+
+def nsis_stream(data):
+    """Inspect our solid-LZMA NSIS profile, including non-file control strings.
+
+    7-Zip exposes installed files, but not the compressed installer header (which
+    contains e.g. LicenseData and registry strings). Unsupported NSIS profiles
+    are rejected, rather than silently passing a scan of the outer PE stub.
+    """
+    marker = data.find(NSIS_MAGIC)
+    if marker < 4: raise ValueError('invalid NSIS first header')
+    start = marker - 4
+    flags, signature, a, b, c, header_size, following = struct.unpack('<7I', checked_slice(data, start, 28))
+    if header_size < 1 or header_size > 32 * 1024 * 1024 or following < 34:
+        raise ValueError('invalid NSIS stream dimensions')
+    raw = checked_slice(data, start + 28, following - 28)
+    properties = raw[0]
+    lc, remainder = properties % 9, properties // 9
+    lp, pb = remainder % 5, remainder // 5
+    dictionary = struct.unpack('<I', checked_slice(raw, 1, 4))[0]
+    if properties >= 225 or lc + lp > 4 or not (4096 <= dictionary <= 128 * 1024 * 1024):
+        raise ValueError('unsupported NSIS compression profile')
+    decoder = lzma.LZMADecompressor(format=lzma.FORMAT_RAW, filters=[{
+        'id': lzma.FILTER_LZMA1, 'dict_size': dictionary, 'lc': lc, 'lp': lp, 'pb': pb,
+    }])
+    decoded = decoder.decompress(raw[5:], max_length=LIMIT + 1)
+    if len(decoded) > LIMIT or not decoder.eof or len(decoder.unused_data) not in (0, 4):
+        raise ValueError('NSIS stream could not be inspected within its bound')
+    if len(decoded) < header_size + 4 or struct.unpack('<I', checked_slice(decoded, 0, 4))[0] != header_size:
+        raise ValueError('unsupported NSIS header framing')
+    return checked_slice(decoded, 4, header_size), decoded
+
+
+def installer_name(name):
+    name = name.replace('\\', '/')
+    if not name or len(name) > 1024 or name.startswith('/') or ':' in name or '\0' in name:
+        raise ValueError('unsafe installer entry name')
+    if any(ord(c) < 32 or ord(c) == 127 for c in name): raise ValueError('control character in installer entry name')
+    parts = name.split('/')
+    if any(part in ('', '.', '..') or part.rstrip(' .') != part for part in parts):
+        raise ValueError('unsafe installer entry component')
+    for part in parts:
+        stem = part.split('.', 1)[0].upper()
+        if stem in {'CON', 'PRN', 'AUX', 'NUL'} or re.fullmatch(r'(?:COM|LPT)[1-9]', stem):
+            raise ValueError('reserved installer entry component')
+    return str(PurePosixPath(*parts))
+
+
+def nsis_listing(text):
+    entries, names = {}, set()
+    for block in re.split(r'\r?\n\s*\r?\n', text.strip()):
+        if not block.strip(): continue
+        fields = {}
+        for line in block.splitlines():
+            if ' = ' not in line: raise ValueError('unrecognized installer listing line')
+            key, value = line.split(' = ', 1)
+            if key in fields: raise ValueError('ambiguous installer listing')
+            fields[key] = value
+        if 'Path' not in fields: raise ValueError('installer listing omitted a path')
+        name = installer_name(fields['Path'])
+        if name.casefold() in names: raise ValueError('duplicate installer entry')
+        names.add(name.casefold())
+        if any(key.lower() in {'symbolic link', 'hard link', 'reparse', 'link'} for key in fields):
+            raise ValueError('installer link entry is not permitted')
+        attributes = fields.get('Attributes', '')
+        if 'L' in attributes.upper() or 'l' in fields.get('Mode', ''):
+            raise ValueError('installer link attributes are not permitted')
+        directory = fields.get('Folder') == '+' or 'D' in attributes.upper()
+        raw_size = fields.get('Size', '')
+        # NSIS reconstructs an uninstaller without declaring its size in -slt.
+        # Its actual extracted size is still checked before content inspection.
+        size = int(raw_size) if raw_size else None
+        if size is not None and not 0 <= size <= LIMIT: raise ValueError('installer entry exceeds its size bound')
+        entries[name] = (directory, size)
+        if len(entries) > NSIS_ENTRY_LIMIT: raise ValueError('too many installer entries')
+    if sum(size or 0 for directory, size in entries.values() if not directory) > NSIS_TOTAL_LIMIT:
+        raise ValueError('installer aggregate size exceeds its bound')
+    return entries
+
+
+def extracted_entries(root, declared=None, complete=False):
+    """Validate the owned extraction tree without following any links."""
+    found, total = {}, 0
+    for directory, directories, files in os.walk(root, followlinks=False):
+        for child in directories + files:
+            item = Path(directory) / child
+            info = item.lstat()
+            if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400:
+                raise ValueError('installer extracted a link or reparse point')
+            relative = installer_name(item.relative_to(root).as_posix())
+            if not stat.S_ISDIR(info.st_mode) and not stat.S_ISREG(info.st_mode):
+                raise ValueError('installer extracted an unsupported entry type')
+            if item.resolve().is_relative_to(root.resolve()) is False:
+                raise ValueError('installer entry escaped the owned extraction directory')
+            directory_entry = stat.S_ISDIR(info.st_mode)
+            if declared is not None:
+                if relative not in declared and not (directory_entry and any(name.startswith(relative + '/') for name in declared)):
+                    raise ValueError('installer extracted an undeclared entry')
+                if relative in declared:
+                    expected_dir, size = declared[relative]
+                    if directory_entry != expected_dir: raise ValueError('installer entry type differs from its listing')
+                    if size is not None and info.st_size > size and not directory_entry:
+                        raise ValueError('installer entry exceeds its declared size')
+                    if complete and size is not None and not directory_entry and info.st_size != size:
+                        raise ValueError('installer entry size differs from its listing')
+            if not directory_entry:
+                total += info.st_size
+                if info.st_size > LIMIT: raise ValueError('extracted installer file exceeds its bound')
+            found[relative] = (directory_entry, item)
+            if len(found) > NSIS_ENTRY_LIMIT: raise ValueError('too many extracted installer entries')
+            if total > NSIS_TOTAL_LIMIT: raise ValueError('extracted installer size exceeds its bound')
+    if complete and declared is not None and not set(declared).issubset(found):
+        raise ValueError('installer extraction omitted declared entries')
+    return found
+
+
+def seven_zip(command, output_limit, extraction=None, declared=None):
+    """Run only the trusted extractor, with output/time/disk bounds."""
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    chunks, stopping = queue.Queue(maxsize=8), threading.Event()
+    def read_output():
+        try:
+            while not stopping.is_set():
+                block = process.stdout.read(65536)
+                while not stopping.is_set():
+                    try: chunks.put(block, timeout=.1); break
+                    except queue.Full: continue
+                if not block: return
+        except (OSError, ValueError):
+            while not stopping.is_set():
+                try: chunks.put(b'', timeout=.1); break
+                except queue.Full: continue
+    reader = threading.Thread(target=read_output, daemon=True); reader.start()
+    result, deadline, ended = bytearray(), time.monotonic() + NSIS_PROCESS_SECONDS, False
+    try:
+        while not ended or process.poll() is None:
+            if time.monotonic() >= deadline: raise ValueError('installer extractor exceeded its deadline')
+            if extraction is not None: extracted_entries(extraction, declared)
+            try: block = chunks.get(timeout=.1)
+            except queue.Empty: continue
+            if not block: ended = True
+            else:
+                result.extend(block)
+                if len(result) > output_limit: raise ValueError('installer extractor output exceeded its bound')
+        if process.wait(timeout=2) != 0: raise ValueError('installer extractor did not complete successfully')
+        return result.decode('utf-8', 'strict')
+    finally:
+        stopping.set()
+        if process.poll() is None:
+            process.kill()
+            try: process.wait(timeout=2)
+            except subprocess.TimeoutExpired: pass
+        process.stdout.close(); reader.join(timeout=2)
+
+
+def find_seven_zip(explicit=None):
+    selected = explicit or os.environ.get('AIRLINK_7ZIP')
+    if selected:
+        command = shutil.which(selected)
+        if not command: raise ValueError('configured installer extractor is not available')
+        return command
+    command = shutil.which('7zz') or shutil.which('7z')
+    if not command: raise ValueError('NSIS inspection requires a trusted 7zz or 7z extractor')
+    return command
+
+
+def expected_installer_payload(path, architecture=None):
+    if not path.is_file() or path.stat().st_size > LIMIT:
+        raise ValueError('expected installer payload is unavailable or exceeds its bound')
+    digest, size = hashlib.sha256(), 0
+    with path.open('rb') as source:
+        while block := source.read(1024 * 1024):
+            size += len(block)
+            if size > LIMIT: raise ValueError('expected installer payload exceeds its bound')
+            digest.update(block)
+    return size, digest.digest(), {'x64': 0x8664, 'arm64': 0xaa64}.get(architecture)
 
 
 def texts(data):
@@ -64,7 +262,15 @@ def safe_label(label):
     return EMAIL.sub('[email]', value)
 
 
+def third_party_sparkle(name):
+    # Sparkle's original copyright and license must remain intact. Scope this
+    # ownership exception to its bundled framework, including nested XPC apps;
+    # path, credential, key and debug-artifact checks still apply to every byte.
+    return '/sparkle.framework/' in ('/' + name.replace('\\', '/').lower())
+
+
 def first_party_document(name):
+    if third_party_sparkle(name): return False
     name = name.replace('\\', '/').rsplit('/', 1)[-1].lower()
     return name in {'readme', 'readme.md', 'readme.txt', 'license', 'license.md', 'license.txt'}
 
@@ -116,6 +322,7 @@ class PE:
         if data[:2] != b'MZ': raise ValueError('invalid PE DOS header')
         pe = struct.unpack('<I', checked_slice(data, 0x3c, 4))[0]
         if checked_slice(data, pe, 4) != b'PE\0\0': raise ValueError('invalid PE signature')
+        self.machine = struct.unpack('<H', checked_slice(data, pe + 4, 2))[0]
         nsect, optsize = struct.unpack_from('<H', data, pe + 6)[0], struct.unpack_from('<H', data, pe + 20)[0]
         optional = pe + 24
         magic = struct.unpack('<H', checked_slice(data, optional, 2))[0]
@@ -202,9 +409,12 @@ class PE:
 
 
 class Audit:
-    def __init__(self): self.issues = set(); self.files = self.bundled = self.resources = 0
+    def __init__(self, seven_zip_path=None, expected_payload=None):
+        self.issues = set(); self.files = self.bundled = self.resources = self.installers = 0
+        self.seven_zip_path, self.expected_payload = seven_zip_path, expected_payload
+        self.expected_checks = self.installer_entries = self.installer_bytes = 0
     def issue(self, label, category): self.issues.add((safe_label(label), category))
-    def payload(self, label, data, first_party=False, inspect_bundle=True):
+    def payload(self, label, data, first_party=False, inspect_bundle=True, nsis_depth=0):
         self.files += 1
         for finding in content_findings(data, first_party): self.issue(label, finding)
         if PRIVATE_FILE.search(label) and not label.endswith('.env.example'):
@@ -225,18 +435,59 @@ class Audit:
             if inspect_bundle:
                 for name, kind, payload in bundle_entries(data):
                     self.bundled += 1
-                    self.payload(label + '!/' + name, payload, first_party_document(name), False)
+                    self.payload(label + '!/' + name, payload, first_party_document(name), False, nsis_depth)
+            if is_nsis(data): self.nsis(label, data, nsis_depth)
+
+    def nsis(self, label, data, depth=0):
+        if depth >= NSIS_DEPTH_LIMIT: raise ValueError('nested installer depth exceeds its bound')
+        extractor = find_seven_zip(self.seven_zip_path)
+        header, stream = nsis_stream(data)
+        self.installers += 1
+        for finding in content_findings(header, True): self.issue(label + ' [NSIS control header]', finding)
+        for finding in content_findings(stream): self.issue(label + ' [NSIS decoded stream]', finding)
+        del header, stream
+        # The owned directory is discarded even if a listing, extraction, nested
+        # PE, or .NET resource fails inspection. The installer is never run.
+        with tempfile.TemporaryDirectory(prefix='airlink-package-audit-') as temporary:
+            owned = Path(temporary)
+            archive, output = owned / 'installer.exe', owned / 'payload'
+            archive.write_bytes(data); output.mkdir()
+            listing = seven_zip([extractor, 'l', '-slt', '-ba', '-sccUTF-8', '--', str(archive)], NSIS_LIST_LIMIT)
+            declared = nsis_listing(listing)
+            # Validate the complete manifest before letting the extractor write.
+            seven_zip([extractor, 'x', '-y', '-bd', '-bb0', '-sccUTF-8', '-o' + str(output), '--', str(archive)],
+                      2 * 1024 * 1024, output, declared)
+            entries = extracted_entries(output, declared, complete=True)
+            self.installer_entries += len(entries)
+            if self.installer_entries > NSIS_ENTRY_LIMIT: raise ValueError('nested installer entry count exceeds its bound')
+            expected_matches = []
+            for name, (directory, path) in sorted(entries.items()):
+                if directory: continue
+                payload = path.read_bytes()
+                self.installer_bytes += len(payload)
+                if self.installer_bytes > NSIS_TOTAL_LIMIT: raise ValueError('nested installer size exceeds its bound')
+                if depth == 0 and self.expected_payload is not None:
+                    size, digest, machine = self.expected_payload
+                    if len(payload) == size and hashlib.sha256(payload).digest() == digest:
+                        expected_matches.append(name)
+                        if machine is not None and PE(payload).machine != machine:
+                            self.issue(label, 'installer native payload architecture does not match')
+                self.payload(label + '!/' + name, payload, first_party_document(name), True, depth + 1)
+            if depth == 0 and self.expected_payload is not None:
+                self.expected_checks += 1
+                if len(expected_matches) != 1:
+                    self.issue(label, 'installer must contain exactly one byte-identical expected native payload')
 
     def file(self, path, label=None):
         label = label or path.name
         if path.stat().st_size > LIMIT: raise ValueError('input exceeds bounded audit size')
         data = path.read_bytes()
-        self.payload(label, data, first_party_document(path.name))
+        self.payload(label, data, first_party_document(label))
         if path.name == 'Info.plist':
             info = plistlib.loads(data)
             for key in ('NSHumanReadableCopyright', 'CFBundleGetInfoString'):
                 if isinstance(info.get(key), str):
-                    for finding in content_findings(info[key].encode(), True): self.issue(label + ' [' + key + ']', finding)
+                    for finding in content_findings(info[key].encode(), not third_party_sparkle(label)): self.issue(label + ' [' + key + ']', finding)
 
     def path(self, path):
         if path.is_dir():
@@ -251,7 +502,7 @@ class Audit:
                     if item.file_size > LIMIT: raise ValueError('archive entry exceeds bounded audit size')
                     label = path.name + '!/' + item.filename
                     self.zip_owner(label, item.extra)
-                    self.payload(label, archive.read(item), first_party_document(item.filename))
+                    self.payload(label, archive.read(item), first_party_document(label))
         elif tarfile.is_tarfile(path):
             with tarfile.open(path) as archive:
                 for item in archive:
@@ -260,7 +511,7 @@ class Audit:
                         self.issue(label, 'non-neutral archive owner metadata')
                     if item.isfile():
                         if item.size > LIMIT: raise ValueError('archive entry exceeds bounded audit size')
-                        self.payload(label, archive.extractfile(item).read(), first_party_document(item.name))
+                        self.payload(label, archive.extractfile(item).read(), first_party_document(label))
         else: self.file(path)
 
     def zip_owner(self, label, extra):
@@ -313,6 +564,36 @@ class Audit:
 
 
 class GuardTests(unittest.TestCase):
+    @staticmethod
+    def native_fixture(machine=0x8664):
+        image = bytearray(512)
+        image[:2] = b'MZ'; image[0x3c:0x40] = struct.pack('<I', 0x80)
+        image[0x80:0x84] = b'PE\0\0'
+        struct.pack_into('<H', image, 0x84, machine)
+        struct.pack_into('<H', image, 0x94, 224)
+        struct.pack_into('<H', image, 0x98, 0x10b)
+        return bytes(image)
+
+    @classmethod
+    def nsis_fixture(cls, header=b'neutral control strings', payload=b''):
+        decoded = struct.pack('<I', len(header)) + header + payload
+        raw = b'\x5d' + struct.pack('<I', 8 * 1024 * 1024) + lzma.compress(decoded, format=lzma.FORMAT_RAW,
+            filters=[{'id': lzma.FILTER_LZMA1, 'dict_size': 8 * 1024 * 1024, 'lc': 3, 'lp': 0, 'pb': 2}]) + bytes(4)
+        return cls.native_fixture() + bytes(4) + NSIS_MAGIC + struct.pack('<II', len(header), 28 + len(raw)) + raw
+
+    def mocked_installer_audit(self, image, files, expected=None):
+        def extract(command, limit, extraction=None, declared=None):
+            if extraction is None:
+                return '\n\n'.join('Path = ' + name + '\nSize = ' + str(len(data)) for name, data in files.items())
+            for name, data in files.items():
+                output = extraction / name; output.parent.mkdir(parents=True, exist_ok=True); output.write_bytes(data)
+            return ''
+        audit = Audit(expected_payload=expected)
+        with mock.patch(__name__ + '.find_seven_zip', return_value='trusted-test-extractor'), \
+             mock.patch(__name__ + '.seven_zip', side_effect=extract):
+            audit.payload('fixture.exe', image)
+        return audit
+
     def test_binary_paths_and_neutral_text(self):
         personal = '/Users/' + 'private-person/build/Core.pdb'
         self.assertIn('personal home path', content_findings(personal.encode()))
@@ -325,6 +606,26 @@ class GuardTests(unittest.TestCase):
         self.assertIn('first-party copyright identity requires review', content_findings(third_party, True))
         year = 2026
         self.assertEqual(content_findings(('Copyright (c) ' + str(year) + ' ' + MAINTAINER + '\n' + COMMIT_EMAIL).encode(), True), set())
+
+    def test_sparkle_third_party_license_keeps_attribution_and_general_checks(self):
+        self.assertFalse(first_party_document('AirLink.app/Contents/Frameworks/Sparkle.framework/Versions/B/Resources/LICENSE'))
+        self.assertTrue(first_party_document('AirLink.app/Contents/Resources/LICENSE'))
+        self.assertTrue(first_party_document('AirLink.app/Contents/Resources/Sparkle.framework-fake/LICENSE'))
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'Info.plist'
+            path.write_bytes(plistlib.dumps({'NSHumanReadableCopyright': 'Copyright (c) 2025 Sparkle Project'}))
+            audit = Audit(); audit.file(path, 'AirLink.app/Contents/Frameworks/Sparkle.framework/Resources/Info.plist')
+            self.assertFalse(audit.issues)
+            path.write_bytes(plistlib.dumps({'NSHumanReadableCopyright': '/Users/' + 'private-person/project'}))
+            audit.file(path, 'AirLink.app/Contents/Frameworks/Sparkle.framework/Resources/Info.plist')
+            self.assertTrue(any(category == 'personal home path' for label, category in audit.issues))
+
+    def test_private_signing_seed_filenames_are_rejected(self):
+        for extension in ('seed', 'key', 'priv', 'p8', 'p12', 'pfx'):
+            audit = Audit(); audit.payload('keys/signing.' + extension, b'opaque sensitive bytes')
+            self.assertIn(('keys/signing.' + extension, 'private runtime/signing filename'), audit.issues)
+        audit = Audit(); audit.payload('updates/public-keys.json', b'{"algorithm":"Ed25519"}')
+        self.assertFalse(audit.issues)
 
     def test_credentials_and_archive_owner(self):
         self.assertIn('credential-shaped token', content_findings(('ghp_' + 'a' * 36).encode()))
@@ -354,22 +655,143 @@ class GuardTests(unittest.TestCase):
         data.extend(struct.pack('<qqqB', 64, 8, 2, 1) + b'\x01x')
         with self.assertRaises((ValueError, zlib.error)): list(bundle_entries(bytes(data)))
 
+    def test_nsis_compressed_control_and_file_bytes_are_inspected(self):
+        year = 2026
+        header = ('Copyright (c) ' + str(year) + ' Example Private Owner\n' + '/Users/' + 'private-person/source').encode('utf-16le')
+        payload = ('unlisted compressed /home/' + 'private-person/build').encode()
+        image = self.nsis_fixture(header, payload)
+        self.assertNotIn(b'/Users/', image); self.assertNotIn(header, image)
+        audit = self.mocked_installer_audit(image, {'$PLUGINSDIR/payload.txt': b'neutral'})
+        self.assertIn(('fixture.exe [NSIS control header]', 'first-party copyright identity requires review'), audit.issues)
+        self.assertIn(('fixture.exe [NSIS control header]', 'personal home path'), audit.issues)
+        self.assertIn(('fixture.exe [NSIS decoded stream]', 'personal home path'), audit.issues)
+        self.assertEqual(audit.installers, 1)
+
+    def test_nsis_missing_extractor_fails_closed(self):
+        with mock.patch.dict(os.environ, {'AIRLINK_7ZIP': ''}), mock.patch('shutil.which', return_value=None):
+            with self.assertRaisesRegex(ValueError, 'requires a trusted'): Audit().payload('fixture.exe', self.nsis_fixture())
+
+    def test_nsis_stream_bounds_and_unsupported_compression(self):
+        image = self.nsis_fixture()
+        self.assertEqual(nsis_stream(image)[0], b'neutral control strings')
+        broken = bytearray(image); start = broken.find(NSIS_MAGIC) - 4
+        for offset, value in [(start + 20, 33 * 1024 * 1024), (start + 24, len(image) * 2), (start + 29, 256 * 1024 * 1024)]:
+            invalid = bytearray(broken); struct.pack_into('<I', invalid, offset, value)
+            with self.assertRaises((ValueError, lzma.LZMAError)): nsis_stream(bytes(invalid))
+        invalid = bytearray(image); invalid[start + 28] = 255
+        with self.assertRaises(ValueError): nsis_stream(bytes(invalid))
+        with mock.patch(__name__ + '.LIMIT', 8):
+            with self.assertRaises(ValueError): nsis_stream(image)
+
+    def test_nsis_listing_rejects_unsafe_names_links_duplicates_and_sizes(self):
+        for name in ('../escape', '/absolute', 'C:\\absolute', 'safe/../../escape', 'file:stream', '\\\\server\\share',
+                     './dot', 'a//b', 'NUL.txt', 'folder/trailing.', 'line\nPath = injected'):
+            with self.subTest(name=name), self.assertRaises(ValueError): nsis_listing('Path = ' + name + '\nSize = 1')
+        for listing in ('Path = file\nSize = 1\nSymbolic Link = target',
+                        'Path = file\nSize = 1\nAttributes = L',
+                        'Path = a\nSize = 1\n\nPath = A\nSize = 1',
+                        'Path = file\nSize = -1', 'Path = file\nSize = ' + str(LIMIT + 1)):
+            with self.subTest(listing=listing), self.assertRaises(ValueError): nsis_listing(listing)
+        self.assertEqual(nsis_listing('Path = $PLUGINSDIR/System.dll\nSize = 3'), {'$PLUGINSDIR/System.dll': (False, 3)})
+        with mock.patch(__name__ + '.NSIS_ENTRY_LIMIT', 1):
+            with self.assertRaises(ValueError): nsis_listing('Path = a\nSize = 1\n\nPath = b\nSize = 1')
+        with mock.patch(__name__ + '.NSIS_TOTAL_LIMIT', 1):
+            with self.assertRaises(ValueError): nsis_listing('Path = a\nSize = 2')
+
+    def test_nsis_extraction_tree_rejects_undeclared_links_and_size_mismatch(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'known').write_bytes(b'abc')
+            self.assertEqual(set(extracted_entries(root, {'known': (False, 3)}, True)), {'known'})
+            with self.assertRaises(ValueError): extracted_entries(root, {'known': (False, 2)}, True)
+            with self.assertRaises(ValueError): extracted_entries(root, {'known': (False, 4)}, True)
+            with self.assertRaises(ValueError): extracted_entries(root, {}, True)
+            try: (root / 'link').symlink_to(root / 'known')
+            except (OSError, NotImplementedError): self.skipTest('host does not permit creating a synthetic symlink')
+            with self.assertRaises(ValueError): extracted_entries(root)
+
+    def test_nsis_nested_installer_depth_is_bounded(self):
+        image = self.nsis_fixture()
+        with self.assertRaisesRegex(ValueError, 'nested installer depth'):
+            self.mocked_installer_audit(image, {'nested.exe': image})
+
+    def test_extractor_output_and_deadline_are_bounded(self):
+        with self.assertRaisesRegex(ValueError, 'output exceeded'):
+            seven_zip([sys.executable, '-c', 'import sys; sys.stdout.buffer.write(b"x" * 1024)'], 32)
+        with mock.patch(__name__ + '.NSIS_PROCESS_SECONDS', .1):
+            with self.assertRaisesRegex(ValueError, 'deadline'):
+                seven_zip([sys.executable, '-c', 'import time; time.sleep(10)'], 1024)
+
+    def test_nsis_expected_payload_is_matched_by_bytes_not_temporary_filename(self):
+        native = self.native_fixture()
+        expected = len(native), hashlib.sha256(native).digest(), 0x8664
+        audit = self.mocked_installer_audit(self.nsis_fixture(), {'$_13_': native}, expected)
+        self.assertEqual(audit.expected_checks, 1); self.assertFalse(audit.issues)
+        wrong = self.mocked_installer_audit(self.nsis_fixture(), {'$_13_': native + b'changed'}, expected)
+        self.assertIn(('fixture.exe', 'installer must contain exactly one byte-identical expected native payload'), wrong.issues)
+        duplicate = self.mocked_installer_audit(self.nsis_fixture(), {'one': native, 'two': native}, expected)
+        self.assertTrue(duplicate.issues)
+        architecture = self.mocked_installer_audit(self.nsis_fixture(), {'$_13_': native}, (expected[0], expected[1], 0xaa64))
+        self.assertIn(('fixture.exe', 'installer native payload architecture does not match'), architecture.issues)
+
+    def test_nsis_extracted_nested_dotnet_bundle_is_inspected(self):
+        payload = ('/Users/' + 'private-person/obj/managed.pdb').encode()
+        compressor = zlib.compressobj(wbits=-15); compressed = compressor.compress(payload) + compressor.flush()
+        native = bytearray(self.native_fixture()); offset = len(native); native.extend(compressed); header = len(native)
+        name = b'AirLink.Core.dll'
+        native.extend(struct.pack('<IIi', 6, 0, 1) + b'\x01x' + bytes(40))
+        native.extend(struct.pack('<qqqB', offset, len(payload), len(compressed), 1) + bytes([len(name)]) + name)
+        native[0x40:0x48] = struct.pack('<q', header); native[0x48:0x68] = BUNDLE_MARKER
+        audit = self.mocked_installer_audit(self.nsis_fixture(), {'$_13_': bytes(native)})
+        self.assertIn(('fixture.exe!/$_13_!/AirLink.Core.dll', 'personal home path'), audit.issues)
+        self.assertEqual(audit.bundled, 1)
+
+    @unittest.skipUnless(shutil.which('makensis') and (shutil.which('7zz') or shutil.which('7z')), 'NSIS and 7-Zip CLI are optional integration-test tools')
+    def test_real_nsis_compressed_license_and_generated_uninstaller(self):
+        with tempfile.TemporaryDirectory(prefix='airlink-nsis-self-test-') as temporary:
+            root = Path(temporary)
+            year = 2026
+            (root / 'payload.txt').write_text('neutral installed file')
+            (root / 'license.txt').write_text('Copyright (c) ' + str(year) + ' Example Private Owner\n' + '/Users/' + 'private-person/build')
+            (root / 'fixture.nsi').write_text('Unicode true\nName "Privacy fixture"\nOutFile "fixture.exe"\n'
+                'RequestExecutionLevel user\nSetCompressor /SOLID lzma\nPage license\nLicenseData "license.txt"\n'
+                'Section\nSetOutPath "$INSTDIR"\nFile "payload.txt"\nWriteUninstaller "$INSTDIR\\Uninstall.exe"\nSectionEnd\n'
+                'Section "Uninstall"\nDelete "$INSTDIR\\payload.txt"\nSectionEnd\n')
+            result = subprocess.run([shutil.which('makensis'), '-V1', 'fixture.nsi'], cwd=root, capture_output=True, timeout=30)
+            self.assertEqual(result.returncode, 0, 'synthetic installer must compile before audit')
+            audit = Audit(); audit.path(root / 'fixture.exe')
+            self.assertEqual(audit.installers, 2, 'generated uninstaller must also be deeply inspected')
+            self.assertIn(('fixture.exe [NSIS control header]', 'personal home path'), audit.issues)
+            self.assertIn(('fixture.exe [NSIS control header]', 'first-party copyright identity requires review'), audit.issues)
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('paths', nargs='*', type=Path)
     parser.add_argument('--self-test', action='store_true')
+    parser.add_argument('--seven-zip', help='trusted 7zz/7z executable; defaults to AIRLINK_7ZIP or PATH')
+    parser.add_argument('--expected-installer-payload', type=Path, help='require exactly one byte-identical native payload in this installer')
+    parser.add_argument('--expected-installer-arch', choices=('x64', 'arm64'), help='require the expected native PE architecture')
     args = parser.parse_args()
     if args.self_test:
         return 0 if unittest.TextTestRunner().run(unittest.defaultTestLoader.loadTestsFromTestCase(GuardTests)).wasSuccessful() else 1
     if not args.paths: parser.error('at least one release package or app path is required')
-    audit = Audit()
+    if args.expected_installer_arch and not args.expected_installer_payload:
+        parser.error('--expected-installer-arch requires --expected-installer-payload')
+    if args.expected_installer_payload and len(args.paths) != 1:
+        parser.error('--expected-installer-payload requires exactly one installer input')
+    audit = Audit(seven_zip_path=args.seven_zip)
+    if args.expected_installer_payload:
+        try: audit.expected_payload = expected_installer_payload(args.expected_installer_payload, args.expected_installer_arch)
+        except (OSError, ValueError): audit.issue('expected native payload', 'expected installer payload could not be inspected')
     for path in args.paths:
         try: audit.path(path)
-        except (OSError, ValueError, struct.error, zlib.error, subprocess.SubprocessError, tarfile.TarError, zipfile.BadZipFile, plistlib.InvalidFileException):
+        except (OSError, ValueError, struct.error, zlib.error, lzma.LZMAError, UnicodeError, subprocess.SubprocessError, tarfile.TarError, zipfile.BadZipFile, plistlib.InvalidFileException):
             audit.issue(path.name, 'package could not be completely inspected')
+    if args.expected_installer_payload and audit.expected_checks != 1:
+        audit.issue(args.paths[0].name, 'expected native payload was not verified in exactly one installer')
     for label, category in sorted(audit.issues): print(f'{label}: {category}', file=sys.stderr)
-    print(f'Checked {len(args.paths)} input(s), {audit.files} payload(s), {audit.bundled} bundle entry/entries, {audit.resources} managed resource(s); {len(audit.issues)} finding(s).')
+    print(f'Checked {len(args.paths)} input(s), {audit.files} payload(s), {audit.bundled} bundle entry/entries, {audit.resources} managed resource(s), {audit.installers} NSIS installer(s); {len(audit.issues)} finding(s).')
     return 1 if audit.issues else 0
 
 

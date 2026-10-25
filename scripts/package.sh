@@ -5,8 +5,8 @@ cd "$ROOT"
 VERSION="$(cat VERSION)"
 mkdir -p dist
 for ARCH in x64 arm64; do
-  # Windows is a direct self-contained executable; licenses are embedded in-app.
-  cp "build/windows-$ARCH/AirLink.exe" "dist/AirLink-$VERSION-windows-$ARCH.exe"
+  # Publish Setup; the self-contained app is installed into the user's Programs folder.
+  cp "build/windows-$ARCH/AirLink-Setup.exe" "dist/AirLink-$VERSION-windows-$ARCH-setup.exe"
 done
 for ARCH in arm64 amd64; do
   STAGE="build/package-linux-$ARCH"
@@ -38,6 +38,6 @@ if [[ "$(uname -s)" == Darwin ]]; then
  hdiutil create -volname AirLink -srcfolder "$STAGE" -ov -format UDZO "dist/AirLink-$VERSION-macos-universal.dmg"
 fi
 (cd dist && shopt -s nullglob && shasum -a 256 ./*-"$VERSION"-*.dmg ./*-"$VERSION"-*.exe ./*-"$VERSION"-*.tar.gz > SHA256SUMS.txt)
-PACKAGES=("dist/AirLink-$VERSION-windows-x64.exe" "dist/AirLink-$VERSION-windows-arm64.exe" "dist/airlink-$VERSION-linux-amd64.tar.gz" "dist/airlink-$VERSION-linux-arm64.tar.gz")
+PACKAGES=("dist/AirLink-$VERSION-windows-x64-setup.exe" "dist/AirLink-$VERSION-windows-arm64-setup.exe" "dist/airlink-$VERSION-linux-amd64.tar.gz" "dist/airlink-$VERSION-linux-arm64.tar.gz")
 if [[ "$(uname -s)" == Darwin ]]; then PACKAGES+=("dist/AirLink-$VERSION-macos-universal.dmg"); fi
 python3 scripts/check-package-privacy.py "${PACKAGES[@]}"

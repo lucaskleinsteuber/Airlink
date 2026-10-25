@@ -1,6 +1,6 @@
 # Release readiness
 
-AirLink 0.8.1 is a private development preview. This document defines the acceptance gates for a maintainable 1.0 release; it does not declare those gates complete or assign a release date. Source implementation, completed background tests, package creation, physical device acceptance, and distribution are separate states.
+AirLink 0.9.0 is a private development preview. This document defines the acceptance gates for a maintainable 1.0 release; it does not declare those gates complete or assign a release date. Source implementation, completed background tests, package creation, physical device acceptance, and distribution are separate states.
 
 [TESTING.md](TESTING.md) is the record of actual completed runs, their logs and their limits. Historical results retain their original version and scope. A build or cross-compilation does not prove a platform role works at runtime. The historical aggregate 100 GiB run does not prove one 100 GB file. The separate 0.5 single-file 100 GiB background run is version-specific evidence, and a local two-helper loopback run does not prove physical LAN or browser download behavior. Hosted CI must actually execute successfully before being reported as passed; historical runs without executed jobs remain unverified hosted observations.
 
@@ -80,6 +80,8 @@ The following checks remain open until their records are linked from TESTING.md.
 
 Native Windows is required for the agreed 1.0 product. A successful cross-publish or a test of the old console service does not close these native workflow gates.
 
+- [ ] Install the x64/ARM64 Setup on its real OS architecture as a standard user. Verify Programs location, Start menu target and Installed apps metadata, then remove the downloaded Setup and confirm normal launching. Exercise update while running, locked-file failure, repair/reinstall and uninstall with preserved settings/cache/received/unknown files. The opt-in disposable-user silent acceptance script is a separate background check; parser success is not execution evidence.
+
 - [ ] Start the correct x64/ARM64 package on a real supported Windows computer without a separate .NET install, terminal or browser. Record launch/security prompts and any Windows Firewall permission needed for reachable local transfers.
 - [ ] Upgrade from an existing console installation with saved identity, pairings, history and receipt settings. A still-running console reports the data-directory conflict clearly; stop it once and retry without deleting state or pairing again.
 - [ ] Discover/pair the Mac, compare the fingerprint directly, and keep the connection pending until actual approval. Exercise denial, expiry, retry and already-paired devices without a false connected state.
@@ -104,6 +106,8 @@ Native Windows is required for the agreed 1.0 product. A successful cross-publis
 - [ ] Review actual/avoided/relay/lifetime byte displays and last-activity UTC history cohorts. Clear terminal history and confirm files, active work, shares, other relay participants' associations and lifetime traffic remain as specified.
 
 ## Final candidate and distribution
+
+- [ ] Exercise each native **Check for Updates…** action with a public signed channel, no newer version, an unavailable/private channel, invalid feed signature and corrupted payload. Verify graceful transfer checkpointing, cancellation and correct relaunch/version after a real update, with only the intended Mac app retained in Applications. Keep the publishing seed outside Git and securely backed up; public-key configuration alone cannot recreate it.
 
 - [ ] Run the required background Go/race, web, Swift/helper and .NET core/helper checks on the final source and record their actual scope/results in TESTING.md. Regressions for discovered failures must remain in the background suites.
 - [ ] Validate migration from the last private release with preserved identity, pairing, receive folder, transfer history, share policies/counters, explicit user opt-ins, and the documented defaults for any newly introduced setting.

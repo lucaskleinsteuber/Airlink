@@ -16,9 +16,14 @@ internal static class Program
     {
         if (arguments.Length >= 2 && arguments[0] == "--fake-helper") return await FakeHelper.RunAsync(arguments);
         if (arguments.Length > 0 && arguments[0] == "--inspect-native") return NativePackageInspection.Run(arguments);
+        if (arguments.Length == 4 && arguments[0] == "--verify-update-release") return UpdateTests.VerifyRelease(arguments[1], arguments[2], arguments[3]);
         (string Name, Func<Task> Run)[] cases = [
             ("settings preserve existing permissions and unknown additive fields", SettingsRoundTrip),
             ("setup is explicit and preserves custom destinations", SetupTests.ExplicitDefaults),
+            ("updater uses native channels and rejects downgrades or other architectures", UpdateTests.NativeChannels),
+            ("actual NetSparkle Ed25519 checks reject tampered unsigned or truncated updates", UpdateTests.SignatureIntegrity),
+            ("signed feeds fail closed and private feed requests send no credentials", UpdateTests.SignedFeed),
+            ("installer handoff uses an explicit hidden shell and literal user paths", UpdateTests.InstallerHandoff),
             ("old defaults and 100 GiB progress remain exact", DefaultsAndLargeProgress),
             ("pairing completion follows certificate identity and validates local connection origins", PairingIdentity),
             ("automatic receive consent applies only to the offered sender", ReceiveConsent),
@@ -40,6 +45,7 @@ internal static class Program
             ("oversized requests leave the connection usable", OversizedRequest),
             ("diagnostics are bounded and redact credentials and private keys", BoundedDiagnostics),
             ("shutdown waits for exit and remains bounded for ACK and no-ACK hangs", BoundedShutdown),
+            ("updater shutdown never terminates a helper that has not exited", GracefulUpdateShutdown),
             ("a blocked stdin writer cannot prevent shutdown", BlockedInput),
             ("previous process EOF cannot clear the restarted connection", PreviousSessionIsolation),
             ("embedded helper extraction verifies reuse and repairs only its private cache", HelperExtraction),
@@ -414,6 +420,19 @@ internal static class Program
         }
     }
 
+    private static async Task GracefulUpdateShutdown()
+    {
+        foreach (var mode in new[] { "hang-ack", "hang-no-ack" })
+        {
+            await using var fixture = new Fixture(); fixture.Mode(mode); await using var client = FakeClient(); await Ready(client, fixture);
+            var session = client.SessionId;
+            Require(!await client.StopGracefullyAsync(), "Updater shutdown falsely reported a checkpointed helper exit");
+            Require(client.IsRunning && client.SessionId == session && (await client.RequestAsync<HostStatus>("status")).Id == "fake-host", "Updater shutdown killed, closed the pipe of, or replaced a live helper");
+        }
+        await using var normalFixture = new Fixture(); await using var normal = FakeClient(); await Ready(normal, normalFixture);
+        Require(await normal.StopGracefullyAsync() && !normal.IsRunning, "An ordinarily exiting helper could not close gracefully for an update");
+    }
+
     private static async Task BlockedInput()
     {
         await using var fixture = new Fixture(); fixture.Mode("no-read"); await using var client = FakeClient(); await client.StartAsync(FakeExecutable, fixture.Data);
@@ -448,7 +467,7 @@ internal static class Program
         await using var fixture = new Fixture(); await using var client = new DaemonClient(new DaemonClientOptions { DisableDiscovery = true });
         await client.StartAsync(Path.GetFullPath(helper), fixture.Data, fixture.Received);
         var before = await client.RequestAsync<HostStatus>("status");
-        var expectedVersion = Environment.GetEnvironmentVariable("AIRLINK_TEST_VERSION") ?? "0.8.1";
+        var expectedVersion = Environment.GetEnvironmentVariable("AIRLINK_TEST_VERSION") ?? "0.9.0";
         Require(before.Version == expectedVersion && before.Fingerprint.Length == 64 && before.ChunkSize == 8 * 1024 * 1024, "Unexpected service contract/version");
         var settings = ProtocolJson.Clone(before.Settings);
         settings.Appearance = "dark"; settings.Language = "en"; settings.Notifications = false;
@@ -525,7 +544,7 @@ internal static class Program
         var repeatedOffer = await client.RequestAsync<Transfer>("offer", offerRequest);
         Require(firstOffer.Id == repeatedOffer.Id && firstOffer.Files.Select(file => file.Id).SequenceEqual(repeatedOffer.Files.Select(file => file.Id)),
             "Retrying a committed private offer created another transfer or file manifest");
-        Require(await client.StopAsync(), "Actual helper failed clean shutdown");
+        Require(await client.StopGracefullyAsync(), "Actual helper failed checkpointed updater shutdown without termination");
         await client.StartAsync(Path.GetFullPath(helper), fixture.Data, fixture.Received);
         var after = await client.RequestAsync<HostStatus>("status");
         Require(after.Id == before.Id && after.Fingerprint == before.Fingerprint && after.Settings.Organization.DetectDuplicates && after.Shares.Single().Revoked, "Restart reset identity/settings/shares");
@@ -673,7 +692,7 @@ internal static class FakeHelper
                     if (mode != "hang-no-ack") await Reply(id, new { ok = true });
                     if (!mode.StartsWith("hang", StringComparison.Ordinal)) return 0;
                     break;
-                case "status": await Reply(id, new { id = "fake-host", version = "0.8.1", name = "Fake service", settings = new HostSettings() }); break;
+                case "status": await Reply(id, new { id = "fake-host", version = "0.9.0", name = "Fake service", settings = new HostSettings() }); break;
                 case "echo": await Reply(id, root.GetProperty("params").Clone()); break;
                 case "reject": await Reply(id, error: "This transfer still requires recipient approval."); break;
                 case "slow":

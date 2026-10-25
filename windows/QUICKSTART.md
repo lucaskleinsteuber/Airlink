@@ -1,6 +1,12 @@
-# AirLink 0.8 for Windows
+# AirLink 0.9.0 for Windows
 
-Requires a supported 64-bit Windows 10 or Windows 11 installation. Download the **x64 EXE** for an Intel/AMD computer or the **ARM64 EXE** for Windows on ARM. Run the downloaded EXE directly; the matching service and runtime are included. No ZIP extraction, .NET installation, terminal or administrator account is needed for ordinary use.
+Requires a supported 64-bit Windows 10 or Windows 11 installation. Download **`AirLink-0.9.0-windows-x64-setup.exe`** for an Intel/AMD computer or **`AirLink-0.9.0-windows-arm64-setup.exe`** for Windows on ARM from the private [AirLink releases](https://github.com/lucasfd3/Airlink/releases).
+
+## Install
+
+1. Open the downloaded **Setup** EXE. If AirLink is running, choose **Quit** in its notification-area menu, then retry Setup. Closing the main window alone keeps the app running. Stop an old console service once with **Ctrl+C** if needed.
+2. Follow Setup. It installs for your account in **`%LOCALAPPDATA%\Programs\AirLink`** and adds **AirLink** to the Start menu and Windows **Installed apps**. No administrator account, ZIP extraction, separate .NET installation or terminal is required; the matching service and runtime are included.
+3. Choose **Open AirLink** when Setup finishes, or open **AirLink** from the Start menu.
 
 ## First launch
 
@@ -19,18 +25,30 @@ Automatic receiving is an explicit local choice for a trusted sender. Enabling i
 
 ## Updating and quitting
 
-Quit the old native app through its notification-area menu before replacing/running the new EXE. If the legacy console service is still running, stop it once with **Ctrl+C**. The standard `%APPDATA%\AirLink` metadata directory retains identity, pairings, settings and history. During first setup after upgrading, the old conventional `Downloads\AirLink` destination is offered as a change to Downloads; confirm the destination you want. Custom folders remain selected. Already received files are not relocated.
+Run the newer **Setup** EXE to update the installed app. Quit the old native app through its notification-area menu if Setup asks, then retry. After confirming the installed app opens from the Start menu, you can manually delete any older downloaded portable AirLink EXE.
+
+The standard `%APPDATA%\AirLink` metadata directory retains identity, pairings, settings and history. `%LOCALAPPDATA%\AirLink` runtime caches and received files are also preserved. During first setup after upgrading, the old conventional `Downloads\AirLink` destination is offered as a change to Downloads; confirm the destination you want. Custom folders remain selected. Already received files are not relocated.
 
 Closing the window keeps AirLink running in the notification area so transfers can continue. Use **Beenden / Quit** there to stop the app and checkpoint work.
 
-This is a private, unsigned prerelease. Only run the file obtained from the private AirLink repository. **Settings → Licenses** displays the bundled MIT license and runtime notices. Cross-building/resource checks do not prove the new UI, tray, Explorer, clipboard or real network performance on a Windows laptop; those checks are manual. Native relay administration, detailed statistics and sorting-rule editing remain further interface work.
+To uninstall, open **Windows Settings → Apps → Installed apps → AirLink → Uninstall**. Quit AirLink through its notification-area menu if asked. Uninstallation removes the installed app, Start menu shortcut and uninstall registration. It preserves the application data and caches listed above, received files and other files placed in the installation directory; that directory remains when it contains other files.
+
+This is a private, unsigned prerelease. Only run Setup obtained from the private AirLink repository. **Settings → Licenses** displays the bundled MIT license and runtime notices. Cross-building/resource checks do not prove installer execution, the new UI, tray, Explorer, clipboard or real network performance on a Windows laptop. The provided installer acceptance test runs silently in a disposable Windows user; completed-run evidence is recorded separately in [TESTING.md](../docs/TESTING.md), and it is not executed on macOS. Native relay administration, detailed statistics and sorting-rule editing remain further interface work.
 
 ## Deutsch
 
-Lade die passende **EXE** herunter und öffne sie direkt. Beim Update die bisherige App zuerst über **Beenden / Quit** im Infobereich beenden. Ein altes Konsolenfenster bei Bedarf einmal mit **Strg+C** stoppen. Ein Entpacken ist nicht erforderlich.
+Lade **`AirLink-0.9.0-windows-x64-setup.exe`** für einen Intel-/AMD-Rechner oder **`AirLink-0.9.0-windows-arm64-setup.exe`** für Windows auf ARM aus den privaten [AirLink-Releases](https://github.com/lucasfd3/Airlink/releases) herunter und öffne **Setup**. Falls AirLink noch läuft, über **Beenden / Quit** im Infobereich beenden und im Setup erneut versuchen. Nur das Hauptfenster zu schließen beendet die App nicht. Ein altes Konsolenfenster bei Bedarf einmal mit **Strg+C** stoppen.
+
+Setup installiert AirLink für dein Benutzerkonto unter **`%LOCALAPPDATA%\Programs\AirLink`** und legt Einträge im **Startmenü** und unter **Installierte Apps** an. Ein Administratorkonto, Entpacken, eine separate .NET-Installation und ein Terminal sind nicht erforderlich. Öffne AirLink nach der Installation über die Abschlussseite oder das Startmenü.
 
 Bei der Einrichtung vergibst du einen verständlichen **Gerätenamen**, zum Beispiel **Laptop Windows**, und wählst den **Zielordner**, normalerweise **Downloads**. Neue Dateien landen direkt dort; bei einem Namenskonflikt erhält die neue Datei einen Zusatz. Bereits empfangene Dateien und laufende ältere Übertragungen behalten ihren Speicherort.
 
 Wähle den Mac in der breiten, verstellbaren Seitenleiste. Ein neues Gerät einmal koppeln, den Fingerabdruck direkt vergleichen und die Anfrage auf dem anderen Gerät bestätigen. Danach Dateien auf das gekoppelte Gerät oder seine beschriftete Ablagefläche ziehen. Die Übertragung startet für diesen Stapel; die Empfangsbestätigung richtet sich nach der ausdrücklich gespeicherten Einstellung des Empfängers.
 
 **Einstellungen** enthält Namen und Zielordner. Die Geräteberechtigungen liegen im **···**-Menü des Geräts. **Übertragungen** zeigt Fortschritt und Ergebnisse; **Datei zeigen** beziehungsweise **Ordner öffnen** führt direkt zum Ergebnis. Quick Share, Zwischenablage und die Handy-Verbindung stehen unter **Weitere Funktionen**. Im Einstellungsbereich findest du auch **Lizenzen**.
+
+Für ein Update das neuere **Setup** ausführen. Sobald die installierte App aus dem Startmenü erfolgreich geöffnet wurde, kannst du eine ältere heruntergeladene portable AirLink-EXE manuell löschen. Einstellungen, Identität, Kopplungen und Verlauf unter `%APPDATA%\AirLink`, die Laufzeitdateien unter `%LOCALAPPDATA%\AirLink` und bereits empfangene Dateien bleiben erhalten.
+
+Zum Entfernen **Windows-Einstellungen → Apps → Installierte Apps → AirLink → Deinstallieren** wählen. Die Deinstallation entfernt die installierte App und ihre Startmenü- und Deinstallationseinträge. App-Daten, Laufzeitdateien, empfangene Dateien und andere Dateien im Installationsordner bleiben erhalten. Enthält der Installationsordner solche anderen Dateien, bleibt auch der Ordner bestehen.
+
+Dies ist eine private, nicht Authenticode-signierte Vorabversion. Verwende nur Setup aus dem privaten Repository. Hintergrundtests und Paketprüfungen ersetzen keine Abnahme auf einem echten Windows-Gerät; die tatsächlich ausgeführten Prüfungen stehen in [TESTING.md](../docs/TESTING.md).

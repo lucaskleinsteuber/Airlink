@@ -81,6 +81,14 @@ Implementation and background tests remain separate from physical acceptance. Th
 
 Background verification and actual device interaction remain separate. Native setup/rendering, destination behavior on real platform filesystems and physical cross-device throughput still need the manual records in [DEVICE-CHECK.md](DEVICE-CHECK.md).
 
+## 0.9 — Installed Windows app and signed manual updates
+
+- Per-user Windows Setup, fixed Programs location, Start menu entry and Installed apps uninstall registration; upgrading/uninstalling preserves application data and received files.
+- Manual macOS app-menu/menu-bar and Windows Settings/tray update actions using signed feeds and payloads, with the publisher's public key embedded in the clients.
+- Private signing material outside Git, offline publication verification and background tests for tampering, unavailable feeds, installation boundaries and graceful helper shutdown.
+
+Token-free update delivery requires public GitHub access. Completed builds/signature checks are recorded separately from real Windows installation and native updater interaction. This milestone does not close the remaining 1.0 device and reliability gates.
+
 ## 1.0 — Accepted and maintainable (physical acceptance pending)
 
 Still pending: reach the full agreed platform, reliability, integrity, security, usability, and distribution acceptance bar. Stable release claims require completed evidence, including real cross-device transfers, large single files, interrupted transfers, platform-specific file handling, usable native Windows interaction, and macOS distribution checks. A native Windows client is now a required part of the 1.0 product, following the first real transfer feedback.

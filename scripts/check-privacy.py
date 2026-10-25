@@ -15,18 +15,23 @@ MAINTAINER = "lucasfd3"
 COMMIT_EMAIL = "307191020+lucasfd3@users.noreply.github.com"
 EXAMPLE_USERS = {"test", "example", "user", "username", "shared", "public"}
 EXAMPLE_DOMAINS = {"example.com", "example.org", "example.net", "localhost", "test.invalid"}
+# Reviewed upstream legal texts retain their authors; path/key scans still apply.
+THIRD_PARTY_LICENSES = {
+    "windows/AirLink.Windows/ThirdPartyNotices/NetSparkle-LICENSE.md",
+    "windows/AirLink.Windows/ThirdPartyNotices/Chaos.NaCl-LICENSE.md",
+}
 EMAIL = re.compile(r"[A-Za-z0-9_.+%\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 HOME = re.compile(r"(?:/Users/|/home/)([A-Za-z0-9_.\-]+)|[A-Za-z]:\\+Users\\+([A-Za-z0-9_.\-]+)", re.I)
 TOKENS = re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}|AKIA[A-Z0-9]{16})\b")
 PRIVATE_KEY = re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----\s+([A-Za-z0-9+/=\s]{64,})-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")
-SENSITIVE_PATH = re.compile(r"(?:^|/)(?:\.env(?:\.[^/]+)?|identity-key\.pem|certificate\.pem|settings\.json|transfers\.sqlite(?:-[^/]+)?|.*\.(?:p12|pfx|mobileprovision|keychain-db))$", re.I)
+SENSITIVE_PATH = re.compile(r"(?:^|/)(?:\.env(?:\.[^/]+)?|identity-key\.pem|certificate\.pem|settings\.json|transfers\.sqlite(?:-[^/]+)?|.*\.(?:seed|key|priv|p8|p12|pfx|mobileprovision|keychain-db))$", re.I)
 
 
 def run(*args):
     return subprocess.check_output(["git", *args])
 
 
-def findings(data):
+def findings(data, third_party=False):
     text = data.decode("utf-8", errors="replace")
     found = []
     for line, value in enumerate(text.splitlines(), 1):
@@ -34,11 +39,11 @@ def findings(data):
             found.append((line, "personal home path"))
         for match in EMAIL.finditer(value):
             address = match.group().lower()
-            if address != COMMIT_EMAIL.lower() and address.split("@", 1)[1] not in EXAMPLE_DOMAINS:
+            if not third_party and address != COMMIT_EMAIL.lower() and address.split("@", 1)[1] not in EXAMPLE_DOMAINS:
                 found.append((line, "unreviewed email address"))
         if TOKENS.search(value):
             found.append((line, "credential-shaped token"))
-        if re.search(r"copyright.*\b2026\b", value, re.I) and "lucasfd3" not in value.lower():
+        if not third_party and re.search(r"copyright.*\b2026\b", value, re.I) and "lucasfd3" not in value.lower():
             found.append((line, "first-party copyright identity requires review"))
     for match in PRIVATE_KEY.finditer(text):
         found.append((text[:match.start()].count("\n") + 1, "private key material"))
@@ -46,7 +51,7 @@ def findings(data):
 
 
 def check_file(label, data, path=None):
-    results = findings(data)
+    results = findings(data, third_party=path in THIRD_PARTY_LICENSES)
     if path and SENSITIVE_PATH.search(path) and not path.endswith(".env.example"):
         results.append((0, "private runtime/signing filename"))
     for line, rule in results:
@@ -119,7 +124,18 @@ class GuardTests(unittest.TestCase):
     def test_credential_and_runtime_files(self):
         self.assertIn((1, "credential-shaped token"), findings(("ghp_" + "a" * 36).encode()))
         self.assertIsNotNone(SENSITIVE_PATH.search("state/identity-key.pem"))
+        self.assertIsNotNone(SENSITIVE_PATH.search("updates/ed25519.seed"))
+        self.assertIsNotNone(SENSITIVE_PATH.search("updates/signing.key"))
+        self.assertIsNone(SENSITIVE_PATH.search("updates/public-keys.json"))
         self.assertIsNone(SENSITIVE_PATH.search("internal/server/identity.go"))
+
+    def test_reviewed_vendor_license_keeps_authorship_but_not_private_paths(self):
+        year = 2026
+        text = ("Copyright (c) " + str(year) + " Upstream Example Authors").encode()
+        self.assertTrue(findings(text))
+        self.assertEqual(findings(text, third_party=True), [])
+        personal = ("/Users/" + "private-person/build").encode()
+        self.assertIn((1, "personal home path"), findings(personal, third_party=True))
 
 
 def main():

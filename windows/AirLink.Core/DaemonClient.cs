@@ -178,6 +178,31 @@ public sealed class DaemonClient : IAsyncDisposable
         finally { lifecycle.Release(); }
     }
 
+    /// <summary>Updater shutdown: wait for a checkpointed exit, without closing pipes or terminating a live helper on timeout.</summary>
+    public async Task<bool> StopGracefullyAsync(CancellationToken ct = default)
+    {
+        await lifecycle.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            Session? session;
+            lock (stateLock) session = current;
+            if (session == null) return true;
+            session.Stopping = true;
+            using var deadline = new CancellationTokenSource(options.GracefulStopTimeout);
+            try { await RequestSessionAsync(session, "shutdown", null, deadline.Token).ConfigureAwait(false); }
+            catch (Exception ex) when (ex is IOException or TimeoutException or OperationCanceledException or InvalidOperationException) { }
+            if (await WaitForExitAsync(session.Process, deadline.Token).ConfigureAwait(false))
+            {
+                session.Writes.Writer.TryComplete();
+                Retire(session);
+                return true;
+            }
+            session.Stopping = false;
+            return false;
+        }
+        finally { lifecycle.Release(); }
+    }
+
     private async Task<bool> StopSessionAsync(Session session)
     {
         session.Stopping = true;

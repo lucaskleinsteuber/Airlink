@@ -47,6 +47,10 @@ for stem in ('Microsoft.NETCore.App.Runtime.win-', 'Microsoft.WindowsDesktop.App
             found = True
             parts.extend(['\n\n'+'='*72+'\n'+key+'/'+path.name+'\n'+'='*72+'\n', path.read_text(encoding='utf-8-sig')])
     if not found: raise SystemExit('Missing runtime license: '+key)
+for name in ('NetSparkle-LICENSE.md', 'Chaos.NaCl-LICENSE.md'):
+    path = root/'windows/AirLink.Windows/ThirdPartyNotices'/name
+    if not path.is_file(): raise SystemExit('Missing updater license: '+name)
+    parts.extend(['\n\n'+'='*72+'\n'+name+'\n'+'='*72+'\n', path.read_text(encoding='utf-8-sig')])
 (dest/'THIRD-PARTY-NOTICES.txt').write_text(''.join(parts), encoding='utf-8')
 PY
   "$DOTNET_BIN" publish windows/AirLink.Windows/AirLink.Windows.csproj \
@@ -56,3 +60,4 @@ PY
   "$DOTNET_BIN" run --project windows/AirLink.Core.Tests/AirLink.Core.Tests.csproj --configuration Release -- \
     --inspect-native "$ROOT/windows/AirLink.Windows/bin/Release/net10.0-windows/win-$ARCH/AirLink.dll" "$HELPER"
 done
+bash "$ROOT/scripts/build-windows-installer.sh"

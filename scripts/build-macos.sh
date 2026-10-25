@@ -15,7 +15,16 @@ for ARCH in arm64 x86_64; do
     -Xswiftc -gnone -Xswiftc -file-prefix-map -Xswiftc "$ROOT=/AirLink" \
     -Xswiftc -debug-prefix-map -Xswiftc "$ROOT=/AirLink"
 done
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Helpers" "$APP/Contents/Resources" "$OUTPUT/icon-previews"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Helpers" "$APP/Contents/Resources" "$APP/Contents/Frameworks" "$OUTPUT/icon-previews"
+SPARKLE_ARTIFACT="$OUTPUT/swift-arm64/artifacts/sparkle/Sparkle"
+SPARKLE_SOURCE="$SPARKLE_ARTIFACT/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
+test -f "$SPARKLE_SOURCE/Versions/Current/Sparkle"
+# Copy only the runtime framework, preserving its versioned symlinks. SDK dSYMs,
+# headers' sibling debug archives and signing tools remain outside the app.
+rm -rf "$APP/Contents/Frameworks/Sparkle.framework"
+ditto "$SPARKLE_SOURCE" "$APP/Contents/Frameworks/Sparkle.framework"
+cp "$SPARKLE_ARTIFACT/LICENSE" "$APP/Contents/Resources/Sparkle-LICENSE.txt"
+cp "$ROOT/LICENSE" "$APP/Contents/Resources/AirLink-LICENSE.txt"
 ARM_BIN="$(swift build --package-path "$ROOT/macos" --scratch-path "$OUTPUT/swift-arm64" --configuration release --triple arm64-apple-macosx14.0 --show-bin-path)"
 INTEL_BIN="$(swift build --package-path "$ROOT/macos" --scratch-path "$OUTPUT/swift-x86_64" --configuration release --triple x86_64-apple-macosx14.0 --show-bin-path)"
 lipo -create "$ARM_BIN/AirLink" "$INTEL_BIN/AirLink" -output "$APP/Contents/MacOS/AirLink"
@@ -25,6 +34,25 @@ lipo -create "$OUTPUT/airlink-darwin-arm64" "$OUTPUT/airlink-darwin-amd64" -outp
 cp "$ROOT/macos/Info.plist" "$APP/Contents/Info.plist"
 cp -R "$ROOT/macos/Resources/." "$APP/Contents/Resources/"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $(cat "$ROOT/VERSION")" "$APP/Contents/Info.plist"
+# Verify the compiled-in trust anchor against the canonical public-only config.
+# The publisher's private signing key is never needed by an application build.
+python3 - "$ROOT/updates/public-keys.json" "$APP/Contents/Info.plist" <<'PYCONFIG'
+import base64, json, pathlib, plistlib, sys
+config = json.loads(pathlib.Path(sys.argv[1]).read_text())
+info = plistlib.loads(pathlib.Path(sys.argv[2]).read_bytes())
+key = config['publicKey']
+if len(base64.b64decode(key, validate=True)) != 32 or info.get('SUPublicEDKey') != key:
+    raise SystemExit('macOS updater public key is missing or differs from publication config')
+if info.get('SUFeedURL') != config['feeds']['macos']:
+    raise SystemExit('macOS updater feed differs from publication config')
+for name, expected in {'SUEnableAutomaticChecks': False, 'SUAutomaticallyUpdate': False,
+                       'SUAllowsAutomaticUpdates': False, 'SUEnableSystemProfiling': False,
+                       'SUVerifyUpdateBeforeExtraction': True, 'SURequireSignedFeed': True}.items():
+    if info.get(name) is not expected:
+        raise SystemExit('Incorrect macOS updater policy: ' + name)
+if type(info.get('SUSignedFeedFailureExpirationInterval')) is not int or info['SUSignedFeedFailureExpirationInterval'] != 0:
+    raise SystemExit('Signed-feed failures must not expire')
+PYCONFIG
 for RENDITION in Default Dark TintedLight; do
   "$ICON_TOOL" "$ROOT/macos/AppIcon.icon" --export-image --output-file "$OUTPUT/icon-previews/$RENDITION.png" --platform macOS --rendition "$RENDITION" --width 1024 --height 1024 --scale 1
 done
@@ -32,6 +60,14 @@ xcrun actool "$ROOT/macos/AppIcon.icon" --compile "$APP/Contents/Resources" --pl
 /usr/libexec/PlistBuddy -c "Merge $OUTPUT/icon-info.plist" "$APP/Contents/Info.plist"
 # actool emits both modern Assets.car and an AppIcon.icns fallback from .icon.
 test -f "$APP/Contents/Resources/AppIcon.icns"
+# Re-sign nested runtime components from the inside out. Preserve their sandbox
+# entitlements; this private preview does not enable host library validation.
+SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
+for COMPONENT in "XPCServices/Downloader.xpc" "XPCServices/Installer.xpc" "Autoupdate" "Updater.app"; do
+  codesign --force --sign - --preserve-metadata=entitlements "$SPARKLE/Versions/Current/$COMPONENT"
+done
+codesign --force --sign - "$SPARKLE"
+codesign --verify --strict --deep "$SPARKLE"
 codesign --force --sign - "$APP/Contents/Helpers/airlink"
 codesign --force --sign - "$APP"
 codesign --verify --strict --deep "$APP"

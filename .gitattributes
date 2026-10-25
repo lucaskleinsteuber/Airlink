@@ -1,0 +1,2 @@
+# Preserve reviewed upstream legal text, including its original whitespace.
+windows/AirLink.Windows/ThirdPartyNotices/*.md -whitespace

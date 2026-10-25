@@ -9,6 +9,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <Version>0.8.1</Version>
+    <Version>0.9.0</Version>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="NetSparkleUpdater.SparkleUpdater" Version="3.1.0" />
+    <EmbeddedResource Include="../../updates/public-keys.json" LogicalName="AirLink.Core.UpdateSigningConfiguration" />
+  </ItemGroup>
 </Project>

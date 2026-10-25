@@ -6,9 +6,9 @@
 
 AirLink transfers files and folders between computers and browsers on the same local network. It combines native macOS and Windows apps, a portable Linux service, and a web interface for macOS, Windows, Linux, Android, and iOS.
 
-**Current version: 0.8.1. Repository status: private development preview.** Source and release downloads are available only to people with access to this repository. The source is MIT licensed; repository visibility remains private. Version 0.8 adds guided device naming and receive-folder setup, a clearer desktop interface, direct receive destinations and a Windows EXE download. Windows runtime and physical-network acceptance remain open. Automated verification, private packaging, physical acceptance, and historical results remain separate delivery states recorded in [TESTING.md](docs/TESTING.md). The [release readiness gates](docs/RELEASE-READINESS.md) define the evidence still needed before 1.0; no release date is assigned.
+**Current version: 0.9.0. Repository status: private development preview.** Source and release downloads are available only to people with access to this repository. The source is MIT licensed; repository visibility remains private. Version 0.8 adds guided device naming and receive-folder setup, a clearer desktop interface and direct receive destinations; 0.9.0 adds a per-user Windows Setup installer. Windows runtime and physical-network acceptance remain open. Automated verification, private packaging, physical acceptance, and historical results remain separate delivery states recorded in [TESTING.md](docs/TESTING.md). The [release readiness gates](docs/RELEASE-READINESS.md) define the evidence still needed before 1.0; no release date is assigned.
 
-The active repository is a newly created **private** repository containing the sanitized branch/tag history. Independent object/history and known old-object route checks passed for the new repository, and all six published 0.8.1 files match the reviewed local checksums. The earlier repository remains a separate private archive. Any later visibility decision belongs to the owner; the completed checks and their limits are recorded in [PRIVACY-REVIEW.md](docs/PRIVACY-REVIEW.md).
+The active repository is a newly created **private** repository containing the sanitized branch/tag history. Independent object/history and known old-object route checks passed for the new repository, and the six published 0.8.1 files matched the reviewed local checksums at the migration check. The earlier repository remains a separate private archive. Any later visibility decision belongs to the owner; the completed checks and their limits are recorded in [PRIVACY-REVIEW.md](docs/PRIVACY-REVIEW.md).
 
 ## The local transfer foundation
 
@@ -48,6 +48,14 @@ Completed incoming transfers provide **Show file** / **Open folder** actions for
 
 Windows now provides native Quick Share creation/list/revocation and explicit clipboard Paste/Edit/Send/Copy/Dismiss. Browser-relay administration, detailed statistics and the sorting-rule editor still use the existing web or macOS controls; the native interfaces do not yet have full feature parity. Windows runtime acceptance on a physical laptop remains a separate check in [TESTING.md](docs/TESTING.md).
 
+## Manual updates in 0.9
+
+On macOS, choose **AirLink → Check for Updates…** from the application menu or the menu-bar panel. Windows has **Check for updates…** in Settings and its tray menu. The apps check only when requested; normal local transfers continue to work offline.
+
+The updater verifies the signed feed and the downloaded package against an embedded Ed25519 public key. macOS uses Sparkle to replace/relaunch the app through its normal quit/checkpoint path; Windows closes its owned helper gracefully before the verified Setup can run. First install a version containing the updater manually: an older app cannot gain this menu item until it is replaced.
+
+The GitHub repository and update files must be public for unauthenticated update checks. A private or missing feed is an unavailable update channel, not evidence that the installed app is current. AirLink bundles no private GitHub access token. The current private preview's repository visibility is a separate owner decision.
+
 ## Recovery in 0.5
 
 - The Mac app can explicitly retry a failed helper using the same application data directory. If the saved receive directory is unavailable, choose a replacement through **Choose receive folder and retry…**. AirLink does not silently fall back to another folder; existing transfers retain their planned destinations. The last status snapshot remains visible, but actions that need the helper wait for a fresh connection.
@@ -62,7 +70,7 @@ These are implementation boundaries, not evidence that every physical device or 
 | Device | AirLink role |
 | --- | --- |
 | macOS 14 or later | Native app with a bundled local transfer service; universal Apple Silicon/Intel build |
-| Windows 10/11 | Native app with bundled local transfer service and runtime; x64 and ARM64 packages |
+| Windows 10/11 | Native app with bundled local transfer service and runtime; x64 and ARM64 Setup installers |
 | Linux | Portable service with a private local administration page; amd64 and arm64 builds |
 | Android / iPhone / iPad | Browser client connecting to a running desktop service |
 
@@ -74,7 +82,7 @@ For a manual check with a Mac, Windows laptop, iPhone and iPad, follow the [Germ
 
 ### macOS
 
-1. Download `AirLink-0.8.1-macos-universal.dmg` from the repository's [Releases](https://github.com/lucasfd3/Airlink/releases) when that version's asset is available.
+1. Download `AirLink-0.9.0-macos-universal.dmg` from the repository's [Releases](https://github.com/lucasfd3/Airlink/releases) when that version's asset is available.
 2. Quit the existing AirLink app from its menu-bar menu before updating. Open the disk image and drag **AirLink.app** to **Applications**, replacing the previous AirLink app if present.
 3. Open AirLink. Keep only the intended current app in `/Applications`; app updates preserve the separate AirLink data directory and received files.
 4. Complete the device-name and receive-folder setup. Choose **Connect device** to pair another computer; use connection information/QR to connect a browser.
@@ -85,13 +93,15 @@ Closing the window leaves AirLink running in the menu bar. **Quit** checkpoints 
 
 ### Windows
 
-1. Download **`AirLink-0.8.1-windows-x64.exe`** for an Intel/AMD laptop, or **`AirLink-0.8.1-windows-arm64.exe`** for Windows on ARM, from the private [Releases](https://github.com/lucasfd3/Airlink/releases). No ZIP extraction, separate .NET installation or terminal is needed. The private preview is not Authenticode signed; approve only the file obtained from this repository.
-2. When updating, quit the existing native app through its system-tray menu first. If the older console service is still running, stop it once with **Ctrl+C**. Then run the new EXE directly. The standard `%APPDATA%\AirLink` metadata directory retains identity, pairings, settings and history.
+1. Download **`AirLink-0.9.0-windows-x64-setup.exe`** for an Intel/AMD laptop, or **`AirLink-0.9.0-windows-arm64-setup.exe`** for Windows on ARM, from the private [Releases](https://github.com/lucasfd3/Airlink/releases). The private preview is not Authenticode signed; approve only the file obtained from this repository.
+2. Run Setup. It installs for your account in **`%LOCALAPPDATA%\Programs\AirLink`**, adds **AirLink** to the Start menu and Windows **Installed apps**, and needs no administrator account, ZIP extraction, separate .NET installation or terminal. If Setup asks you to close AirLink, choose **Quit** in the old app's system-tray menu, then retry; closing its window alone keeps it running. Stop a legacy console service with **Ctrl+C** if needed. Open AirLink from the finish page or Start menu.
 3. Complete the two-step setup: a recognizable **device name** and the **receive folder**. Downloads is the usual choice. Licenses for AirLink and the bundled runtime are available under **Settings → Licenses**.
 4. Select the other computer in the sidebar. If it is new, use **Connect device**, compare the fingerprint shown directly on the other computer, and approve the request there. Existing pairings remain saved.
 5. Drop a file on the paired computer or its named drop area. New received files appear directly in the chosen folder; use **Show file** / **Open folder** to reach the actual result.
 
 Enable **Automatically receive from this device** in that device's settings only for a sender you trust. This is the local receiver's choice; the other computer controls its own independent receipt policy. Closing the window keeps AirLink in the system tray. Use its menu to reopen the app, open the receive folder or quit.
+
+Run a later Setup to update the installed app. After confirming the installed app opens from the Start menu, you can manually delete an older downloaded portable AirLink EXE. Remove the installed app through **Windows Settings → Apps → Installed apps → AirLink → Uninstall**. Updates and uninstallation preserve `%APPDATA%\AirLink` settings, identity, pairings and history, `%LOCALAPPDATA%\AirLink` runtime caches, received files and other files placed in the installation directory; a directory containing those other files remains. See the [English/German Windows quick start](windows/QUICKSTART.md).
 
 ### Linux
 
@@ -218,6 +228,7 @@ Development dependencies:
 - Node.js **24** and npm; dependencies are locked in `web/package-lock.json`.
 - Python 3 for embedding the built web assets.
 - .NET **10 SDK** for building the native Windows packages; published packages include the runtime. The Windows UI uses WPF and targets Windows. Cross-publishing checks do not replace a real Windows run.
+- NSIS (`makensis`) to compile the Windows Setup installers, and 7-Zip (`7zz` or `7z`) for their read-only package inspection. These are build dependencies on macOS/Linux as well as Windows; users installing AirLink do not need them.
 - On macOS, Xcode with Swift 6 and Icon Composer. The verified local toolchain is **Xcode 27 / Swift 6.4**. The Swift package targets macOS 14; icon packaging needs the bundled Icon Composer tools.
 
 Build from the repository root:
@@ -228,11 +239,11 @@ bash scripts/test.sh
 bash scripts/package.sh
 ```
 
-`build.sh` installs web dependencies, builds and embeds the web UI, and compiles amd64/arm64 services for macOS, Windows, and Linux. It also publishes self-contained native Windows apps with the corresponding Go helper embedded. On macOS it builds the native universal app. `package.sh` creates direct native Windows EXEs, Linux archives, a macOS DMG when run on macOS, and SHA-256 checksums under `dist/`. Packaging does not publish a GitHub release or notarize the app.
+`build.sh` installs web dependencies, builds and embeds the web UI, and compiles amd64/arm64 services for macOS, Windows, and Linux. It also publishes self-contained native Windows apps with the corresponding Go helper embedded and compiles their NSIS Setup installers. On macOS it builds the native universal app. `package.sh` collects Windows `-setup.exe` installers, creates Linux archives and a macOS DMG when run on macOS, and writes SHA-256 checksums under `dist/`. Packaging does not publish a GitHub release or notarize the app.
 
-Set `AIRLINK_GO=/absolute/path/to/go` when Go is not on your PATH and `AIRLINK_DOTNET=/absolute/path/to/dotnet` for a nonstandard .NET SDK location. Windows builds disable .NET CLI telemetry. To publish the Windows apps after their Go helpers exist, use `bash scripts/build-windows.sh`. To rebuild only the macOS app after both macOS helpers exist, use `bash scripts/build-macos.sh`.
+Set `AIRLINK_GO=/absolute/path/to/go` when Go is not on your PATH and `AIRLINK_DOTNET=/absolute/path/to/dotnet` for a nonstandard .NET SDK location. Use `AIRLINK_NSIS=/absolute/path/to/makensis` and `AIRLINK_7ZIP=/absolute/path/to/7zz` to select the installer compiler and extractor explicitly. Windows builds disable .NET CLI telemetry. To publish the Windows apps and compile their installers after the Go helpers exist, use `bash scripts/build-windows.sh`; to rebuild only Setup after the native payloads exist, use `bash scripts/build-windows-installer.sh`. To rebuild only the macOS app after both macOS helpers exist, use `bash scripts/build-macos.sh`.
 
-All automated tests run in the background. There are no UI automation tests that take over the desktop. See [testing instructions and verification limits](docs/TESTING.md), the [release readiness gates](docs/RELEASE-READINESS.md), the [architecture](docs/ARCHITECTURE.md), the [base protocol](docs/API.md), the [0.2 additions](docs/API-0.2.md), the [0.3 additions](docs/API-0.3.md), and the [0.4 organization contract](docs/API-0.4.md).
+All automated tests run in the background. There are no UI automation tests that take over the desktop. The opt-in Windows installer test performs silent installation, upgrade and uninstallation in a disposable Windows user; macOS package inspection does not execute that test. See [testing instructions and verification limits](docs/TESTING.md) for completed-run evidence, the [release readiness gates](docs/RELEASE-READINESS.md), the [architecture](docs/ARCHITECTURE.md), the [base protocol](docs/API.md), the [0.2 additions](docs/API-0.2.md), the [0.3 additions](docs/API-0.3.md), and the [0.4 organization contract](docs/API-0.4.md).
 
 ## Versions and license
 

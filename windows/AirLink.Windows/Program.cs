@@ -25,7 +25,7 @@ internal static class Program
     public static void Main()
     {
         using var singleton = new Mutex(true, @"Local\lucasfd3.AirLink.Desktop", out var created);
-        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.8.1.0";
+        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.9.0.0";
         var sessionPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AirLink", "desktop-session-" + System.Diagnostics.Process.GetCurrentProcess().SessionId + ".json");
         if (!created)
         {
@@ -50,6 +50,7 @@ internal static class Program
         var menu = new Forms.ContextMenuStrip();
         menu.Items.Add("AirLink öffnen / Open AirLink", null, (_, _) => window.ShowMain());
         menu.Items.Add("Empfangsordner / Receive folder", null, (_, _) => application.Dispatcher.InvokeAsync(() => controller.RunAsync(() => { controller.OpenReceiveFolder(); return Task.CompletedTask; })));
+        menu.Items.Add("Nach Updates suchen … / Check for updates …", null, (_, _) => application.Dispatcher.InvokeAsync(() => window.CheckForUpdatesAsync()));
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("Beenden / Quit", null, async (_, _) => await window.QuitAsync());
         tray.ContextMenuStrip = menu;

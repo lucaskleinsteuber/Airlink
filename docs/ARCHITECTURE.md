@@ -149,6 +149,14 @@ Both desktop interfaces request `transfer.received` only for explicit completed-
 
 Pairing acknowledgment leaves the native interface waiting for remote approval. An unchecked auto-receive choice controls receipt on the current computer only. A discovered address/fingerprint is a draft; direct comparison at the other computer remains required. Compilation, PE GUI/icon inspection and background core/helper tests do not prove actual Windows dialogs, tray, Explorer or notifications; those require manual Windows acceptance.
 
+## Installation and update delivery
+
+Windows distribution uses a Unicode NSIS Setup bootstrap around the self-contained native executable. It requests current-user privileges, checks the native OS architecture, installs into `%LOCALAPPDATA%\Programs\AirLink`, creates a current-user Start menu shortcut and writes a 64-bit HKCU uninstall registration. Both install and uninstall hold the existing desktop mutex. Setup stages complete files in the target volume before atomic replacement; no whole-user-directory cleanup is performed. The compatible uninstaller may be committed before a failed app replacement, so this is not a full multi-file transaction rollback. Uninstall removes only named application files, shortcut and registration and removes the installation directory only if empty. Application metadata, caches and received files stay separate.
+
+Desktop update checks are explicit user actions. Sparkle 2.10 on macOS and NetSparkle 3.1 on Windows consume separate architecture/platform feeds under `updates/` in the active GitHub repository. A canonical public-only signing configuration is embedded in both apps. Signed feeds and update packages are mandatory; an unavailable channel is an error rather than an up-to-date result. Windows waits for graceful helper shutdown and desktop exit before Setup, while Sparkle uses the normal macOS quit/checkpoint delegate. Scheduled checks, automatic downloads and system profiling are disabled.
+
+`cmd/airlink-release` signs final immutable packages and generates the platform feeds, a signature manifest and package checksums. The persistent Ed25519 seed is stored outside every Git checkout with owner-only permissions; the signing command refuses workspace/symlink-routed private storage. Public-only verification needs no secret. The updater's trust anchor is separate from OS Developer ID/Authenticode signing. Token-free GitHub delivery requires public repository/feed access; LAN transfer permissions and TLS identities do not grant update-publishing authority.
+
 ## Browser interface
 
 The React/TypeScript interface in `web/` is compiled into static assets embedded in the Go binary. A worker performs incremental SHA-256 hashing with bounded input blocks. IndexedDB stores resume manifests and integrity evidence; browser memory retains source `File` objects while access remains available.

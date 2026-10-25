@@ -39,6 +39,23 @@ Choose the matching architecture on an Intel Mac. The integration case starts on
 
 Set `AIRLINK_GO=/absolute/path/to/go` for the shell scripts if needed. For a direct Go command, invoke that Go binary explicitly.
 
+## 0.9 native installation and signed manual updates — 2026-10-25
+
+| Area | Completed observation | Scope and limits |
+| --- | --- | --- |
+| Go | **163 top-level race suites / 258 cases passed**; `go vet ./...` passed | Actual 0.3–0.7 helper upgrades and official Sparkle signature compatibility enabled. Historical 0.1/0.2 and large-file stress remain gated. |
+| Windows Core | **33 passed, zero skipped/failed**, with the actual 0.9 helper | Signed feed/private-404/tamper/native-channel tests, graceful-only helper exit and literal Windows waiter construction. The harmless waiter execution branch is Windows-only and was not executed on this Mac. |
+| macOS Core/web | **59 Swift tests / 63 cases** with both actual-helper cases; **68 web tests** and production build passed | Background logic/protocol checks; no native updater/app GUI launched. |
+| Native packaging | Both Windows native CPU publishes and universal macOS assembly passed | App/helper/framework/XPC/tool architecture, relative Sparkle loading, public key/feed policies, exact licenses and nested deep/strict ad hoc signatures checked. Windows PE/embedded resources checked without running the app. |
+| Setup | Both x64/ARM64 NSIS Setup files compiled and exact embedded app hashes/native PE machines verified | Fixed per-user Programs path, Start menu/HKCU64 registration and narrowly scoped uninstall are source-reviewed. Actual Windows install/upgrade/uninstall was not run on macOS. |
+| Privacy guards | **Six source-guard tests and 17 package-guard tests passed** | Includes compressed NSIS metadata/uninstaller streams, extraction bounds, nested .NET resources, reviewed vendor-license handling and private seed filenames. Final five-package audit: **1,038 payloads, 919 bundle entries, 2,010 managed resources, four NSIS streams, zero findings**. |
+| Final signed artifacts | The public-only Go verifier accepts all five actual packages, three exact feeds, manifest and checksums; actual NetSparkle accepts both final architecture feeds/Setup files; official Sparkle verifies the final macOS appcast and universal DMG | Signing is Ed25519 authenticity, separate from OS Developer ID/Authenticode. Altered feeds/packages are rejected in regression fixtures. |
+| Installer handoff | Independent source review found and resolved upstream batch launch and later-exception recovery issues | Windows adapter uses absolute cmd.exe, a bounded fixed-PID no-kill waiter, literal paths and recovery of disabled/prepared UI state. This is source/background proof, not physical Windows interaction. |
+| Hosted/physical acceptance | Disposable-user silent Setup acceptance and Windows-only waiter execution are provided in CI; neither was executed on this Mac | No GUI automation, new physical throughput or 100 GiB run. Local checks are not hosted CI or physical-runtime success. |
+| Online channel | Source/config and signed feeds target the active GitHub repository; its current visibility is private | Token-free live delivery requires public feed/assets. Private/unavailable metadata is an error, not an up-to-date result. Visibility is a separate owner decision. |
+
+Ignored evidence: `build/go-tests-0.9.0.jsonl`, `go-vet-0.9.0.log`, `swift-tests-0.9.0.log`, `web-tests-0.9.0.log`, `web-build-0.9.0.log`, `windows-updater-core-tests-0.9.0.log`, `windows-updater-compilation-0.9.0.log`, `windows-publish-0.9.0.log`, `macos-sparkle-*.log`, `package-guard-tests-0.9.0.log`, `package-0.9.0.log`, `dmg-verify-0.9.0.log`, `release-signature-verify-0.9.0.log`, `update-package-netverify-*-0.9.0.log` and `update-*-sparkle-verify-0.9.0.log`. Private signing material is outside Git and is never a test/release artifact. The installed 0.8.1 Mac app and application data were not changed.
+
 ## Independent repository migration — 2026-10-25
 
 The owner authorized retaining the earlier repository as a private, archived repository and creating a new independent private `lucasfd3/Airlink` under the active address. This migration changes repository storage/identity, not app behavior or version.

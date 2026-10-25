@@ -21,11 +21,11 @@ internal static class SetupTests
         var sessionPath = Path.Combine(root, "session.json");
         try
         {
-            using (DesktopSession.Register(sessionPath, "0.8.1.0"))
+            using (DesktopSession.Register(sessionPath, "0.9.0.0"))
             {
-                if (!DesktopSession.SameVersionRunning(sessionPath, "0.8.1.0") || DesktopSession.SameVersionRunning(sessionPath, "0.7.0.0")) throw new InvalidOperationException("Existing-version launch was not distinguished");
+                if (!DesktopSession.SameVersionRunning(sessionPath, "0.9.0.0") || DesktopSession.SameVersionRunning(sessionPath, "0.7.0.0")) throw new InvalidOperationException("Existing-version launch was not distinguished");
             }
-            if (DesktopSession.SameVersionRunning(sessionPath, "0.8.1.0")) throw new InvalidOperationException("Exited desktop session still appears active");
+            if (DesktopSession.SameVersionRunning(sessionPath, "0.9.0.0")) throw new InvalidOperationException("Exited desktop session still appears active");
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
         return Task.CompletedTask;

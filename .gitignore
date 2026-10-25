@@ -9,6 +9,12 @@ xcuserdata/
 .swiftpm/
 *.log
 .env
+*.seed
+*.key
+*.priv
+*.p8
+*.p12
+*.pfx
 __pycache__/
 *.pyc
 web/*.tsbuildinfo

@@ -17,6 +17,7 @@ internal sealed class MainWindow : Window
 {
     private enum Page { Devices, Transfers, Settings }
     private readonly Controller c;
+    private readonly WindowsUpdater updater;
     private readonly Dictionary<string, ListBoxItem> deviceItems = [];
     private readonly Dictionary<string, TransferRow> transferRows = [];
     private readonly Dictionary<string, Border> pairRows = [];
@@ -37,7 +38,7 @@ internal sealed class MainWindow : Window
 
     public MainWindow(Controller controller)
     {
-        c = controller; Title = "AirLink";
+        c = controller; updater = new WindowsUpdater(this, c); Title = "AirLink";
         var workArea = SystemParameters.WorkArea;
         Width = Math.Min(1120, workArea.Width); Height = Math.Min(800, workArea.Height);
         MinWidth = Math.Min(940, workArea.Width); MinHeight = Math.Min(650, workArea.Height);
@@ -54,6 +55,7 @@ internal sealed class MainWindow : Window
         c.PropertyChanged += (_, _) => Render(); c.Selection.CollectionChanged += (_, _) => Render();
         SourceInitialized += (_, _) => HwndSource.FromHwnd(new WindowInteropHelper(this).Handle)?.AddHook(WindowMessage);
         Closing += (_, e) => { if (!quitting) { e.Cancel = true; Hide(); } };
+        Closed += (_, _) => updater.Dispose();
         Loaded += async (_, _) => { await c.StartAsync(); _ = c.PollAsync(); if (c.SetupRequired) OpenSetup(); };
         Build(); Render();
     }
@@ -73,6 +75,34 @@ internal sealed class MainWindow : Window
     }
     public void ShowMain() { Show(); if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal; Activate(); }
     public void ReportError(string message) => c.ReportError(message);
+    public Task CheckForUpdatesAsync() => updater.CheckAsync();
+    internal bool UpdatePrepared { get; private set; }
+    internal async Task<bool> PrepareForUpdateAsync()
+    {
+        if (quitting) return false;
+        if (c.ActiveCount > 0 && MessageBox.Show(this, c.T("Für das Update wird AirLink beendet. Übertragungen werden gesichert und beim nächsten Start fortgesetzt. Jetzt fortfahren?", "AirLink will close for the update. Transfers will be saved and resumed next time. Continue?"), c.T("Update installieren", "Install update"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return false;
+        IsEnabled = false;
+        try
+        {
+            if (!await c.StopForUpdateAsync())
+            {
+                ReportError(c.T("Das Update wurde abgebrochen: Der Dienst konnte nicht sicher beendet werden. Laufende Prozesse wurden nicht erzwungen beendet.", "Update cancelled: the service could not close safely. No running process was forcibly stopped."));
+                IsEnabled = true;
+                return false;
+            }
+            UpdatePrepared = true;
+            return true;
+        }
+        catch { IsEnabled = true; throw; }
+    }
+    internal void FinishUpdateQuit()
+    {
+        if (!UpdatePrepared) return;
+        quitting = true;
+        c.CompleteUpdateShutdown();
+        Application.Current.Shutdown();
+    }
+    internal void CancelUpdatePreparation() { UpdatePrepared = false; IsEnabled = true; }
     public async Task QuitAsync(bool confirmActive = true)
     {
         if (quitting) return;
@@ -210,6 +240,10 @@ internal sealed class MainWindow : Window
     {
         var body = new StackPanel { Margin = new Thickness(34, 28, 34, 30) }; body.Children.Add(Theme.Text(c.T("Einstellungen", "Settings"), 28, true));
         var description = Theme.Text(c.T("Dein Computer und der Ort für empfangene Dateien.", "Your computer and where received files are saved."), 14, secondary: true); description.Margin = new Thickness(0, 6, 0, 24); body.Children.Add(description);
+        var updates = new StackPanel(); updates.Children.Add(Theme.Text("AirLink " + c.Version, 17, true));
+        var check = Theme.Button(c.T("Nach Updates suchen …", "Check for updates …"), () => _ = CheckForUpdatesAsync()); check.HorizontalAlignment = HorizontalAlignment.Left; check.Margin = new Thickness(0, 12, 0, 8); updates.Children.Add(check);
+        updates.Children.Add(Theme.Text(c.T("Prüft nur auf deine Anfrage. In der privaten Testphase ist der Update-Feed möglicherweise nicht öffentlich erreichbar.", "Checks only when requested. During private testing, the update feed may not be publicly accessible."), 12, secondary: true));
+        var updateCard = Theme.Card(updates); updateCard.Margin = new Thickness(0, 0, 0, 20); body.Children.Add(updateCard);
         if (c.Status is null) { body.Children.Add(Theme.Text(c.T("AirLink wird gestartet …", "Starting AirLink …"), secondary: true)); return new ScrollViewer { Content = body }; }
         var edited = ProtocolJson.Clone(c.Status.Settings);
         static TextBox Input(StackPanel panel, string label, string value)

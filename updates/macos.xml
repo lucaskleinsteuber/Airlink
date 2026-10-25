@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>AirLink updates</title>
+    <link>https://raw.githubusercontent.com/lucasfd3/Airlink/main/updates/macos.xml</link>
+    <description>Signed AirLink updates.</description>
+    <language>en</language>
+    <item>
+      <title>AirLink 0.9.0</title>
+      <description>AirLink now installs as a normal Windows app with a Start menu entry and Installed apps registration. Settings, paired devices and received files stay separate.&#xA;&#xA;Check for Updates is available in the macOS AirLink menu and menu-bar panel, and in Windows Settings and the tray menu. Updates require signed metadata and signed packages. Checks are manual, with no startup polling or system profiling.&#xA;&#xA;This development preview still requires physical Windows installer and native updater acceptance. Token-free update delivery requires the active GitHub repository to be public.&#xA;</description>
+      <pubDate>Sun, 25 Oct 2026 16:17:57 +0000</pubDate>
+      <sparkle:version>11</sparkle:version>
+      <sparkle:shortVersionString>0.9.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <enclosure url="https://github.com/lucasfd3/Airlink/releases/download/v0.9.0/AirLink-0.9.0-macos-universal.dmg" length="18792823" type="application/x-apple-diskimage" sparkle:version="11" sparkle:shortVersionString="0.9.0" sparkle:os="macos" sparkle:edSignature="Dd3SR8Q1H9om7W/HdyH2rIn8lkeTUsfL8sOwCXLLobVgGeuGa7Bk0Ueae3h0yCdUbi/0FT8XCbSQOcRP+R2/CQ==" />
+    </item>
+  </channel>
+</rss>
+<!-- sparkle-signatures:
+edSignature: 2YGH4Qh1YSlm+oak5LPlDYtV0/m38HH4DmOUFNfQwpnteC20GLZ2IpSNqZZS1+WtHcxF9a18HitQfCcA/HHLCw==
+length: 1661
+-->

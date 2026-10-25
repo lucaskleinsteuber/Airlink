@@ -6,6 +6,7 @@ import SwiftUI
 @main struct AirLinkApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject private var model = AppModel.shared
+    @StateObject private var updater = AirLinkUpdater()
     var body: some Scene {
         Window("AirLink", id: "airlink-main") {
             MainView().environmentObject(model)
@@ -14,6 +15,10 @@ import SwiftUI
         }
         .defaultSize(width: 1000, height: 700)
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button(model.text("Nach Updates suchen…", "Check for Updates…")) { updater.checkForUpdates() }
+                    .disabled(!updater.canCheckForUpdates)
+            }
             CommandGroup(after: .newItem) {
                 Button(model.text("Dateien senden …", "Send files …")) { model.chooseFiles() }.keyboardShortcut("o")
                 Button(model.text("Gerät verbinden …", "Connect device …")) { model.showConnection = true; model.showMainWindow() }.keyboardShortcut("k")
@@ -24,7 +29,7 @@ import SwiftUI
                 .preferredColorScheme(model.colorSchemeName == "dark" ? .dark : model.colorSchemeName == "light" ? .light : nil)
         }
         MenuBarExtra("AirLink", systemImage: model.activeTransfers.isEmpty && model.activeRelays.isEmpty ? "arrow.left.arrow.right" : "arrow.up.arrow.down.circle.fill") {
-            MenuContent().environmentObject(model)
+            MenuContent().environmentObject(model).environmentObject(updater)
                 .preferredColorScheme(model.colorSchemeName == "dark" ? .dark : model.colorSchemeName == "light" ? .light : nil)
         }
         .menuBarExtraStyle(.window)
@@ -33,6 +38,7 @@ import SwiftUI
 
 struct MenuContent: View {
     @EnvironmentObject var model: AppModel
+    @EnvironmentObject var updater: AirLinkUpdater
     @Environment(\.openWindow) private var openWindow
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -59,6 +65,8 @@ struct MenuContent: View {
             }
             Divider()
             Button(model.text("AirLink öffnen", "Open AirLink")) { openWindow(id: "airlink-main"); model.showMainWindow() }
+            Button(model.text("Nach Updates suchen…", "Check for Updates…")) { updater.checkForUpdates() }
+                .disabled(!updater.canCheckForUpdates)
             Button(model.text("Beenden", "Quit")) { NSApp.terminate(nil) }
         }.padding(18).frame(width: 300)
     }
@@ -75,6 +83,8 @@ struct MenuContent: View {
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Sparkle sends a normal quit event and waits for termination. Its install
+        // must use this same helper-checkpoint path before the app is replaced.
         guard !terminating else { return .terminateLater }
         if !AppModel.shared.activeTransfers.isEmpty || !AppModel.shared.activeRelays.isEmpty {
             let alert = NSAlert()

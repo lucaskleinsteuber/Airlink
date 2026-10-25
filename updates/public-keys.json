@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "algorithm": "Ed25519",
+  "publicKey": "Qv0ebRzPio5qS8peZP0RnKqPe+J8mcE0LO3haWpcEjg=",
+  "feeds": {
+    "macos": "https://raw.githubusercontent.com/lucasfd3/Airlink/main/updates/macos.xml",
+    "windows-arm64": "https://raw.githubusercontent.com/lucasfd3/Airlink/main/updates/windows-arm64.xml",
+    "windows-x64": "https://raw.githubusercontent.com/lucasfd3/Airlink/main/updates/windows-x64.xml"
+  }
+}
