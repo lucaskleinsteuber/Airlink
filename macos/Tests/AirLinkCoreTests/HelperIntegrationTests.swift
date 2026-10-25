@@ -13,7 +13,7 @@ func actualHelperStatusAndSettingsUseNativeContract() async throws {
     do {
         let data = try await client.request("status")
         let status = try JSONDecoder().decode(HostStatus.self, from: data)
-        #expect(status.version == "0.6.0")
+        #expect(status.version == "0.7.0")
         #expect(status.chunkSize == 8 * 1024 * 1024)
         #expect(status.fingerprint.count == 64)
         #expect(!status.urls.isEmpty)
@@ -68,19 +68,20 @@ func actualNativeTrustedPairAndReceivedResultUsePrivateContract() async throws {
         try await receiver.start(executable: URL(fileURLWithPath: path), dataDirectory: directory.appendingPathComponent("receiver-state"), receiveDirectory: directory.appendingPathComponent("receiver-files"), disableDiscovery: true)
         let first = try JSONDecoder().decode(HostStatus.self, from: await source.request("status"))
         let second = try JSONDecoder().decode(HostStatus.self, from: await receiver.request("status"))
-        #expect(first.version == "0.6.0" && second.version == "0.6.0")
+        #expect(first.version == "0.7.0" && second.version == "0.7.0")
         let address = try #require(second.urls.last(where: { $0.contains("localhost:") }))
         struct Requested: Decodable { var requestId: String }
         let requested = try JSONDecoder().decode(Requested.self, from: await source.request("peer.connectTrusted", params: JSONEncoder().encode(["url": address, "fingerprint": second.fingerprint])))
         _ = try await receiver.request("pair.approveTrusted", params: JSONEncoder().encode(["id": requested.requestId]))
         let deadline = Date().addingTimeInterval(15)
         var paired = false
+        var pairedPeer: Device?
         while Date() < deadline {
             let current = try JSONDecoder().decode(HostStatus.self, from: await source.request("status"))
             if let peer = current.devices.first(where: { $0.id == second.id && $0.paired }) {
                 #expect(peer.autoAccept)
                 #expect(!peer.canClipboard && !peer.canRelay)
-                paired = true; break
+                paired = true; pairedPeer = peer; break
             }
             try await Task.sleep(for: .milliseconds(50))
         }
@@ -88,8 +89,12 @@ func actualNativeTrustedPairAndReceivedResultUsePrivateContract() async throws {
         let original = directory.appendingPathComponent("visible-received-file.txt")
         let contents = Data("Native private receive result contract\n".utf8)
         try contents.write(to: original)
-        struct Offered: Encodable { var deviceId: String; var paths: [String] }
-        let offered = try JSONDecoder().decode(Transfer.self, from: await source.request("offer", params: JSONEncoder().encode(Offered(deviceId: second.id, paths: [original.path]))))
+        let peer = try #require(pairedPeer)
+        let batch = try DirectSendBatch(device: peer, urls: [original])
+        let parameters = try JSONEncoder().encode(batch)
+        let offered = try JSONDecoder().decode(Transfer.self, from: await source.request("offer", params: parameters))
+        let replayed = try JSONDecoder().decode(Transfer.self, from: await source.request("offer", params: parameters))
+        #expect(replayed.id == offered.id)
         var completed: Transfer?
         while Date() < deadline {
             let current = try JSONDecoder().decode(HostStatus.self, from: await receiver.request("status"))
@@ -108,6 +113,10 @@ func actualNativeTrustedPairAndReceivedResultUsePrivateContract() async throws {
         #expect(try Data(contentsOf: URL(fileURLWithPath: item.path)) == contents)
         #expect(try Data(contentsOf: original) == contents)
         #expect(received.receivedResultEntries.map(\.id) == [item.fileId])
+        let completedReplay = try JSONDecoder().decode(Transfer.self, from: await source.request("offer", params: parameters))
+        #expect(completedReplay.id == offered.id)
+        let sourceStatus = try JSONDecoder().decode(HostStatus.self, from: await source.request("status"))
+        #expect(sourceStatus.transfers.count == 1)
         _ = await source.stop(); _ = await receiver.stop()
     } catch {
         _ = await source.stop(); _ = await receiver.stop()

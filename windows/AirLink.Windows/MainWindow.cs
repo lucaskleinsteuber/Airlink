@@ -20,10 +20,12 @@ internal sealed class MainWindow : Window
     private readonly Dictionary<string, TransferRow> transferRows = [];
     private readonly Dictionary<string, Border> pairRows = [];
     private ListBox devices = null!, selection = null!;
-    private StackPanel requests = null!, transfers = null!;
-    private TextBlock host = null!, target = null!, targetDetail = null!, service = null!, notice = null!, error = null!, empty = null!;
+    private StackPanel requests = null!, transfers = null!, recentTransfers = null!;
+    private Expander history = null!;
+    private Border dropArea = null!;
+    private TextBlock host = null!, target = null!, targetDetail = null!, service = null!, notice = null!, error = null!, empty = null!, dropTitle = null!, selectionTitle = null!;
     private CheckBox automatic = null!;
-    private Button send = null!, pair = null!, manage = null!, retry = null!, recover = null!;
+    private Button send = null!, pair = null!, manage = null!, retry = null!, recover = null!, dismiss = null!, pickFiles = null!, pickFolder = null!, share = null!;
     private bool rendering, quitting;
     private string? appearance, language;
     private string selectedKey = "";
@@ -35,8 +37,14 @@ internal sealed class MainWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         FontFamily = new FontFamily("Segoe UI Variable, Segoe UI"); FontSize = 14;
         AllowDrop = true;
-        DragOver += (_, e) => { e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None; e.Handled = true; };
-        Drop += (_, e) => { if (e.Data.GetData(DataFormats.FileDrop) is string[] paths) _ = c.RunAsync(() => { c.AddPaths(paths); return Task.CompletedTask; }); e.Handled = true; };
+        DragOver += (_, e) => { e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) && InsideDropArea(e.OriginalSource as DependencyObject) && c.Ready && !c.Sending ? DragDropEffects.Copy : DragDropEffects.None; e.Handled = true; };
+        Drop += (_, e) => { if (InsideDropArea(e.OriginalSource as DependencyObject) && e.Data.GetData(DataFormats.FileDrop) is string[] paths) _ = c.RunAsync(() => c.SendPathsAsync(paths)); e.Handled = true; };
+        PreviewKeyDown += (_, e) =>
+        {
+            if (Keyboard.Modifiers != ModifierKeys.Control) return;
+            if (e.Key == Key.O) { PickFiles(); e.Handled = true; }
+            if (e.Key == Key.Enter) { _ = c.RunAsync(c.SendAsync); e.Handled = true; }
+        };
         c.PropertyChanged += (_, _) => Render();
         c.Selection.CollectionChanged += (_, _) => Render();
         SourceInitialized += (_, _) => HwndSource.FromHwnd(new WindowInteropHelper(this).Handle)?.AddHook(WindowMessage);
@@ -50,8 +58,17 @@ internal sealed class MainWindow : Window
         if ((uint)message == Program.ShowMessage) { ShowMain(); handled = true; }
         return IntPtr.Zero;
     }
+    private bool InsideDropArea(DependencyObject? source)
+    {
+        while (source is not null)
+        {
+            if (ReferenceEquals(source, dropArea)) return true;
+            source = source is System.Windows.Media.Visual || source is System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(source) : (source as FrameworkContentElement)?.Parent;
+        }
+        return false;
+    }
     public void ShowMain() { Show(); if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal; Activate(); }
-    public void ReportError(string message) { error.Text = message; error.Visibility = Visibility.Visible; }
+    public void ReportError(string message) => c.ReportError(message);
 
     public async Task QuitAsync(bool confirmActive = true)
     {
@@ -92,6 +109,8 @@ internal sealed class MainWindow : Window
         var bottom = new StackPanel { Margin = new Thickness(0, 14, 0, 0) };
         bottom.Children.Add(Theme.Button(c.T("Gerät verbinden …", "Connect device …"), () => Dialogs.Pair(this, c, c.SelectedDevice is { Paired: false } d ? d : null)));
         bottom.Children.Add(Theme.Button(c.T("Handy / Browser verbinden", "Connect phone / browser"), () => Dialogs.ConnectionInfo(this, c)));
+        bottom.Children.Add(Theme.Button("Quick Share", () => SharingDialogs.Share(this, c)));
+        bottom.Children.Add(Theme.Button(c.T("Zwischenablage", "Clipboard"), () => SharingDialogs.Clipboard(this, c)));
         bottom.Children.Add(Theme.Button(c.T("Einstellungen", "Settings"), () => Dialogs.Settings(this, c)));
         bottom.Children.Add(Theme.Text("AirLink " + c.Version, 11, secondary: true));
         DockPanel.SetDock(bottom, Dock.Bottom); sidebar.Children.Add(bottom);
@@ -108,6 +127,7 @@ internal sealed class MainWindow : Window
         DockPanel.SetDock(receive, Dock.Right); toolbar.Children.Add(receive); toolbar.Children.Add(Theme.Text(c.T("Dateien übertragen", "Transfer files"), 24, true)); page.Children.Add(toolbar);
         service = Theme.Text("", 12, secondary: true); service.Margin = new Thickness(0, 8, 0, 8); page.Children.Add(service);
         error = Theme.Text("", 13); error.Foreground = Theme.Color(Theme.Dark ? "#FFB3A9" : "#AF3125"); error.Margin = new Thickness(0, 5, 0, 10); page.Children.Add(error);
+        dismiss = Theme.Button(c.T("Meldung schließen", "Dismiss message"), c.DismissError); page.Children.Add(dismiss);
         notice = Theme.Text("", 13, secondary: true); notice.Margin = new Thickness(0, 4, 0, 10); page.Children.Add(notice);
         retry = Action(c.T("Erneut starten", "Retry service"), () => c.StartAsync());
         recover = Action(c.T("Anderen Empfangsordner wählen …", "Choose another receive folder …"), async () =>
@@ -132,32 +152,43 @@ internal sealed class MainWindow : Window
         };
         destination.Children.Add(automatic); page.Children.Add(Theme.Card(destination));
         var drop = new StackPanel { HorizontalAlignment = HorizontalAlignment.Stretch };
-        drop.Children.Add(Theme.Text(c.T("Dateien oder Ordner hier ablegen", "Drop files or folders here"), 19, true));
+        dropTitle = Theme.Text("", 19, true); drop.Children.Add(dropTitle);
         var hint = Theme.Text(c.T("Die Originale bleiben an ihrem Platz. Übertragung verschlüsselt im lokalen Netzwerk.", "Originals stay in place. Encrypted transfer over your local network."), 12, secondary: true);
         hint.Margin = new Thickness(0, 7, 0, 14); drop.Children.Add(hint);
-        drop.Children.Add(Horizontal(Theme.Button(c.T("Dateien wählen …", "Choose files …"), PickFiles), Theme.Button(c.T("Ordner wählen …", "Choose folder …"), PickFolder)));
+        pickFiles = Theme.Button(c.T("Dateien senden …", "Send files …"), PickFiles, true);
+        pickFolder = Theme.Button(c.T("Ordner senden …", "Send folders …"), PickFolder);
+        drop.Children.Add(Horizontal(pickFiles, pickFolder));
+        selectionTitle = Theme.Text(c.T("Vorbereitete Auswahl", "Prepared selection"), 13, true); selectionTitle.Margin = new Thickness(0, 14, 0, 0); drop.Children.Add(selectionTitle);
         selection = new ListBox { MaxHeight = 130, BorderThickness = new Thickness(0), Margin = new Thickness(0, 12, 0, 8), HorizontalContentAlignment = HorizontalAlignment.Stretch };
         drop.Children.Add(selection);
         send = Action(c.T("Senden", "Send"), c.SendAsync, true);
-        drop.Children.Add(Horizontal(send, Theme.Button(c.T("Auswahl leeren", "Clear selection"), () => c.Selection.Clear())));
-        var dropCard = Theme.Card(drop, 22); dropCard.Margin = new Thickness(0, 16, 0, 22); dropCard.BorderBrush = Theme.Accent; page.Children.Add(dropCard);
+        share = Theme.Button(c.T("Freigabelink …", "Share link …"), () => SharingDialogs.Share(this, c, paths: c.Selection.Select(p => p.Path).ToArray()));
+        drop.Children.Add(Horizontal(send, share, Theme.Button(c.T("Auswahl leeren", "Clear selection"), () => c.Selection.Clear())));
+        var shortcut = Theme.Text(c.T("Strg+O: Dateien wählen · Strg+Enter: vorbereitete Auswahl senden", "Ctrl+O: choose files · Ctrl+Enter: send prepared selection"), 11, secondary: true); shortcut.Margin = new Thickness(0, 12, 0, 0); drop.Children.Add(shortcut);
+        dropArea = Theme.Card(drop, 22); dropArea.Margin = new Thickness(0, 16, 0, 22); dropArea.BorderBrush = Theme.Accent; page.Children.Add(dropArea);
         page.Children.Add(Theme.Text(c.T("Übertragungen", "Transfers"), 20, true));
         empty = Theme.Text(c.T("Noch keine Übertragungen. Wähle links ein Gerät aus und lege Dateien ab.", "No transfers yet. Select a device on the left and drop some files."), 13, secondary: true);
         empty.Margin = new Thickness(0, 12, 0, 0); page.Children.Add(empty);
         transfers = new StackPanel(); page.Children.Add(transfers);
+        recentTransfers = new StackPanel();
+        history = new Expander { Content = recentTransfers, IsExpanded = true, Foreground = Theme.Foreground, Margin = new Thickness(0, 20, 0, 0) }; page.Children.Add(history);
         var scroll = new ScrollViewer { Content = page, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         Grid.SetColumn(scroll, 1); layout.Children.Add(scroll); Content = layout;
     }
 
     private void PickFiles()
     {
+        if (!c.Ready || c.Sending) return;
+        var recipient = c.SelectedDeviceId;
         var picker = new OpenFileDialog { Multiselect = true, Title = c.T("Dateien senden", "Send files"), CheckFileExists = true };
-        if (picker.ShowDialog(this) == true) _ = c.RunAsync(() => { c.AddPaths(picker.FileNames); return Task.CompletedTask; });
+        if (picker.ShowDialog(this) == true) _ = c.RunAsync(() => c.SendPathsAsync(picker.FileNames, recipient, useCurrentSelection: false));
     }
     private void PickFolder()
     {
+        if (!c.Ready || c.Sending) return;
+        var recipient = c.SelectedDeviceId;
         var picker = new OpenFolderDialog { Multiselect = true, Title = c.T("Ordner senden", "Send folders") };
-        if (picker.ShowDialog(this) == true) _ = c.RunAsync(() => { c.AddPaths(picker.FolderNames); return Task.CompletedTask; });
+        if (picker.ShowDialog(this) == true) _ = c.RunAsync(() => c.SendPathsAsync(picker.FolderNames, recipient, useCurrentSelection: false));
     }
 
     private void Render()
@@ -170,6 +201,7 @@ internal sealed class MainWindow : Window
             host.Text = c.Status?.Name ?? Environment.MachineName;
             service.Text = c.Ready ? c.T("Bereit · lokal verschlüsselt · Fenster schließen lässt AirLink im Infobereich weiterlaufen", "Ready · locally encrypted · closing the window keeps AirLink running in the system tray") : c.Starting ? c.T("AirLink wird gestartet …", "Starting AirLink …") : c.T("Dienst nicht bereit", "Service not ready");
             error.Text = c.Error ?? ""; error.Visibility = string.IsNullOrEmpty(c.Error) ? Visibility.Collapsed : Visibility.Visible;
+            dismiss.Visibility = c.HasActionError ? Visibility.Visible : Visibility.Collapsed;
             notice.Text = c.Notice ?? ""; notice.Visibility = string.IsNullOrEmpty(c.Notice) ? Visibility.Collapsed : Visibility.Visible;
             retry.Visibility = recover.Visibility = !c.Ready && !c.Starting ? Visibility.Visible : Visibility.Collapsed;
             var peers = c.Status?.Devices ?? [];
@@ -179,21 +211,35 @@ internal sealed class MainWindow : Window
                 if (!deviceItems.TryGetValue(d.Id, out var row))
                 {
                     row = new ListBoxItem { Tag = d.Id, Padding = new Thickness(8, 10, 8, 10), HorizontalContentAlignment = HorizontalAlignment.Stretch };
+                    var deviceId = d.Id;
+                    row.AllowDrop = true;
+                    row.ToolTip = c.T("Dateien hier ablegen, um direkt an dieses Gerät zu senden. Doppelklick: Dateien wählen.", "Drop files here to send directly to this device. Double-click to choose files.");
+                    row.DragOver += (_, e) => { e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) && c.Ready && !c.Sending && TransferDraft.CanSendTo(c.Status?.Devices.FirstOrDefault(p => p.Id == deviceId)) ? DragDropEffects.Copy : DragDropEffects.None; e.Handled = true; };
+                    row.Drop += (_, e) =>
+                    {
+                        if (e.Data.GetData(DataFormats.FileDrop) is string[] paths && TransferDraft.CanSendTo(c.Status?.Devices.FirstOrDefault(p => p.Id == deviceId))) _ = c.RunAsync(() => c.SendPathsAsync(paths, deviceId));
+                        e.Handled = true;
+                    };
+                    row.MouseDoubleClick += (_, e) => { c.SelectedDeviceId = deviceId; if (TransferDraft.CanSendTo(c.SelectedDevice)) PickFiles(); else if (c.SelectedDevice is { Paired: true } paired) Dialogs.Device(this, c, paired); else Dialogs.Pair(this, c, c.SelectedDevice); e.Handled = true; };
                     deviceItems.Add(d.Id, row); devices.Items.Add(row);
                 }
                 row.Content = Theme.Text(d.Name + "\n" + c.T(d.Paired ? d.Online ? "Verbunden" : "Vertraut · offline" : "In der Nähe · nicht gekoppelt", d.Paired ? d.Online ? "Connected" : "Trusted · offline" : "Nearby · not paired"), 13);
                 row.IsSelected = d.Id == c.SelectedDeviceId;
             }
             var selected = c.SelectedDevice;
-            target.Text = selected is null ? c.T("Gerät auswählen", "Choose a device") : selected.Name;
-            targetDetail.Text = selected is null ? c.T("Geräte im gleichen Netzwerk erscheinen links automatisch.", "Devices on the same network appear on the left automatically.") : selected.Paired ? c.T(selected.Online ? "Verbunden und gekoppelt" : "Vertraut · zurzeit nicht erreichbar", selected.Online ? "Connected and paired" : "Trusted · currently unavailable") : c.T("Einmal verbinden und auf dem anderen Gerät bestätigen.", "Connect once and approve on the other device.");
+            target.Text = selected is null ? c.T("Wohin möchtest du senden?", "Where do you want to send?") : c.T("Senden an ", "Send to ") + selected.Name;
+            targetDetail.Text = selected is null ? c.T("Wähle ein Gerät links aus oder ziehe Dateien direkt auf ein gekoppeltes Gerät.", "Choose a device on the left or drop files directly on a paired device.") : selected.Paired ? !TransferDraft.CanSendTo(selected) ? c.T("Für direkte Übertragungen ein Desktopgerät mit Empfangsrecht wählen.", "Choose a desktop device with receiving permission for direct transfers.") : c.T(selected.Online ? "Dateien ablegen oder auswählen — die Übertragung startet direkt.":"Offline · die Übertragung wartet in der Warteschlange, bis das Gerät erreichbar ist.", selected.Online ? "Drop or choose files — the transfer starts immediately." : "Offline · transfers wait in the queue until the device is reachable.") : c.T("Einmal verbinden und auf dem anderen Gerät bestätigen.", "Connect once and approve on the other device.");
+            dropTitle.Text = TransferDraft.CanSendTo(selected) ? c.T("Hier ablegen → an ", "Drop here → send to ") + selected!.Name : c.T("Dateien ablegen · danach Empfänger wählen", "Drop files · then choose a recipient");
             pair.Visibility = selected is { Paired: false } ? Visibility.Visible : Visibility.Collapsed;
             pair.IsEnabled = c.Ready;
             manage.Visibility = automatic.Visibility = selected is { Paired: true } ? Visibility.Visible : Visibility.Collapsed;
             manage.IsEnabled = automatic.IsEnabled = c.Ready;
             automatic.IsChecked = selected?.AutoAccept == true;
-            send.IsEnabled = c.Ready && !c.Sending && c.Selection.Count > 0 && selected is { Paired: true, CanReceive: true };
-            send.Content = c.Sending ? c.T("Wird vorbereitet …", "Preparing …") : c.T("Senden", "Send");
+            send.IsEnabled = c.Ready && !c.Sending && c.Selection.Count > 0 && TransferDraft.CanSendTo(selected);
+            send.Content = c.Sending ? c.T("Wird vorbereitet …", "Preparing …") : selected is { Online: false } ? c.T("In Warteschlange", "Queue transfer") : selected is not null ? c.T("An ", "Send to ") + selected.Name + c.T(" senden", "") : c.T("Senden", "Send");
+            pickFiles.IsEnabled = pickFolder.IsEnabled = c.Ready && !c.Sending;
+            share.IsEnabled = c.Ready && c.Selection.Count > 0;
+            selectionTitle.Visibility = send.Visibility = share.Visibility = c.Selection.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             var key = string.Join('|', c.Selection.Select(i => i.Id));
             if (key != selectedKey)
             {
@@ -216,12 +262,21 @@ internal sealed class MainWindow : Window
                 body.Children.Add(Horizontal(Action(c.T("Verbinden", "Connect"), () => c.CommandAsync(trust.IsChecked == true ? "pair.approveTrusted" : "pair.approve", request.Id), true), Action(c.T("Ablehnen", "Decline"), () => c.CommandAsync("pair.deny", request.Id))));
                 var card = Theme.Card(body); card.Margin = new Thickness(0, 8, 0, 0); pairRows.Add(request.Id, card); requests.Children.Add(card);
             }
-            var jobs = c.Status?.Transfers ?? [];
-            empty.Visibility = jobs.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            foreach (var gone in transferRows.Keys.Where(id => jobs.All(t => t.Id != id)).ToArray()) { transfers.Children.Remove(transferRows[gone]); transferRows.Remove(gone); }
-            foreach (var job in jobs.OrderByDescending(t => t.IsActive).ThenByDescending(t => t.CreatedAt))
+            var allJobs = c.Status?.Transfers ?? [];
+            var jobs = allJobs.Where(t => t.IsActive).OrderByDescending(t => t.CreatedAt).Concat(NativeExperience.RecentTransfers(allJobs)).ToArray();
+            empty.Visibility = jobs.All(t => !t.IsActive) ? Visibility.Visible : Visibility.Collapsed;
+            empty.Text = c.T("Keine aktiven Übertragungen. Dateien auf ein Gerät oder die Ablagefläche ziehen.", "No active transfers. Drop files on a device or the drop area.");
+            var terminalCount = allJobs.Count(t => !t.IsActive);
+            history.Header = c.T("Letzte Übertragungen", "Recent transfers") + " · " + Math.Min(20, terminalCount) + (terminalCount > 20 ? c.T(" von ", " of ") + terminalCount : "");
+            history.Visibility = allJobs.Any(t => !t.IsActive) ? Visibility.Visible : Visibility.Collapsed;
+            foreach (var gone in transferRows.Keys.Where(id => jobs.All(t => t.Id != id)).ToArray()) { transfers.Children.Remove(transferRows[gone]); recentTransfers.Children.Remove(transferRows[gone]); transferRows.Remove(gone); }
+            var activeIndex = 0; var recentIndex = 0;
+            foreach (var job in jobs)
             {
-                if (!transferRows.TryGetValue(job.Id, out var row)) { row = new TransferRow(this, c); transferRows.Add(job.Id, row); transfers.Children.Add(row); }
+                if (!transferRows.TryGetValue(job.Id, out var row)) { row = new TransferRow(this, c); transferRows.Add(job.Id, row); }
+                var parent = job.IsActive ? transfers : recentTransfers; var index = job.IsActive ? activeIndex++ : recentIndex++;
+                if (row.Parent != parent) { (row.Parent as Panel)?.Children.Remove(row); parent.Children.Insert(index, row); }
+                else if (parent.Children.IndexOf(row) != index) { parent.Children.Remove(row); parent.Children.Insert(index, row); }
                 row.Update(job);
             }
         }
@@ -290,6 +345,8 @@ internal sealed class TransferRow : Border
             }
             else files.Children.Add(Theme.Text(c.T("Alle Dateien wurden als Duplikate übersprungen.", "All files were skipped as duplicates."), 12, secondary: true));
         }
+        if (t.State == "completed" && t.Files.Any(f => !f.Directory && !f.Skipped))
+            actions.Children.Add(Theme.Button(c.T("Freigabelink …", "Share link …"), () => SharingDialogs.Share(owner, c, transfer: current)));
         actions.IsEnabled = files.IsEnabled = c.Ready;
     }
 }

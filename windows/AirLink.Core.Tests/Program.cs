@@ -21,6 +21,14 @@ internal static class Program
             ("pairing completion follows certificate identity and validates local connection origins", PairingIdentity),
             ("automatic receive consent applies only to the offered sender", ReceiveConsent),
             ("received display entries follow published sorting and folder boundaries", ReceivedDisplayEntries),
+            ("send recipient defaults never redirect a pending or explicit draft", SendRecipientDefaults),
+            ("send snapshots preserve later choices and reject stale acknowledgments", SendSnapshotLifetime),
+            ("direct send offers only the explicit drop batch", DirectSendBatch),
+            ("failed direct send remains available for an explicit retry", FailedDirectSend),
+            ("lost offer replies reuse their key only for an unchanged explicit retry", LostOfferReply),
+            ("send eligibility and invalid batches leave the draft intact", SendEligibility),
+            ("desktop notices announce new attention without replaying old results", DesktopNoticeTests.Transitions),
+            ("recent results keep an old transfer's new completion visible", DesktopNoticeTests.RecentResults),
             ("private transport correlates out-of-order replies and reports remote errors", CorrelatedReplies),
             ("request timeout and explicit cancellation preserve a live connection", TimeoutAndCancellation),
             ("long filesystem commands do not inherit the status timeout", LongOperations),
@@ -185,6 +193,144 @@ internal static class Program
         Require((await client.RequestAsync<HostStatus>("status")).Id == "fake-host", "Remote error killed connection");
     }
 
+    private static Device Recipient(string id, bool online = true) => new() { Id = id, Kind = "engine", Paired = true, CanReceive = true, Online = online };
+    private static string SourcePath(string name) => Path.Combine(Path.GetTempPath(), "AirLink-draft-model", name);
+
+    private static Task SendRecipientDefaults()
+    {
+        var a = Recipient("A"); var b = Recipient("B");
+        var browser = new Device { Id = "browser", Kind = "browser", Paired = true, CanReceive = true, Online = true };
+        var denied = Recipient("denied"); denied.CanReceive = false;
+        var unpaired = Recipient("nearby"); unpaired.Paired = false;
+        var draft = new TransferDraft();
+        draft.RefreshDevices([browser, denied, unpaired, a]);
+        Require(draft.SelectedDeviceId == "A" && !draft.HasExplicitTarget, "A sole online authorized desktop was not chosen");
+        a.Online = false; draft.RefreshDevices([a, b]);
+        Require(draft.SelectedDeviceId == "A", "Refresh silently redirected a shown recipient when it went offline");
+        draft.SelectDevice("B"); draft.RefreshDevices([a]);
+        Require(draft.SelectedDeviceId == "B" && draft.HasExplicitTarget, "A missing selected peer was silently replaced");
+
+        var ambiguous = new TransferDraft(); a.Online = true;
+        ambiguous.RefreshDevices([a, b]); Require(ambiguous.SelectedDeviceId is null, "Ambiguous devices were silently chosen");
+        ambiguous.AddPaths([SourcePath("awaiting-choice.txt")]); ambiguous.RefreshDevices([a]);
+        Require(ambiguous.SelectedDeviceId is null, "Discovery changed a pending draft's recipient");
+        var offline = new TransferDraft(); a.Online = false; offline.RefreshDevices([a]);
+        Require(offline.SelectedDeviceId is null, "Offline peer was automatically selected");
+        a.Online = true; offline.RefreshDevices([a], allowAutomaticSelection: false);
+        Require(offline.SelectedDeviceId is null, "Automatic selection ignored caller's explicit gate");
+        offline.RefreshDevices([a]); Require(offline.SelectedDeviceId == "A", "Delayed online discovery did not select an empty draft");
+        return Task.CompletedTask;
+    }
+
+    private static Task SendSnapshotLifetime()
+    {
+        var a = Recipient("A"); var b = Recipient("B");
+        var first = SourcePath("first.txt"); var second = SourcePath("second.txt"); var later = SourcePath("later.txt");
+        var draft = new TransferDraft(); draft.SelectDevice("A");
+        draft.AddPaths([first, second, first]);
+        Require(draft.Entries.Count == 2, "Repeated paths created duplicate selected files");
+        var submittedSecond = draft.Entries.Single(entry => entry.Path == second);
+        var submission = draft.TryBegin([a, b], serviceReady: true)!;
+        Require(submission.DeviceId == "A" && submission.Paths.SequenceEqual([first, second]) && draft.IsSending, "Offer did not capture intended device and sources");
+        Require(draft.TryBegin([a, b], true) is null, "Repeated Send created another offer");
+        draft.AddPaths([later]); draft.Entries.Remove(submittedSecond); draft.AddPaths([second]); draft.SelectDevice("B");
+        var reselectedSecond = draft.Entries.Single(entry => entry.Path == second);
+        Require(reselectedSecond.Id != submittedSecond.Id, "A reselected path reused an in-flight entry identity");
+        Require(submission.DeviceId == "A" && submission.Paths.SequenceEqual([first, second]), "Later choices mutated an in-flight offer");
+        Require(draft.FinishSuccess(submission), "Current offer acknowledgment was rejected");
+        Require(draft.Entries.Select(entry => entry.Path).SequenceEqual([later, second]) && draft.SelectedDeviceId == "B" && !draft.IsSending,
+            "Successful acknowledgment removed later or reselected files, or redirected a later recipient choice");
+
+        var next = draft.TryBegin([a, b], true)!;
+        Require(next.DeviceId == "B" && !draft.FinishSuccess(submission) && draft.IsSending, "Late acknowledgment cleared a newer offer");
+        var other = new TransferDraft(); other.SelectDevice("A"); other.AddPaths([SourcePath("foreign.txt")]);
+        var foreign = other.TryBegin([a], true)!;
+        Require(!draft.Fail(foreign) && !draft.FinishSuccess(foreign) && draft.IsSending, "Foreign offer token changed current state");
+        Require(draft.Fail(next) && draft.Entries.Count == 2 && !draft.IsSending, "Failure discarded retryable selected files");
+        return Task.CompletedTask;
+    }
+
+    private static Task DirectSendBatch()
+    {
+        var a = Recipient("A"); var b = Recipient("B");
+        var kept = SourcePath("manual-selection.txt"); var shared = SourcePath("also-dropped.txt");
+        var direct = SourcePath("direct.txt"); var later = SourcePath("after-drop.txt"); var busyPath = SourcePath("busy.txt");
+        var draft = new TransferDraft(); draft.SelectDevice("A"); draft.AddPaths([kept, shared]);
+        var submission = draft.TryBeginDirect("B", [shared, direct, direct], [a, b], true)!;
+        Require(submission.TargetId == "B" && submission.Paths.SequenceEqual([shared, direct]) && draft.SelectedDeviceId == "B", "Direct drop consumed the whole old draft or wrong recipient");
+        draft.AddPaths([later]);
+        Require(draft.TryBeginDirect("A", [busyPath], [a, b], true) is null && !draft.Entries.Any(entry => entry.Path == busyPath),
+            "A busy direct-send was silently accepted or appended to a different pending send");
+        Require(draft.FinishSuccess(submission) && draft.Entries.Select(entry => entry.Path).SequenceEqual([kept, later]),
+            "Direct-send acknowledgment discarded unrelated selections");
+        return Task.CompletedTask;
+    }
+
+    private static Task FailedDirectSend()
+    {
+        var recipient = Recipient("offline", online: false);
+        var first = SourcePath("retry-file.txt"); var second = SourcePath("retry-folder");
+        var draft = new TransferDraft();
+        var submission = draft.TryBeginDirect(recipient.Id, [first, second], [recipient], true)!;
+        Require(submission.Paths.Count == 2 && draft.SelectedDeviceId == recipient.Id, "Explicit offline offer could not be queued for its intended device");
+        Require(draft.Fail(submission) && !draft.IsSending && draft.Entries.Select(entry => entry.Path).SequenceEqual([first, second]), "Failed drop lost its sources");
+        var retry = draft.TryBegin([recipient], true)!;
+        Require(retry.Token == submission.Token && retry.DeviceId == recipient.Id && retry.Paths.SequenceEqual(submission.Paths), "Explicit retry changed offer key, recipient or sources");
+        Require(!draft.FinishSuccess(submission) && !draft.Fail(submission) && draft.IsSending, "A late local result from the prior attempt cleared its active retry");
+        Require(draft.FinishSuccess(retry) && draft.Entries.Count == 0, "Successful retry did not clear exactly its own files");
+        return Task.CompletedTask;
+    }
+
+    private static Task LostOfferReply()
+    {
+        var a = Recipient("A"); var b = Recipient("B");
+        var first = SourcePath("possibly-committed.txt"); var second = SourcePath("later.txt");
+        var draft = new TransferDraft(); draft.SelectDevice(a.Id); draft.AddPaths([first]);
+        var original = draft.TryBegin([a, b], true)!; draft.Fail(original);
+        var retried = draft.TryBegin([a, b], true)!;
+        Require(retried.Token == original.Token, "Retry after a possibly lost ACK would create another persisted offer");
+        draft.Fail(retried); draft.AddPaths([second]);
+        var changedEntries = draft.TryBegin([a, b], true)!;
+        Require(changedEntries.Token != original.Token, "Adding a source reused a key for another request payload");
+        draft.Fail(changedEntries); draft.SelectDevice(b.Id);
+        var changedDevice = draft.TryBegin([a, b], true)!;
+        Require(changedDevice.Token != changedEntries.Token && changedDevice.DeviceId == b.Id, "A changed recipient reused another recipient's key");
+        draft.Fail(changedDevice); draft.Entries.Remove(draft.Entries[0]); draft.AddPaths([first]);
+        var reordered = draft.TryBegin([a, b], true)!;
+        Require(reordered.Token != changedDevice.Token && reordered.Paths.SequenceEqual([second, first]), "Reordered/reselected entries reused the old key");
+        draft.FinishSuccess(reordered); draft.AddPaths([second, first]);
+        var explicitNewSend = draft.TryBegin([a, b], true)!;
+        Require(explicitNewSend.Token != reordered.Token, "An explicitly new send of the same files reused a completed offer key");
+
+        var direct = new TransferDraft(); var drop = direct.TryBeginDirect(a.Id, [first], [a, b], true)!;
+        direct.Fail(drop);
+        var sameDrop = direct.TryBeginDirect(a.Id, [first], [a, b], true)!;
+        Require(sameDrop.Token == drop.Token, "Retrying an identical failed direct drop lost its persisted offer key");
+        return Task.CompletedTask;
+    }
+
+    private static Task SendEligibility()
+    {
+        var desktop = Recipient("desktop");
+        var browser = Recipient("browser"); browser.Kind = "browser";
+        var unpaired = Recipient("unpaired"); unpaired.Paired = false;
+        var denied = Recipient("denied"); denied.CanReceive = false;
+        var draft = new TransferDraft(); var source = SourcePath("source.txt");
+        foreach (var device in new[] { browser, unpaired, denied })
+            Require(!TransferDraft.CanSendTo(device) && draft.TryBeginDirect(device.Id, [source], [device], true) is null, "Unauthorized or browser recipient accepted native direct-send");
+        Require(draft.TryBeginDirect(desktop.Id, [source], [desktop], false) is null && draft.Entries.Count == 0 && draft.SelectedDeviceId is null,
+            "Unready service accepted a direct-drop batch");
+        try { draft.AddPaths([source, "relative.txt"]); throw new InvalidOperationException("Relative source accepted"); }
+        catch (ArgumentException) { Require(draft.Entries.Count == 0, "Invalid batch partially changed the draft"); }
+        Require(draft.TryBeginDirect(desktop.Id, [], [desktop], true) is null && draft.SelectedDeviceId is null, "Empty direct batch changed selected recipient");
+        draft.SelectDevice("missing"); draft.AddPaths([source]);
+        Require(draft.TryBegin([desktop], true) is null && draft.SelectedDeviceId == "missing" && draft.Entries.Count == 1,
+            "Missing selected recipient fell back to an unrelated available device");
+        draft.SelectDevice(desktop.Id); desktop.Online = false;
+        Require(TransferDraft.CanSendTo(desktop) && draft.TryBegin([desktop], true) is not null, "Paired offline desktop lost explicit persistent queue support");
+        return Task.CompletedTask;
+    }
+
     private static async Task TimeoutAndCancellation()
     {
         await using var fixture = new Fixture(); await using var client = FakeClient(TimeSpan.FromMilliseconds(500)); await Ready(client, fixture);
@@ -300,7 +446,7 @@ internal static class Program
         await using var fixture = new Fixture(); await using var client = new DaemonClient(new DaemonClientOptions { DisableDiscovery = true });
         await client.StartAsync(Path.GetFullPath(helper), fixture.Data, fixture.Received);
         var before = await client.RequestAsync<HostStatus>("status");
-        var expectedVersion = Environment.GetEnvironmentVariable("AIRLINK_TEST_VERSION") ?? "0.6.0";
+        var expectedVersion = Environment.GetEnvironmentVariable("AIRLINK_TEST_VERSION") ?? "0.7.0";
         Require(before.Version == expectedVersion && before.Fingerprint.Length == 64 && before.ChunkSize == 8 * 1024 * 1024, "Unexpected service contract/version");
         var settings = ProtocolJson.Clone(before.Settings);
         settings.Appearance = "dark"; settings.Language = "en"; settings.Notifications = false;
@@ -372,11 +518,19 @@ internal static class Program
         await client.RequestAsync("pair.approveTrusted", new { id = trusted.RequestId });
         var permissions = await client.RequestAsync<HostStatus>("status");
         Require(permissions.Devices.Count == 2 && permissions.Devices.All(device => device.AutoAccept && !device.CanClipboard && !device.CanRelay), "Trusted receipt reset unrelated permissions");
+        var offerRequest = new { deviceId = permissions.Devices[0].Id, paths = new[] { original }, requestId = Guid.NewGuid().ToString("N") };
+        var firstOffer = await client.RequestAsync<Transfer>("offer", offerRequest);
+        var repeatedOffer = await client.RequestAsync<Transfer>("offer", offerRequest);
+        Require(firstOffer.Id == repeatedOffer.Id && firstOffer.Files.Select(file => file.Id).SequenceEqual(repeatedOffer.Files.Select(file => file.Id)),
+            "Retrying a committed private offer created another transfer or file manifest");
         Require(await client.StopAsync(), "Actual helper failed clean shutdown");
         await client.StartAsync(Path.GetFullPath(helper), fixture.Data, fixture.Received);
         var after = await client.RequestAsync<HostStatus>("status");
         Require(after.Id == before.Id && after.Fingerprint == before.Fingerprint && after.Settings.Organization.DetectDuplicates && after.Shares.Single().Revoked, "Restart reset identity/settings/shares");
         Require(after.Devices.Count == 2 && after.Devices.All(device => device.AutoAccept) && (await File.ReadAllBytesAsync(received.Items[0].Path)).SequenceEqual(incomingBytes), "Restart lost explicit trust or received data");
+        var durableOffer = await client.RequestAsync<Transfer>("offer", offerRequest);
+        Require(durableOffer.Id == firstOffer.Id && durableOffer.Files.Select(file => file.Id).SequenceEqual(firstOffer.Files.Select(file => file.Id)),
+            "Service restart lost the committed private offer request key");
     }
 
     private sealed class TestHttpResponse
@@ -517,7 +671,7 @@ internal static class FakeHelper
                     if (mode != "hang-no-ack") await Reply(id, new { ok = true });
                     if (!mode.StartsWith("hang", StringComparison.Ordinal)) return 0;
                     break;
-                case "status": await Reply(id, new { id = "fake-host", version = "0.6.0", name = "Fake service", settings = new HostSettings() }); break;
+                case "status": await Reply(id, new { id = "fake-host", version = "0.7.0", name = "Fake service", settings = new HostSettings() }); break;
                 case "echo": await Reply(id, root.GetProperty("params").Clone()); break;
                 case "reject": await Reply(id, error: "This transfer still requires recipient approval."); break;
                 case "slow":

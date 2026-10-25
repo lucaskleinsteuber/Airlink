@@ -1,6 +1,6 @@
 # Release readiness
 
-AirLink 0.6.0 is a private development preview. This document defines the acceptance gates for a maintainable 1.0 release; it does not declare those gates complete or assign a release date. Source implementation, completed background tests, package creation, physical device acceptance, and distribution are separate states.
+AirLink 0.7.0 is a private development preview. This document defines the acceptance gates for a maintainable 1.0 release; it does not declare those gates complete or assign a release date. Source implementation, completed background tests, package creation, physical device acceptance, and distribution are separate states.
 
 Historical hosted CI jobs did not execute; local test and build results are recorded separately.
 
@@ -30,6 +30,7 @@ The following checks remain open until their records are linked from TESTING.md.
 
 - [ ] Record all five operating-system roles above with explicit source and recipient observations.
 - [ ] Confirm operation without internet, account, CDN, cloud relay, or external signaling dependency.
+- [ ] Observe real multicast discovery through several 15-second browse refreshes, a peer disappearing beyond the 45-second hint lifetime, a changed address and sleep/wake. Library/state unit tests do not prove discovery on a real router.
 - [ ] Check an isolated/guest Wi-Fi or unavailable multicast case: discovery failure is explained, a reachable manual address works, and unreachable peers do not produce an endless ready state.
 - [ ] Record any supported-platform/browser limits explicitly. A missing platform run stays open rather than being inferred from another device.
 
@@ -75,9 +76,13 @@ Native Windows is required for the agreed 1.0 product. A successful cross-publis
 - [ ] Upgrade from an existing console installation with saved identity, pairings, history and receipt settings. A still-running console reports the data-directory conflict clearly; stop it once and retry without deleting state or pairing again.
 - [ ] Discover/pair the Mac, compare the fingerprint directly, and keep the connection pending until actual approval. Exercise denial, expiry, retry and already-paired devices without a false connected state.
 - [ ] Choose auto-receive explicitly on one computer and confirm it affects that receipt direction only. Check saved settings after restart; ordinary pairing/acceptance must not opt in silently.
-- [ ] Send files/folders in both directions with native selection and drag-and-drop, including adding files while an offer is being created. Verify pause/resume/cancel, speed/progress and offline recovery against the real received file.
+- [ ] Send files/folders in both directions by dropping directly on a paired computer, dropping onto the central area labelled with the recipient, and choosing files from that recipient's picker. Each action must create only its explicit batch; an unaddressed selection must stay staged for a deliberate Send.
+- [ ] Confirm the sole-recipient default only chooses an online authorized desktop for an empty, idle draft. An explicit target, a pending selection, a missing peer or a newly discovered second peer must not silently redirect selected files. Exercise an explicit offline queued offer and its eventual recovery.
+- [ ] Add/remove/reselect paths and change the visible recipient while offer preparation is active. Acknowledgment may remove only the submitted entry identities; failure must retain retryable sources. A repeated Send or busy second direct drop must not silently create, merge or redirect another offer. Verify pause/resume/cancel, speed/progress and the real received file.
+- [ ] Interrupt the local offer acknowledgment after a durable commit, retry the unchanged selection and confirm only the original transfer/file IDs exist. After service restart the same key must still return that job; changed selection/recipient keys must not redirect an old one. Check that this is distinct from unsubmitted draft persistence.
 - [ ] Use Show file/Open folder for a completed receive, sorted files, transferred folders, an empty folder and an older destination. Missing files and all-skipped duplicates must not open an unrelated file. Review the visible saved-location guidance.
-- [ ] Close/reopen the window during work and confirm tray continuity, completion notifications when enabled, explicit Quit checkpointing and no orphaned owned helper. Test a helper failure, retry and unavailable receive-directory recovery without resetting data.
+- [ ] Keep active work separate from recent results and verify a finishing old/resumed transfer remains discoverable with its result action. Trigger a visible user-action error and confirm an ordinary status refresh does not erase it.
+- [ ] Close/reopen the window during work and confirm tray continuity, pairing/offer/duplicate/text/completion attention when enabled (including transfers finishing between polls), explicit Quit checkpointing and no orphaned owned helper. Test a helper failure, retry and unavailable receive-directory recovery without resetting data.
 - [ ] Review German/English, system/light/dark, long names, keyboard access, file/folder dialogs, tray menus and notification clicks manually. Record x64 and ARM64 runtime support separately where tested.
 
 ## Shares, clipboard, and organization
@@ -85,7 +90,8 @@ Native Windows is required for the agreed 1.0 product. A successful cross-publis
 - [ ] Complete phone certificate onboarding from the unencrypted public-material setup page, compare the fingerprint on the host, and open the trusted HTTPS page. Test removing trust and an untrusted/mismatched host without bypassing identity comparison.
 - [ ] Open a full fragment share link with and without a password. Confirm filenames remain hidden before authorization, secrets leave the address bar, and access is limited to that share without device pairing.
 - [ ] Verify one session allowance across multiple files, Range/resume, host restart and a new recipient session. Expiry/revocation during low-rate output must stop further payload. A client clock cannot override the host's policy.
-- [ ] Use explicit clipboard Paste/Edit/Send/Copy/Dismiss in native and browser roles, including permission off, both desktop peers' permission checks, manual-paste fallback and the 64 KiB UTF-8 boundary. Receiving text must never replace the system clipboard automatically.
+- [ ] Create/list/copy/revoke shares in the native Windows dialog, including a custom local expiry time, password and download limit; verify its full fragment link on a second device and host-authoritative expiry/revocation.
+- [ ] Use explicit clipboard Paste/Edit/Send/Copy/Dismiss in macOS, Windows and browser roles, including permission off, both desktop peers' permission checks, manual-paste fallback and the 64 KiB UTF-8 boundary. Receiving text must never replace the system clipboard automatically.
 - [ ] Verify organization remains off/off with no rules on new and migrated settings. Exercise explicit Keep/Skip/path reveal, changed candidates, ordered rules, top-level individual-file sorting, unchanged folder hierarchy and new-offer-only snapshots.
 - [ ] Review actual/avoided/relay/lifetime byte displays and last-activity UTC history cohorts. Clear terminal history and confirm files, active work, shares, other relay participants' associations and lifetime traffic remain as specified.
 
@@ -104,4 +110,4 @@ Completion requires reviewing the linked evidence, not a calculated percentage. 
 
 ## Native status scaling
 
-The current native transports bound each helper reply to 16 MiB (Windows counts decoded characters). The private status response still includes retained history and manifests. A future summary/pagination contract is required before claiming unlimited history or arbitrary folder-entry counts; payload file size is independent of this metadata bound. The macOS ordinary request timeout also needs explicit large-folder preparation acceptance.
+The current native transports bound each helper reply to 16 MiB (Windows counts decoded characters). The private status response still includes retained history and manifests. A future summary/pagination contract is required before claiming unlimited history or arbitrary folder-entry counts; payload file size is independent of this metadata bound. Since 0.7, native offer/share preparation and duplicate validation are exempt from the ordinary command deadline; large-folder preparation, cancellation and recovery still need physical acceptance.

@@ -1,6 +1,6 @@
 # AirLink roadmap
 
-This roadmap separates the established 0.1/0.2 baseline, implemented 0.3/0.4 preview capabilities, the 0.5 stabilization work, the 0.6 native Windows workflow, and future acceptance. Milestones are capability boundaries, not release dates. Version numbers use MAJOR.MINOR.PATCH; patch releases fix the current minor release without claiming a later milestone is complete. Source implementation, final automated verification, private release packaging, and physical acceptance are separate states.
+This roadmap separates the established 0.1/0.2 baseline, implemented 0.3/0.4 preview capabilities, the 0.5 stabilization work, the 0.6 native Windows workflow, the 0.7 usability work, and future acceptance. Milestones are capability boundaries, not release dates. Version numbers use MAJOR.MINOR.PATCH; patch releases fix the current minor release without claiming a later milestone is complete. Source implementation, final automated verification, private release packaging, and physical acceptance are separate states.
 
 ## 0.1 — Local transfer foundation
 
@@ -59,6 +59,17 @@ Historical hosted CI jobs did not execute; local test and build results are reco
 - Windows native controls initially focus on core transfers. Native editors for Quick Share, clipboard, browser relays, detailed statistics and sorting rules are further interface work; the existing shared service/web features remain.
 
 Final background tests, cross-published package checks and physical Windows runtime acceptance are separate evidence in [TESTING.md](TESTING.md). The user's first 0.5 Mac-to-Windows transfer succeeded and felt fast, but its console/approval/result-location workflow was unsatisfactory. No exact size, independently compared hashes, interruption result or complete acceptance matrix was recorded for that manual report.
+
+## 0.7 — Direct desktop sending and Windows conveniences (private preview)
+
+- Send an explicit file/folder batch by dropping it on a paired desktop, or use the selected recipient's named central drop area or file picker. A selection without a recipient remains staged for a deliberate Send; offline paired targets use persistent queue/recovery.
+- Pin recipient/source identities for each offer and preserve files added or reselected while preparation is active. A repeated Send cannot create another simultaneous submission. A durable private offer key recovers an identical request whose acknowledgment was lost, without creating a second transfer; changed input gets a new key. Failed offers retain their sources for retry, and a busy direct drop gets a visible explanation.
+- Select a sole online authorized desktop only for an empty, idle draft with no shown recipient. Discovery cannot replace an existing recipient or redirect a pending selection.
+- Native Windows Quick Share source/policy/link/revocation controls and explicit clipboard text controls use the existing local APIs and permissions. Clipboard receipt never reads or replaces the operating-system clipboard automatically.
+- Tray attention for pairing, receipt, duplicate choices, clipboard and fast completions; persistent user-action errors, active/recent transfer separation and window keyboard shortcuts.
+- Refresh the mDNS browser periodically and expire nearby hints. Saved trust remains separate, and a discovery hint cannot grant pairing or relax the certificate check.
+
+Implementation and background tests remain separate from physical acceptance. The Windows laptop, Mac, iPhone and iPad still need the relevant manual runs in [DEVICE-CHECK.md](DEVICE-CHECK.md); Linux and Android remain separate gates. Native Windows browser-relay administration, detailed statistics and sorting-rule editing are not yet complete.
 
 ## 1.0 — Accepted and maintainable (physical acceptance pending)
 

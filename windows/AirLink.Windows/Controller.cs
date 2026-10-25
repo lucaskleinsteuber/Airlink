@@ -21,21 +21,24 @@ internal sealed class Controller : INotifyPropertyChanged
     private readonly Dispatcher dispatcher;
     private readonly DaemonClient client = new();
     private readonly CancellationTokenSource lifetime = new();
-    private bool refreshing, starting, sending;
+    private bool refreshing, starting;
+    private readonly TransferDraft draft = new();
     private string? helperPath;
     private string? pendingPeerFingerprint;
     private DateTimeOffset pendingPeerAt;
-    private readonly HashSet<string> announced = [];
+    private readonly DesktopNoticeTracker notices = new();
+    private string? actionError, serviceError;
     public event PropertyChangedEventHandler? PropertyChanged;
-    public event Action<Transfer>? Received;
+    public event Action<DesktopNotice>? NoticeRaised;
     public HostStatus? Status { get; private set; }
     public bool Ready { get; private set; }
     public bool Starting => starting;
-    public bool Sending => sending;
-    public string? Error { get; private set; }
+    public bool Sending => draft.IsSending;
+    public string? Error => actionError ?? serviceError;
+    public bool HasActionError => actionError is not null;
     public string? Notice { get; private set; }
-    public string? SelectedDeviceId { get; set; }
-    public ObservableCollection<SelectionItem> Selection { get; } = [];
+    public string? SelectedDeviceId { get => draft.SelectedDeviceId; set { draft.SelectDevice(value); Changed(); } }
+    public ObservableCollection<SendEntry> Selection => draft.Entries;
     public bool English => (Status?.Settings.Language ?? "system") switch
     {
         "en" => true, "de" => false,
@@ -45,7 +48,7 @@ internal sealed class Controller : INotifyPropertyChanged
     public string DataDirectory => Path.Combine(Environment.GetEnvironmentVariable("APPDATA") ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AirLink");
     public Device? SelectedDevice => Status?.Devices.FirstOrDefault(d => d.Id == SelectedDeviceId);
     public int ActiveCount => (Status?.Transfers.Count(t => t.IsActive) ?? 0) + (Status?.Relays.Count(r => r.State is not ("delivered" or "cancelled" or "failed")) ?? 0);
-    public string Version => Status?.Version ?? "0.6.0";
+    public string Version => Status?.Version ?? "0.7.0";
 
     public Controller(Dispatcher dispatcher)
     {
@@ -54,7 +57,7 @@ internal sealed class Controller : INotifyPropertyChanged
         {
             if (!e.Unexpected || (client.SessionId is { } current && e.SessionId != current) || (starting && client.SessionId is null)) return;
             Ready = false;
-            Error = T("Der AirLink-Dienst wurde beendet. Du kannst ihn mit denselben Daten erneut starten.", "The AirLink service stopped. Retry to keep using the same data.") +
+            serviceError = T("Der AirLink-Dienst wurde beendet. Du kannst ihn mit denselben Daten erneut starten.", "The AirLink service stopped. Retry to keep using the same data.") +
                 (string.IsNullOrWhiteSpace(e.Diagnostic) ? "" : "\n" + e.Diagnostic);
             Changed();
         });
@@ -63,7 +66,7 @@ internal sealed class Controller : INotifyPropertyChanged
     public async Task StartAsync(string? receiveOverride = null)
     {
         if (starting) return;
-        starting = true; Ready = false; Error = null; Changed();
+        starting = true; Ready = false; serviceError = null; Changed();
         try
         {
             if (client.IsRunning && !await client.StopAsync()) throw new IOException(T("Der bisherige Dienst läuft noch.", "The previous service is still running."));
@@ -71,16 +74,16 @@ internal sealed class Controller : INotifyPropertyChanged
             Directory.CreateDirectory(DataDirectory);
             await client.StartAsync(helperPath, DataDirectory, receiveOverride, lifetime.Token);
             await RefreshAsync();
-            if (!Ready) throw new IOException(Error ?? T("Der Dienst antwortet noch nicht.", "The service is not responding."));
+            if (!Ready) throw new IOException(serviceError ?? T("Der Dienst antwortet noch nicht.", "The service is not responding."));
         }
-        catch (Exception e) { Error = Friendly(e); Ready = false; }
+        catch (Exception e) { serviceError = Friendly(e); Ready = false; }
         finally { starting = false; Changed(); }
     }
 
     private static async Task<string> ExtractHelperAsync()
     {
         var assembly = Assembly.GetExecutingAssembly();
-        var version = assembly.GetName().Version?.ToString(3) ?? "0.6.0";
+        var version = assembly.GetName().Version?.ToString(3) ?? "0.7.0";
         var cache = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AirLink", "Runtime", version,
             RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant());
         Stream Open() => assembly.GetManifestResourceStream("AirLink.Windows.Helper") ?? throw new FileNotFoundException("The bundled AirLink service is missing. Download the complete app.");
@@ -107,8 +110,8 @@ internal sealed class Controller : INotifyPropertyChanged
         try
         {
             var next = await client.RequestAsync<HostStatus>("status", ct: lifetime.Token);
-            var previous = Status;
-            Status = next; Ready = true; Error = null;
+            Status = next; Ready = true; serviceError = null;
+            draft.RefreshDevices(next.Devices);
             if (pendingPeerFingerprint is not null && next.Devices.FirstOrDefault(d => d.Paired && d.Kind == "engine" && string.Equals(d.Fingerprint, pendingPeerFingerprint, StringComparison.OrdinalIgnoreCase)) is { } paired)
             {
                 pendingPeerFingerprint = null;
@@ -120,13 +123,12 @@ internal sealed class Controller : INotifyPropertyChanged
                 pendingPeerFingerprint = null;
                 Notice = T("Die Kopplung wurde nicht bestätigt. Du kannst sie erneut anfragen.", "Pairing was not confirmed. You can request it again.");
             }
-            foreach (var transfer in next.Transfers.Where(t => t.Direction == "receive" && t.State == "completed"))
-                if (previous?.Transfers.Any(t => t.Id == transfer.Id && t.State != "completed") == true && announced.Add(transfer.Id)) Received?.Invoke(transfer);
+            foreach (var notice in notices.Observe(next)) NoticeRaised?.Invoke(notice);
             Changed();
         }
         catch (Exception e)
         {
-            Error = Friendly(e);
+            serviceError = Friendly(e);
             if (!client.IsRunning) Ready = false;
             Changed();
         }
@@ -142,9 +144,21 @@ internal sealed class Controller : INotifyPropertyChanged
 
     public async Task RunAsync(Func<Task> action)
     {
-        try { Error = null; await action(); }
-        catch (Exception e) { Error = Friendly(e); }
+        try { actionError = null; await action(); }
+        catch (Exception e) { actionError = Friendly(e); }
         Changed();
+    }
+    public void DismissError() { actionError = null; Changed(); }
+    public void ReportError(string message) { actionError = message; Changed(); }
+    public async Task<T> RequestAsync<T>(string method, object? parameters = null)
+    {
+        RequireReady();
+        return await client.RequestAsync<T>(method, parameters, lifetime.Token);
+    }
+    public async Task<System.Text.Json.JsonElement> RequestAsync(string method, object? parameters = null)
+    {
+        RequireReady();
+        return await client.RequestAsync(method, parameters, lifetime.Token);
     }
 
     public async Task CommandAsync(string method, string id)
@@ -171,31 +185,52 @@ internal sealed class Controller : INotifyPropertyChanged
 
     public void AddPaths(IEnumerable<string> paths)
     {
-        foreach (var path in paths)
-        {
-            var full = Path.GetFullPath(path);
-            if (!(File.Exists(full) || Directory.Exists(full))) continue;
-            if (!Selection.Any(p => string.Equals(p.Path, full, StringComparison.OrdinalIgnoreCase))) Selection.Add(new SelectionItem(full));
-        }
+        draft.AddPaths(ExistingPaths(paths));
         Changed();
+    }
+
+    private string[] ExistingPaths(IEnumerable<string> paths)
+    {
+        var full = paths.Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (full.Length == 0 || full.Any(p => !File.Exists(p) && !Directory.Exists(p)))
+            throw new IOException(T("Eine ausgewählte Datei ist nicht mehr verfügbar. Bitte erneut auswählen.", "A selected file is no longer available. Please select it again."));
+        return full;
+    }
+
+    public async Task SendPathsAsync(IEnumerable<string> paths, string? deviceId = null, bool useCurrentSelection = true)
+    {
+        RequireReady();
+        var files = ExistingPaths(paths);
+        var target = deviceId ?? (useCurrentSelection ? SelectedDeviceId : null);
+        if (Sending) throw new IOException(T("Die aktuelle Auswahl wird gerade vorbereitet. Bitte danach erneut ablegen.", "The current selection is being prepared. Please drop the next files when it is ready."));
+        if (target is null || !TransferDraft.CanSendTo(Status?.Devices.FirstOrDefault(d => d.Id == target)))
+        {
+            draft.AddPaths(files);
+            Notice = T("Dateien bereit. Wähle ein gekoppeltes Gerät und klicke auf Senden.", "Files ready. Choose a paired device and click Send.");
+            Changed(); return;
+        }
+        var submitted = draft.TryBeginDirect(target, files, Status?.Devices ?? [], Ready);
+        if (submitted is not null) await SubmitAsync(submitted);
     }
 
     public async Task SendAsync()
     {
         RequireReady();
-        var device = SelectedDevice;
-        if (sending || device is not { Paired: true, CanReceive: true } || Selection.Count == 0) return;
-        var submitted = Selection.ToArray();
-        var deviceId = device.Id;
-        sending = true; Changed();
+        var submitted = draft.TryBegin(Status?.Devices ?? [], Ready);
+        if (submitted is not null) await SubmitAsync(submitted);
+    }
+    private async Task SubmitAsync(SendSubmission submitted)
+    {
+        Changed();
         try
         {
-            await client.RequestAsync<Transfer>("offer", new { deviceId, paths = submitted.Select(p => p.Path).ToArray() }, lifetime.Token);
-            foreach (var item in submitted) Selection.Remove(item);
+            await client.RequestAsync<Transfer>("offer", new { deviceId = submitted.DeviceId, paths = submitted.Paths, requestId = submitted.Token.ToString("N") }, lifetime.Token);
+            draft.FinishSuccess(submitted);
             Notice = T("Übertragung angelegt.", "Transfer created.");
             await RefreshAsync();
         }
-        finally { sending = false; Changed(); }
+        catch { draft.Fail(submitted); throw; }
+        finally { Changed(); }
     }
 
     public async Task SaveSettingsAsync(HostSettings settings)
@@ -276,10 +311,4 @@ internal sealed class Controller : INotifyPropertyChanged
     }
     private void RequireReady() { if (!Ready) throw new IOException(T("Der AirLink-Dienst ist nicht bereit. Bitte erneut starten.", "The AirLink service is not ready. Please retry.")); }
     private void Changed([CallerMemberName] string? property = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));
-}
-
-internal sealed record SelectionItem(string Path)
-{
-    public Guid Id { get; } = Guid.NewGuid();
-    public string Title => System.IO.Path.GetFileName(Path.TrimEnd(System.IO.Path.DirectorySeparatorChar));
 }

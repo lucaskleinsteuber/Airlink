@@ -111,8 +111,9 @@ func (s *Server) Control(method string, params json.RawMessage) (any, error) {
 		return map[string]bool{"ok": true}, err
 	case "offer":
 		var v struct {
-			DeviceID string   `json:"deviceId"`
-			Paths    []string `json:"paths"`
+			DeviceID  string   `json:"deviceId"`
+			Paths     []string `json:"paths"`
+			RequestID string   `json:"requestId"`
 		}
 		if e := json.Unmarshal(params, &v); e != nil {
 			return nil, e
@@ -121,7 +122,7 @@ func (s *Server) Control(method string, params json.RawMessage) (any, error) {
 		if !ok {
 			return nil, errors.New("pair the receiving device first")
 		}
-		return s.engine.Offer(rec.Device, v.Paths)
+		return s.engine.OfferWithRequestID(rec.Device, v.Paths, v.RequestID)
 	case "peer.connect", "peer.connectTrusted":
 		var v struct {
 			URL         string `json:"url"`

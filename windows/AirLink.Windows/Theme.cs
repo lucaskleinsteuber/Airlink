@@ -35,6 +35,28 @@ internal static class Theme
         button.Setters.Add(new Setter(Control.BackgroundProperty, Surface));
         button.Setters.Add(new Setter(Control.BorderBrushProperty, Line));
         button.Setters.Add(new Setter(Control.CursorProperty, System.Windows.Input.Cursors.Hand));
+        var shell = new FrameworkElementFactory(typeof(Border));
+        shell.Name = "ButtonShell";
+        shell.SetValue(Border.CornerRadiusProperty, new CornerRadius(8));
+        shell.SetBinding(Border.BackgroundProperty, new System.Windows.Data.Binding("Background") { RelativeSource = new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.TemplatedParent) });
+        shell.SetBinding(Border.BorderBrushProperty, new System.Windows.Data.Binding("BorderBrush") { RelativeSource = new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.TemplatedParent) });
+        shell.SetValue(Border.BorderThicknessProperty, new Thickness(1));
+        shell.SetBinding(Border.PaddingProperty, new System.Windows.Data.Binding("Padding") { RelativeSource = new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.TemplatedParent) });
+        var content = new FrameworkElementFactory(typeof(ContentPresenter));
+        content.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+        content.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
+        content.SetValue(ContentPresenter.RecognizesAccessKeyProperty, true);
+        shell.AppendChild(content);
+        var template = new ControlTemplate(typeof(Button)) { VisualTree = shell };
+        var focused = new Trigger { Property = UIElement.IsKeyboardFocusedProperty, Value = true };
+        focused.Setters.Add(new Setter(Border.BorderBrushProperty, Accent, "ButtonShell"));
+        focused.Setters.Add(new Setter(Border.BorderThicknessProperty, new Thickness(2), "ButtonShell"));
+        template.Triggers.Add(focused);
+        button.Setters.Add(new Setter(Control.TemplateProperty, template));
+        var hover = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
+        hover.Setters.Add(new Setter(UIElement.OpacityProperty, .82)); button.Triggers.Add(hover);
+        var disabled = new Trigger { Property = UIElement.IsEnabledProperty, Value = false };
+        disabled.Setters.Add(new Setter(UIElement.OpacityProperty, .45)); button.Triggers.Add(disabled);
         resources[typeof(Button)] = button;
         foreach (var kind in new[] { typeof(TextBox), typeof(ComboBox), typeof(ListBox) })
         {

@@ -160,6 +160,9 @@ func TestUpgradeFromReleased040PreservesOrganizationAndSessions(t *testing.T) {
 func TestUpgradeFromReleased050PreservesTrustAndResults(t *testing.T) {
 	testReleasedUpgrade(t, "AIRLINK_PREVIOUS_HELPER_050", "0.5.0")
 }
+func TestUpgradeFromReleased060PreservesDesktopState(t *testing.T) {
+	testReleasedUpgrade(t, "AIRLINK_PREVIOUS_HELPER_060", "0.6.0")
+}
 func testReleasedUpgrade(t *testing.T, variable, expected string) {
 	previous := os.Getenv(variable)
 	if previous == "" {
@@ -219,18 +222,18 @@ func testReleasedUpgrade(t *testing.T, variable, expected string) {
 		t.Fatal("old helper status/version mismatch", old.Version, expected)
 	}
 	expectedOrganization := model.Organization{Rules: []model.SortRule{}}
-	if expected == "0.4.0" || expected == "0.5.0" {
+	if expected == "0.4.0" || expected == "0.5.0" || expected == "0.6.0" {
 		expectedOrganization = model.Organization{DetectDuplicates: true, SortEnabled: false, Rules: []model.SortRule{{ID: "preserved-editable-rule", Extensions: []string{"pdf", "txt"}, Folder: "Incoming Documents"}}}
 	}
-	if expected == "0.3.0" || expected == "0.4.0" || expected == "0.5.0" {
+	if expected == "0.3.0" || expected == "0.4.0" || expected == "0.5.0" || expected == "0.6.0" {
 		settings := map[string]any{"sendLimitBytesPerSecond": int64(123456), "receiveLimitBytesPerSecond": int64(234567), "shortcut": model.Shortcut{Enabled: false, KeyCode: 40, Modifiers: 256}}
-		if expected == "0.4.0" || expected == "0.5.0" {
+		if expected == "0.4.0" || expected == "0.5.0" || expected == "0.6.0" {
 			settings["organization"] = model.Organization{DetectDuplicates: true, SortEnabled: false, Rules: []model.SortRule{{ID: "preserved-editable-rule", Extensions: []string{".PDF", "txt"}, Folder: "Incoming Documents"}}}
 		}
 		rpc("settings.update", settings, nil)
 		rpc("status", nil, &old)
 	}
-	if (expected == "0.4.0" || expected == "0.5.0") && !reflect.DeepEqual(old.Settings.Organization, expectedOrganization) {
+	if (expected == "0.4.0" || expected == "0.5.0" || expected == "0.6.0") && !reflect.DeepEqual(old.Settings.Organization, expectedOrganization) {
 		t.Fatal("fixture did not retain the enabled detection and normalized editable rule", old.Settings.Organization)
 	}
 	expectedShortcut := old.Settings.Shortcut
@@ -286,7 +289,7 @@ func testReleasedUpgrade(t *testing.T, variable, expected string) {
 		t.Fatal("no browser session")
 	}
 	browserToken := browserCookies[0].Value
-	if expected == "0.5.0" {
+	if expected == "0.5.0" || expected == "0.6.0" {
 		var snapshot model.Status
 		rpc("status", nil, &snapshot)
 		if len(snapshot.Devices) != 1 {
@@ -300,7 +303,7 @@ func testReleasedUpgrade(t *testing.T, variable, expected string) {
 	if err = requestJSON(context.Background(), client, "POST", baseURL+"/api/v1/transfers", browserToken, model.Offer{Files: []model.File{{ID: "old-received", Path: "old.txt", Size: int64(len(payload))}}}, &received); err != nil {
 		t.Fatal(err)
 	}
-	if expected != "0.5.0" {
+	if expected != "0.5.0" && expected != "0.6.0" {
 		rpc("transfer.accept", map[string]string{"id": received.ID}, nil)
 	}
 	chunk, _ := http.NewRequest("PUT", baseURL+"/api/v1/transfers/"+received.ID+"/files/old-received/chunks/0", bytes.NewReader(payload))
@@ -347,7 +350,7 @@ func testReleasedUpgrade(t *testing.T, variable, expected string) {
 	if !ok || device.CanRelay || device.CanClipboard {
 		t.Fatal("migration lost trust or enabled rights")
 	}
-	if device.AutoAccept != (expected == "0.5.0") {
+	if device.AutoAccept != (expected == "0.5.0" || expected == "0.6.0") {
 		t.Fatal("migration changed explicit automatic receipt permission")
 	}
 	historical, err := next.engine.Get(received.ID)

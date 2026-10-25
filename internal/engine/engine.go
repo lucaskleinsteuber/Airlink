@@ -46,10 +46,13 @@ type record struct {
 	ReceiveRoot    string             `json:"receiveRoot,omitempty"`
 	Organization   model.Organization `json:"organization"`
 	LegacyVerified map[string]string  `json:"legacyVerified,omitempty"`
+	OfferRequestID string             `json:"offerRequestId,omitempty"`
+	OfferInputHash string             `json:"offerInputHash,omitempty"`
 }
 
 type Engine struct {
 	mu               sync.Mutex
+	offerMu          sync.Mutex
 	db               *sql.DB
 	records          map[string]*record
 	locks            sync.Map
@@ -1048,6 +1051,9 @@ func syncRootDirectory(root *os.Root, name string) error {
 }
 
 func (e *Engine) Offer(device model.Device, paths []string) (model.Transfer, error) {
+	return e.offer(device, paths, "", "")
+}
+func (e *Engine) offer(device model.Device, paths []string, requestID, inputHash string) (model.Transfer, error) {
 	if !device.CanReceive {
 		return model.Transfer{}, fmt.Errorf("%w: device cannot receive", ErrConflict)
 	}
@@ -1120,7 +1126,7 @@ func (e *Engine) Offer(device model.Device, paths []string) (model.Transfer, err
 		return model.Transfer{}, errors.New("engine closed")
 	}
 	id := identifier()
-	r := &record{Transfer: model.Transfer{ID: id, DeviceID: device.ID, DeviceName: device.Name, Direction: "send", State: "offered", Files: files, TotalBytes: total, CreatedAt: now()}, Sources: sources}
+	r := &record{Transfer: model.Transfer{ID: id, DeviceID: device.ID, DeviceName: device.Name, Direction: "send", State: "offered", Files: files, TotalBytes: total, CreatedAt: now()}, Sources: sources, OfferRequestID: requestID, OfferInputHash: inputHash}
 	e.records[id] = r
 	if err = e.saveLocked(r); err != nil {
 		delete(e.records, id)

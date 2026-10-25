@@ -8,6 +8,7 @@ struct MainView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.openWindow) private var openWindow
     @State private var dropTarget = false
+    @State private var dropDeviceID: String?
     @State private var showLocalConnection = false
     @State private var editingDevice: Device?
     @State private var showShares = false
@@ -19,21 +20,7 @@ struct MainView: View {
         NavigationSplitView {
             List(selection: $model.selectedDeviceID) {
                 Section(model.text("Geräte", "Devices")) {
-                    ForEach(model.status?.devices.filter(\.paired) ?? []) { device in
-                        HStack(spacing: 10) {
-                            Image(systemName: device.kind == "browser" ? "globe" : "desktopcomputer").font(.title3).frame(width: 24)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(device.name).lineLimit(1)
-                                Text(device.online ? model.text("Verbunden", "Connected") : model.text("Nicht erreichbar", "Unavailable")).font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Circle().fill(device.online ? .green : .secondary).frame(width: 6, height: 6)
-                        }
-                        .padding(.vertical, 5).tag(device.id)
-                        .contextMenu {
-                            Button(model.text("Berechtigungen …", "Permissions …")) { editingDevice = device }
-                        }
-                    }
+                    ForEach(pairedDevices) { device in deviceRow(device) }
                     if model.status?.devices.filter(\.paired).isEmpty != false {
                         Text(model.text("Noch keine Geräte", "No devices yet")).foregroundStyle(.secondary)
                     }
@@ -59,6 +46,7 @@ struct MainView: View {
                     title
                     if !model.isReady { HelperAvailabilityView().environmentObject(model) }
                     pairingRequests
+                    failedDirectSends
                     dropArea
                     transfers
                 }.padding(30).frame(maxWidth: 1000, alignment: .leading).frame(maxWidth: .infinity)
@@ -87,6 +75,64 @@ struct MainView: View {
         } message: { Text(model.error ?? "") }
         .onAppear { model.openMainWindow = { openWindow(id: "airlink-main") } }
     }
+    private var pairedDevices: [Device] {
+        (model.status?.devices.filter(\.paired) ?? []).sorted {
+            if $0.online != $1.online { return $0.online }
+            let order = $0.name.localizedStandardCompare($1.name)
+            return order == .orderedSame ? $0.id < $1.id : order == .orderedAscending
+        }
+    }
+    private var directRecipient: Device? {
+        guard let device = model.selectedDevice, device.paired, device.kind == "engine", device.canReceive else { return nil }
+        return device
+    }
+    private var dropHint: String {
+        if let recipient = directRecipient {
+            return recipient.online ? model.text("Ablegen startet diese Sendung direkt. Empfangsbestätigungen richten sich nach den Geräteberechtigungen.", "Dropping starts this send directly. Receive approval follows the device permissions.") : model.text("Das Gerät ist offline. AirLink bereitet die Sendung vor und wartet auf die Verbindung.", "The device is offline. AirLink prepares the send and waits for a connection.")
+        }
+        if model.selectedDevice?.kind == "browser" {
+            return model.text("Abgelegte Dateien werden ausgewählt. Mit Senden anschließend im Browser zum Download bereitstellen.", "Dropped files are selected first. Choose Send to make them available for download in the browser.")
+        }
+        if model.selectedDevice?.canReceive == false {
+            return model.text("Dieses Gerät darf nicht empfangen. Wähle ein anderes Gerät oder ändere seine Berechtigungen.", "This device is not allowed to receive. Choose another device or change its permissions.")
+        }
+        return model.text("Wähle links ein Gerät. Oder lege Dateien direkt auf einem gekoppelten Computer ab.", "Choose a device on the left, or drop files directly onto a paired computer.")
+    }
+    private func deviceRow(_ device: Device) -> some View {
+        let direct = device.kind == "engine" && device.canReceive
+        return HStack(spacing: 10) {
+            Image(systemName: device.kind == "browser" ? "globe" : "desktopcomputer").font(.title3).frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(device.name).lineLimit(1)
+                Text(dropDeviceID == device.id && direct ? model.text("Ablegen → direkt senden", "Drop → send directly") : device.online ? model.text("Verbunden", "Connected") : model.text("Nicht erreichbar", "Unavailable")).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Circle().fill(device.online ? .green : .secondary).frame(width: 6, height: 6)
+        }
+        .padding(.vertical, 5).tag(device.id)
+        .background(dropDeviceID == device.id && direct ? Color.accentColor.opacity(0.13) : .clear, in: RoundedRectangle(cornerRadius: 8))
+        .contextMenu { Button(model.text("Berechtigungen …", "Permissions …")) { editingDevice = device } }
+        .onDrop(of: [UTType.fileURL], isTargeted: Binding(get: { dropDeviceID == device.id }, set: { entered in
+            if entered { dropDeviceID = device.id }
+            else if dropDeviceID == device.id { dropDeviceID = nil }
+        })) { providers in
+            guard direct else { return false }
+            return model.receiveDrop(providers, to: device)
+        }
+    }
+    @ViewBuilder private var failedDirectSends: some View {
+        ForEach(model.failedDirectSends) { failed in
+            VStack(alignment: .leading, spacing: 10) {
+                Label(model.text("Sendung an \(failed.batch.deviceName) nicht bestätigt", "Send to \(failed.batch.deviceName) not confirmed"), systemImage: "exclamationmark.triangle").font(.headline).foregroundStyle(.orange)
+                Text(failed.batch.urls.prefix(3).map(\.lastPathComponent).joined(separator: ", ")).font(.caption).foregroundStyle(.secondary)
+                Text(failed.message).font(.callout).textSelection(.enabled)
+                HStack {
+                    Button(model.text("Erneut versuchen", "Retry")) { model.retryDirectSend(failed) }.buttonStyle(.borderedProminent).disabled(!model.isReady || model.sendingFiles)
+                    Button(model.text("Verwerfen", "Dismiss")) { model.dismissDirectSend(failed.id) }.buttonStyle(.borderless).disabled(model.sendingFiles)
+                }
+            }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(.orange.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+        }
+    }
     private var title: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 6) {
@@ -107,10 +153,12 @@ struct MainView: View {
     private var dropArea: some View {
         VStack(spacing: 14) {
             Image(systemName: "arrow.up.doc").font(.system(size: 38, weight: .light)).foregroundStyle(.tint)
-            Text(model.pendingURLs.isEmpty ? model.text("Dateien und Ordner hier ablegen", "Drop files and folders here") : model.text("\(model.pendingURLs.count) Objekte ausgewählt", "\(model.pendingURLs.count) items selected")).font(.title3.weight(.medium))
-            Text(model.selectedDevice == nil ? model.text("Wähle links ein Gerät als Empfänger.", "Choose a device on the left.") : model.text("An \(model.selectedDevice!.name) senden", "Send to \(model.selectedDevice!.name)")).foregroundStyle(.secondary)
+            Text(model.preparingDirectSend ? model.text("Sendung wird vorbereitet …", "Preparing send …") : directRecipient.map { model.text("Hier ablegen → an \($0.name) senden", "Drop here → send to \($0.name)") } ?? model.text("Dateien und Ordner hier ablegen", "Drop files and folders here")).font(.title3.weight(.medium))
+            Text(dropHint).font(.callout).foregroundStyle(.secondary)
+            if model.preparingDirectSend { ProgressView().controlSize(.small) }
+            if let notice = model.sendNotice { Text(notice).font(.caption).foregroundStyle(.secondary) }
             if !model.pendingURLs.isEmpty {
-                Text(model.pendingURLs.prefix(3).map(\.lastPathComponent).joined(separator: ", ")).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                Text(model.text("Auswahl zum manuellen Senden: ", "Selection for manual send: ") + model.pendingURLs.prefix(3).map(\.lastPathComponent).joined(separator: ", ")).font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
             HStack {
                 Button(model.text("Dateien auswählen …", "Choose files …")) { model.chooseFiles() }
@@ -126,23 +174,25 @@ struct MainView: View {
         .background(dropTarget ? Color.accentColor.opacity(0.09) : Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(dropTarget ? Color.accentColor : Color.secondary.opacity(0.22), style: StrokeStyle(lineWidth: 1, dash: [6, 5])))
         .onDrop(of: [UTType.fileURL], isTargeted: $dropTarget) { providers in
-            for provider in providers {
-                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                    let url = (item as? URL) ?? (item as? Data).flatMap { URL(dataRepresentation: $0, relativeTo: nil) }
-                    if let url { Task { @MainActor in model.add([url]) } }
-                }
-            }
-            return !providers.isEmpty
+            model.receiveDrop(providers, to: directRecipient)
         }
     }
     private var transfers: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(model.text("Übertragungen", "Transfers")).font(.title2.weight(.semibold))
-            let list = model.status?.transfers.sorted { $0.createdAt > $1.createdAt } ?? []
+            let all = model.status?.transfers.sorted { $0.createdAt == $1.createdAt ? $0.id < $1.id : $0.createdAt > $1.createdAt } ?? []
+            let lastActivity = Dictionary(uniqueKeysWithValues: all.map { ($0.id, ShareDate.parse($0.updatedAt) ?? ShareDate.parse($0.createdAt) ?? .distantPast) })
+            let recent = all.filter { !$0.isActive }.sorted {
+                let left = lastActivity[$0.id] ?? .distantPast
+                let right = lastActivity[$1.id] ?? .distantPast
+                return left == right ? $0.id < $1.id : left > right
+            }
+            let list = all.filter(\.isActive) + Array(recent.prefix(5))
             if list.isEmpty {
                 Text(model.text("Hier erscheinen deine Übertragungen.", "Your transfers will appear here.")).foregroundStyle(.secondary).padding(.vertical, 14)
             }
             ForEach(list) { transfer in TransferRow(transfer: transfer).environmentObject(model) }
+            if all.count > list.count { Button(model.text("Gesamten Verlauf öffnen", "Open full history")) { showHistory = true }.buttonStyle(.link) }
         }
     }
 }

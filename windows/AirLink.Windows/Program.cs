@@ -42,17 +42,27 @@ internal static class Program
         menu.Items.Add("Beenden / Quit", null, async (_, _) => await window.QuitAsync());
         tray.ContextMenuStrip = menu;
         tray.DoubleClick += (_, _) => window.ShowMain();
-        string? recentReceive = null;
+        DesktopNotice? recentNotice = null;
         tray.BalloonTipClicked += (_, _) => application.Dispatcher.InvokeAsync(async () =>
         {
-            if (controller.Status?.Transfers.FirstOrDefault(t => t.Id == recentReceive) is { } transfer)
+            if (recentNotice?.Kind == DesktopNoticeKind.CompletedTransfer && controller.Status?.Transfers.FirstOrDefault(t => t.Id == recentNotice.Id) is { } transfer)
                 await controller.RunAsync(() => controller.RevealAsync(transfer));
+            else window.ShowMain();
         });
-        controller.Received += transfer =>
+        controller.NoticeRaised += notice =>
         {
-            if (controller.Status?.Settings.Notifications != true) return;
-            recentReceive = transfer.Id;
-            tray.ShowBalloonTip(5000, controller.T("Datei empfangen", "File received"), transfer.Title + controller.T(" · Zum Anzeigen klicken", " · Click to show"), Forms.ToolTipIcon.Info);
+            recentNotice = notice;
+            var title = notice.Kind switch
+            {
+                DesktopNoticeKind.Pairing => controller.T("Verbindungsanfrage", "Connection request"),
+                DesktopNoticeKind.IncomingTransfer => controller.T("Dateien warten auf Annahme", "Files waiting for acceptance"),
+                DesktopNoticeKind.DuplicateDecision => controller.T("Duplikat benötigt deine Entscheidung", "Duplicate needs your decision"),
+                DesktopNoticeKind.Clipboard => controller.T("Text empfangen", "Text received"),
+                _ => controller.T("Datei empfangen", "File received")
+            };
+            var body = notice.DeviceName + (notice.Title.Length > 0 ? " · " + notice.Title : "") + controller.T(" · Zum Öffnen klicken", " · Click to open");
+            if (body.Length > 240) body = body[..237] + "…";
+            tray.ShowBalloonTip(5000, title, body, Forms.ToolTipIcon.Info);
         };
         application.SessionEnding += (_, _) => { _ = controller.StopAsync(); };
         application.DispatcherUnhandledException += (_, e) => { e.Handled = true; window.ReportError(e.Exception.Message); };

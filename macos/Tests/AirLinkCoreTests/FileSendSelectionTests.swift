@@ -13,7 +13,8 @@ import Testing
     let overlapping = selection.begin(deviceID: "device-second")
     #expect(overlapping == nil)
     let wire = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(submitted)) as? [String: Any])
-    #expect(Set(wire.keys) == ["deviceId", "paths"])
+    #expect(Set(wire.keys) == ["requestId", "deviceId", "paths"])
+    #expect((wire["requestId"] as? String)?.count == 32)
     #expect(wire["deviceId"] as? String == "device-first")
     #expect(wire["paths"] as? [String] == [first.path])
     selection.acknowledge(submitted)
@@ -23,6 +24,39 @@ import Testing
     let next = try #require(nextAttempt)
     #expect(next.deviceId == "device-second")
     #expect(next.paths == [added.path])
+}
+
+@Test func unchangedFailedManualSendRetainsRequestIdentityButNewIntentDoesNot() throws {
+    func requestID(_ submission: FileSendSubmission) throws -> String {
+        let wire = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(submission)) as? [String: Any])
+        return try #require(wire["requestId"] as? String)
+    }
+    let file = URL(fileURLWithPath: "/tmp/retry.bin")
+    var selection = FileSendSelection()
+    selection.append([file])
+    let firstAttempt = selection.begin(deviceID: "recipient")
+    let first = try #require(firstAttempt)
+    selection.fail(first)
+    let retryAttempt = selection.begin(deviceID: "recipient")
+    let retry = try #require(retryAttempt)
+    #expect(try requestID(first) == requestID(retry))
+    selection.acknowledge(first)
+    selection.fail(first)
+    #expect(selection.isSending && selection.urls == [file])
+    selection.fail(retry)
+    let differentAttempt = selection.begin(deviceID: "other")
+    let differentRecipient = try #require(differentAttempt)
+    #expect(try requestID(first) != requestID(differentRecipient))
+    selection.fail(differentRecipient)
+    selection.replace([]); selection.append([file])
+    let reselectedAttempt = selection.begin(deviceID: "other")
+    let reselected = try #require(reselectedAttempt)
+    #expect(try requestID(reselected) != requestID(differentRecipient))
+    selection.acknowledge(reselected)
+    selection.append([file])
+    let laterAttempt = selection.begin(deviceID: "other")
+    let later = try #require(laterAttempt)
+    #expect(try requestID(later) != requestID(reselected))
 }
 
 @Test func failedSendPreservesSelectionAndPermitsExplicitRetry() throws {

@@ -25,6 +25,12 @@ public sealed record ConnectionDraft(string Address, string Fingerprint, bool Au
 
 public static class NativeExperience
 {
+    public static IReadOnlyList<Transfer> RecentTransfers(IEnumerable<Transfer> transfers, int limit = 20) => transfers
+        .Where(t => !t.IsActive)
+        .OrderByDescending(t => DateTimeOffset.TryParse(string.IsNullOrEmpty(t.UpdatedAt) ? t.CreatedAt : t.UpdatedAt, out var time) ? time : DateTimeOffset.MinValue)
+        .ThenBy(t => t.Id, StringComparer.Ordinal)
+        .Take(Math.Clamp(limit, 0, 100)).ToArray();
+
     public static bool CanAcceptAndTrust(Transfer transfer, Device? device) =>
         transfer.Direction == "receive" && transfer.State == "offered" && device is { Paired: true, CanSend: true } && device.Id == transfer.DeviceId;
 

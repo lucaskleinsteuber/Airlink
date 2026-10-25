@@ -37,8 +37,12 @@ public actor DaemonClient {
     private var pending: [String: CheckedContinuation<Data, Error>] = [:]
     private let writer = DispatchQueue(label: "com.lucasfd3.airlink.helper-input", qos: .userInitiated)
     private let shutdownPolicy: HelperShutdownPolicy
+    private let ordinaryRequestTimeout: TimeInterval
 
-    public init(shutdownPolicy: HelperShutdownPolicy = HelperShutdownPolicy()) { self.shutdownPolicy = shutdownPolicy }
+    public init(shutdownPolicy: HelperShutdownPolicy = HelperShutdownPolicy(), ordinaryRequestTimeout: TimeInterval = 20) {
+        self.shutdownPolicy = shutdownPolicy
+        self.ordinaryRequestTimeout = ordinaryRequestTimeout.isFinite && ordinaryRequestTimeout > 0 ? ordinaryRequestTimeout : 20
+    }
 
     public func start(executable: URL, dataDirectory: URL, receiveDirectory: URL? = nil, disableDiscovery: Bool = false) throws {
         guard !stopping else { throw NativeError.unavailable("AirLink helper is stopping.") }
@@ -97,9 +101,10 @@ public actor DaemonClient {
                 do { try input.write(contentsOf: payload) }
                 catch { Task { await self?.writeFailed(id, session: session) } }
             }
-            if method != "duplicate.resolve" {
+            if !["duplicate.resolve", "offer", "share.create"].contains(method) {
+                let timeout = ordinaryRequestTimeout
                 Task { [weak self] in
-                    try? await Task.sleep(for: .seconds(20))
+                    try? await Task.sleep(for: .seconds(timeout))
                     await self?.timeout(id, session: session)
                 }
             }

@@ -269,11 +269,7 @@ func (s *Server) Status() model.Status {
 		known[d.ID] = true
 	}
 	s.mu.Lock()
-	for id, d := range s.discovered {
-		if !known[id] {
-			ds = append(ds, d)
-		}
-	}
+	ds = append(ds, s.discoveredDevicesLocked(known, time.Now())...)
 	requests := []model.PairRequest{}
 	for _, r := range s.pending {
 		if r.State == "pending" && time.Now().Before(r.Expires) {

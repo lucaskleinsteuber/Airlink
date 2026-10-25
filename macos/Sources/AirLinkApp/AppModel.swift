@@ -2,19 +2,31 @@ import AppKit
 import AirLinkCore
 import Combine
 import ServiceManagement
+import UniformTypeIdentifiers
 import UserNotifications
 
 enum HelperLifecycle { case stopped, starting, ready, failed, stopping }
 
+struct FailedDirectSend: Identifiable {
+    let batch: DirectSendBatch
+    let message: String
+    var id: UUID { batch.id }
+}
+
 @MainActor final class AppModel: ObservableObject {
     static let shared = AppModel()
     @Published var status: HostStatus?
-    @Published var selectedDeviceID: String?
+    @Published var selectedDeviceID: String? {
+        didSet { if !selectingDefaultRecipient && oldValue != selectedDeviceID { explicitRecipientSelection = true } }
+    }
     @Published var error: String?
     @Published var engineError: String?
     @Published private(set) var lifecycle = HelperLifecycle.stopped
     @Published private(set) var recoveredReceiveFolder: URL?
     @Published private var sendSelection = FileSendSelection()
+    @Published private(set) var preparingDirectSend = false
+    @Published private(set) var failedDirectSends: [FailedDirectSend] = []
+    @Published private(set) var sendNotice: String?
     @Published var showConnection = false
     @Published var connectionDraft = PeerConnectionDraft()
     @Published private(set) var pendingConnection: PeerConnectionAttempt?
@@ -29,6 +41,8 @@ enum HelperLifecycle { case stopped, starting, ready, failed, stopping }
     private var refreshID: UUID?
     private var notified = Set<String>()
     private var lastShortcutAttempt: Shortcut?
+    private var selectingDefaultRecipient = false
+    private var explicitRecipientSelection = false
 
     var english: Bool { LanguagePreference.usesEnglish(status?.settings.language ?? "system") }
     func text(_ de: String, _ en: String) -> String { english ? en : de }
@@ -43,7 +57,7 @@ enum HelperLifecycle { case stopped, starting, ready, failed, stopping }
         get { sendSelection.urls }
         set { sendSelection.replace(newValue) }
     }
-    var sendingFiles: Bool { sendSelection.isSending }
+    var sendingFiles: Bool { sendSelection.isSending || preparingDirectSend }
     var isReady: Bool { lifecycle == .ready && engineError == nil && status != nil }
     var canRetry: Bool { lifecycle == .failed }
 
@@ -111,6 +125,11 @@ enum HelperLifecycle { case stopped, starting, ready, failed, stopping }
                 if selectedDeviceID == nil || selectedDevice?.fingerprint == connected.fingerprint { selectedDeviceID = connected.id }
                 pendingConnection = nil
             }
+            if let recipient = RecipientSelection.defaultDeviceID(devices: next.devices, selectedID: selectedDeviceID, hasExplicitSelection: explicitRecipientSelection, hasDraft: !pendingURLs.isEmpty, isPreparing: sendingFiles) {
+                selectingDefaultRecipient = true
+                selectedDeviceID = recipient
+                selectingDefaultRecipient = false
+            }
             if lastShortcutAttempt != next.settings.shortcut, let controller = shortcutController {
                 lastShortcutAttempt = next.settings.shortcut
                 do { try controller.apply(next.settings.shortcut); registeredShortcut = controller.actual; if next.settings.shortcut.enabled { shortcutError = nil } }
@@ -125,13 +144,16 @@ enum HelperLifecycle { case stopped, starting, ready, failed, stopping }
                 }
             }
             if next.settings.notifications, let previous {
-                for transfer in next.transfers where transfer.state == "completed" && previous.transfers.contains(where: { $0.id == transfer.id && $0.state != "completed" }) {
+                for transfer in next.transfers where transfer.state == "completed" && !previous.transfers.contains(where: { $0.id == transfer.id && $0.state == "completed" }) {
                     let files = transfer.files.filter { $0.directory != true }
                     let allSkipped = !files.isEmpty && files.allSatisfy(\.isSkipped)
                     notify(id: transfer.id, title: allSkipped ? text("Ohne neue Dateikopie abgeschlossen", "Finished without a new file copy") : text("Übertragung abgeschlossen", "Transfer completed"), body: transfer.title)
                 }
                 for pair in next.pairRequests where !previous.pairRequests.contains(where: { $0.id == pair.id }) {
                     notify(id: pair.id, title: text("Verbindungsanfrage", "Pairing request"), body: pair.name)
+                }
+                for transfer in next.transfers where transfer.direction == "receive" && transfer.state == "offered" && !previous.transfers.contains(where: { $0.id == transfer.id && $0.state == "offered" }) {
+                    notify(id: "offer-\(transfer.id)", title: text("Dateien warten auf Annahme", "Files waiting for acceptance"), body: transfer.deviceName + " · " + transfer.title)
                 }
                 for transfer in next.transfers where transfer.direction == "receive" {
                     for file in transfer.pendingDuplicateFiles {
@@ -275,8 +297,9 @@ enum HelperLifecycle { case stopped, starting, ready, failed, stopping }
         showMainWindow()
     }
     func send() {
-        guard isReady, let device = selectedDevice, device.canReceive,
+        guard isReady, !preparingDirectSend, let device = selectedDevice, device.canReceive,
               let submission = sendSelection.begin(deviceID: device.id) else { return }
+        sendNotice = nil
         Task {
             do {
                 try requireReady()
@@ -288,6 +311,96 @@ enum HelperLifecycle { case stopped, starting, ready, failed, stopping }
                 self.error = error.localizedDescription
                 await refresh()
             }
+        }
+    }
+    /// The recipient is captured by the drop target before item providers load.
+    /// A direct batch never reads or clears the separately staged picker selection.
+    func receiveDrop(_ providers: [NSItemProvider], to recipient: Device?) -> Bool {
+        let files = providers.filter { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }
+        guard !files.isEmpty else { return false }
+        if let recipient {
+            guard recipient.paired, recipient.kind == "engine", recipient.canReceive else {
+                error = text("Dieses Gerät darf gerade keine Dateien empfangen. Prüfe seine Berechtigungen.", "This device cannot receive files right now. Check its permissions.")
+                return false
+            }
+            guard isReady, !sendingFiles else {
+                error = text("AirLink bereitet noch eine Sendung vor oder ist nicht bereit. Warte kurz und lege die Dateien erneut ab.", "AirLink is still preparing a send or is unavailable. Wait a moment and drop the files again.")
+                return false
+            }
+            preparingDirectSend = true
+            sendNotice = nil
+            Task {
+                defer { preparingDirectSend = false }
+                do {
+                    let urls = try await loadDroppedFiles(files)
+                    let batch = try DirectSendBatch(device: recipient, urls: urls)
+                    await submitDirectSend(batch)
+                } catch { self.error = dropFailureMessage(error) }
+            }
+        } else {
+            Task {
+                do { let urls = try await loadDroppedFiles(files); sendSelection.append(urls) }
+                catch { self.error = dropFailureMessage(error) }
+            }
+        }
+        return true
+    }
+    func retryDirectSend(_ failed: FailedDirectSend) {
+        guard isReady, !sendingFiles else {
+            error = text("AirLink bereitet noch eine Sendung vor oder ist nicht bereit. Versuche es danach erneut.", "AirLink is still preparing a send or is unavailable. Retry afterward.")
+            return
+        }
+        preparingDirectSend = true
+        sendNotice = nil
+        Task {
+            defer { preparingDirectSend = false }
+            await submitDirectSend(failed.batch)
+        }
+    }
+    func dismissDirectSend(_ id: UUID) { failedDirectSends.removeAll { $0.id == id } }
+    private func submitDirectSend(_ batch: DirectSendBatch) async {
+        do {
+            try requireReady()
+            guard let current = status?.devices.first(where: { $0.id == batch.deviceID }), current.paired, current.kind == "engine", current.canReceive, current.fingerprint == batch.fingerprint else {
+                throw NativeError.unavailable(text("Der gewählte Empfänger ist nicht mehr gekoppelt oder darf nicht empfangen. Verbinde das Gerät erneut und starte die Sendung bewusst neu.", "The chosen recipient is no longer paired or allowed to receive. Reconnect it and explicitly start a new send."))
+            }
+            _ = try await client.request("offer", params: JSONEncoder().encode(batch))
+            failedDirectSends.removeAll { $0.id == batch.id }
+            sendNotice = text("Für \(batch.deviceName) vorgemerkt · Fortschritt unter Übertragungen", "Queued for \(batch.deviceName) · follow progress below")
+            await refresh()
+        } catch {
+            let failed = FailedDirectSend(batch: batch, message: error.localizedDescription)
+            if let index = failedDirectSends.firstIndex(where: { $0.id == batch.id }) { failedDirectSends[index] = failed }
+            else { failedDirectSends.append(failed) }
+            await refresh()
+        }
+    }
+    private func loadDroppedFiles(_ providers: [NSItemProvider]) async throws -> [URL] {
+        let failure = text("Die abgelegten Dateien konnten nicht vollständig gelesen werden. Lege sie erneut ab oder verwende die Dateiauswahl.", "The dropped files could not all be read. Drop them again or use the file picker.")
+        return try await withThrowingTaskGroup(of: (Int, URL).self) { group in
+            for (index, provider) in providers.enumerated() {
+                group.addTask {
+                    let url: URL = try await withCheckedThrowingContinuation { continuation in
+                        provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, error in
+                            let url = (item as? URL) ?? (item as? Data).flatMap { URL(dataRepresentation: $0, relativeTo: nil) }
+                            if error == nil, let url, url.isFileURL { continuation.resume(returning: url) }
+                            else { continuation.resume(throwing: NativeError.unavailable(failure)) }
+                        }
+                    }
+                    return (index, url)
+                }
+            }
+            var loaded: [(Int, URL)] = []
+            for try await item in group { loaded.append(item) }
+            return loaded.sorted { $0.0 < $1.0 }.map(\.1)
+        }
+    }
+    private func dropFailureMessage(_ failure: Error) -> String {
+        guard let validation = failure as? DirectSendValidationError else { return failure.localizedDescription }
+        switch validation {
+        case .invalidRecipient: return text("Wähle ein gekoppeltes Desktopgerät mit Empfangsberechtigung.", "Choose a paired desktop device with receive permission.")
+        case .emptyFiles: return text("Keine Dateien zum Senden ausgewählt.", "No files selected to send.")
+        case .nonLocalFile: return text("Nur lokale Dateien und Ordner können direkt gesendet werden.", "Only local files and folders can be sent directly.")
         }
     }
     func chooseFiles() {

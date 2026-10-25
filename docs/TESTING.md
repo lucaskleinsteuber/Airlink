@@ -39,7 +39,26 @@ Choose the matching architecture on an Intel Mac. The integration case starts on
 
 Set `AIRLINK_GO=/absolute/path/to/go` for the shell scripts if needed. For a direct Go command, invoke that Go binary explicitly.
 
-## 0.6 evidence — 2026-10-25
+## 0.7 evidence — 2026-10-25
+
+| Area | Completed observation | Scope and limits |
+| --- | --- | --- |
+| Go | **131 top-level race suites / 219 cases passed**; `go vet ./...` passed | Includes unchanged tagged 0.3, 0.4, 0.5 and 0.6 helper upgrades. Historical 0.1/0.2 and large-file stress remain gated. |
+| Idempotent local offers | Lost-reply/restart, 24 concurrent retries, recipient/path conflicts, invalid keys, failed SQLite commit and legacy no-key behavior passed | A request ID and input fingerprint commit with the initial transfer document; replay does not recreate or revive work. Keys last with retained transfer history. New explicit intents remain distinct. |
+| Discovery | Five new background suites passed | Bounded browse windows compensate for the dependency's lifetime delivery deduplication; renewed hints stay fresh, stale hints expire after 45 seconds, and expiry cannot erase paired trust. Fake browse/clock evidence does not prove actual multicast/firewall behavior. |
+| Windows Core | **27/27 tests passed**, no skips, with the actual 0.7 helper | Direct-batch isolation, selected entry identities, unique-recipient defaults, offline explicit queueing, repeated/stale attempts, stable offer keys, attention notifications and completion ordering. The real private RPC case replays one offer before and after restart and verifies identical transfer/file IDs, in addition to TLS receive/trust/result checks. Core runs on macOS; WPF/Explorer/tray interaction is not executed. |
+| macOS Core | **56 declared Swift tests / 60 executed cases passed**, no skips, with both actual 0.7 helper cases enabled | New direct batches pin recipient/files separately from editable selections, unchanged retries retain a wire key with a fresh local attempt identity, and the two-helper TLS case replays the actual direct-send offer without creating a second transfer. Ordinary command deadlines still fire; offer/share creation/duplicate validation can finish beyond that deadline while status stays responsive. No GUI was run. |
+| Web | **68 tests across seven files passed** and production build passed | Existing browser/share/clipboard/relay/organization capabilities retained. No browser automation. |
+| Native Windows build | Self-contained x64 and ARM64 GUI executables published and PE/resource structure checked | New native Quick Share and clipboard forms compile with the direct-send window. This establishes compilation and packaging structure, not runtime rendering, system clipboard integration or tray behavior. |
+| Final app/packages | Universal macOS app/helper and both Windows native builds compile; final helper smoke checks passed | Verified embedded offline assets and TLS/private boundaries; both Windows PE machines use GUI subsystem 2 with icon/version/manifest resources. No Windows executable was run. |
+| Distribution integrity | Five versioned archives/DMG plus SHA256SUMS created and verified | Exact ZIP/TAR entry sets and executable payload equality passed; universal architectures, bundle version/build 0.7.0/7, deep/strict ad hoc signature, staged app equality and DMG checksum passed. |
+| Local Mac update | Final 0.7.0 bundle installed and registered as the sole `/Applications/AirLink.app`; signature verified | The old app was not running, and app-data file sizes/timestamps were unchanged. No old bundle was stored in Applications, and no GUI was launched. This is installation, not interactive acceptance. |
+| Large-file evidence | No new 100 GiB run performed for 0.7 | The 0.5 single-file run below remains historical. New offer metadata and native/discovery work do not establish a new physical or current-package stress result. |
+| Physical acceptance | No new native 0.7 Windows or cross-device interaction performed | User-reported 0.5 Mac → Windows success remains limited evidence; native 0.7 UX, real discovery, interruption, mobile and platform filesystem checks are still open in DEVICE-CHECK / RELEASE-READINESS. |
+
+Final local logs are ignored under `build/go-tests-0.7.jsonl`, `build/go-vet-0.7.log`, `build/dotnet-tests-0.7.log`, `build/web-tests-0.7.log`, `build/web-build-0.7.log`, `build/windows-publish-0.7.log`, `build/swift-tests-0.7.log`, `build/macos-final-build-0.7.log` and `build/smoke-*-0.7.log`. Hosted CI is recorded after its run is inspected; successful local checks do not imply hosted success.
+
+## Historical 0.6 evidence — 2026-10-25
 
 | Area | Completed observation | Scope and limits |
 | --- | --- | --- |

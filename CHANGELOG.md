@@ -2,6 +2,20 @@
 
 AirLink uses MAJOR.MINOR.PATCH versions. Entries describe implemented changes; distribution and verification status are recorded separately.
 
+## 0.7.0 — 2026-10-25
+
+- Added direct desktop sending: dropping a batch on a paired computer sends to that computer; the named central drop area sends to the selected desktop, and the Windows file/folder picker starts its selected batch directly. The macOS picker retains a prepared selection and Send action. Without a suitable recipient, files remain staged for an explicit Send. Offline paired computers retain their queued offers.
+- Added tested Windows send-draft state with immutable recipient/source snapshots, protection against repeated submissions and stale acknowledgments, direct-batch isolation, preserved in-flight additions/reselections and explicit failure retry. A sole online authorized desktop can be selected for an empty idle draft; refresh never replaces a shown recipient or redirects pending files.
+- Made private offer creation idempotent with a persisted 32-character request key. An identical retry returns the original transfer and file IDs, including after service restart; conflicting input is rejected. Native draft retries reuse the key only for the same recipient and entry identities, while keeping separate local attempt guards against late callbacks.
+- Added native Windows Quick Share creation, expiry/password/download-limit controls, full-link copying, share list and revocation, using the existing local share contract. Added explicit clipboard Paste/Edit/Send/Copy/Dismiss with the existing permission and UTF-8 limits; receiving text does not write the system clipboard.
+- Added Windows tray attention for pairing, incoming acceptance, duplicate decisions, clipboard messages and completions that happen between status polls. Historical completions do not replay at startup. Action errors persist across ordinary status refreshes, and the main view separates active work from recent results.
+- Added Windows window shortcuts for choosing files and sending a prepared selection. Direct send keeps the selected recipient visible; receipt consent and certificate comparison remain explicit.
+- Refreshed mDNS browsing in 15-second windows so the discovery library's lifetime deduplication cache cannot permanently age out a live peer. Nearby hints expire after 45 seconds; saved pairings persist independently. Discovery remains a connection hint, not an authorization or physical-network reliability proof.
+
+- Kept macOS offer preparation, share creation and duplicate validation outside the ordinary command deadline; status remains responsive and ordinary timed-out commands leave a live helper usable.
+
+This is a private usability preview. Completed final-source tests and artifact checks belong in [TESTING.md](docs/TESTING.md). The new Windows interaction, actual multicast/LAN behavior, notification clicks, dialogs and clipboard integration still require manual device acceptance. Native Windows relay administration, detailed statistics and sorting-rule editing remain further interface work. Historical 0.5 large-file evidence is not a new 0.7 result.
+
 ## 0.6.0 — 2026-10-25
 
 - Added a native Windows WPF interface with an embedded Go helper and self-contained .NET runtime for x64 and ARM64. The normal transfer flow uses its own window and tray icon, with discovery, pairing, drag-and-drop, native file/folder selection, progress, pause/resume/cancel, duplicate decisions, receive-folder access, and basic settings. No terminal or browser is required for that workflow.
