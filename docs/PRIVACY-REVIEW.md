@@ -1,6 +1,6 @@
 # Publication privacy review
 
-AirLink remains private. This review separates sanitized source/build inputs from the pending cleanup of historical GitHub objects and downloads. It does not declare the repository ready to make public.
+AirLink remains private. Source, reachable history and replacement downloads are sanitized, but direct probes still retrieve old GitHub commit objects with their earlier author metadata. This review does not declare the existing repository ready to make public.
 
 The first-party public maintainer identity is **lucasfd3**. Repository-local Git configuration uses the ID-based GitHub Noreply address for new author/committer metadata. The license, app metadata, setup examples and test fixtures use the public identity or neutral examples. Third-party license authors and copyright notices remain intact.
 
@@ -16,13 +16,16 @@ The first-party public maintainer identity is **lucasfd3**. Repository-local Git
 | Surface | State |
 | --- | --- |
 | Current source/docs | First-party identity and examples sanitized; private owner observations removed. |
-| New builds | Privacy fixes remove checkout/debug paths and local archive ownership. Final package checks are recorded in TESTING. |
-| Historical Git authors/taggers and old file revisions | An isolated rewrite is prepared and must be independently verified before replacing remote references. |
-| Old release downloads | Historical 0.1.0–0.8.0 packages contain old identity or build metadata. They must be withdrawn before publication; changing the current LICENSE does not repair them. |
-| Hosted run metadata | Historical runs reference old commits and require cleanup separately from file changes. |
+| New builds | Five 0.8.1 packages passed the final privacy check and were published privately; all six uploaded files including checksums match local sizes/SHA-256 values. |
+| Historical Git authors/taggers and old file revisions | Owner-approved rewrite applied to main and the eight original version tags; 0.8.1 added. Independent fresh GitHub clone: 19 commits, nine tags, 502 historical blobs, zero findings. |
+| Old release downloads | All 40 historical 0.1.0–0.8.0 packages and eight accompanying checksum files withdrawn. Historical notes were sanitized and link readers to the replacement version. |
+| Hosted run metadata | Eight approved old runs deleted; no hosted runs remain at the completed check. Local tests remain the verification evidence. |
+| Retained old provider objects | Two directly probed old commit IDs still return their earlier author metadata. This remains an unresolved publication blocker. An unsent support draft is prepared locally; no support request has been submitted. |
 | Repository visibility | Private; changing visibility is a separate owner decision. |
 
 The history rewrite preserves commit topology, dates and version tag names while changing the affected object IDs. Only the intended branch and version tags enter the isolated rewrite; editor checkpoint refs and unreachable local snapshots do not become publication refs. Existing external clones must not merge the old history back into the cleaned branch.
+
+The fresh-clone identity guard checked 221 current tracked files, 19 commits and nine annotated tags. An independent exact-value scan of all 700 reachable objects (19 commits, nine tags, 170 trees and 502 blobs) also returned zero matches for the original owner identity/home-account values. That result concerns the branch/tag graph available to the clone, not retained provider objects outside that graph.
 
 GitHub documents that old objects can remain accessible through cached commit URLs, other clones or forks even after rewriting branch/tag history. A fresh-clone check and remote metadata check are necessary; a successful force push alone is not a server-side erasure guarantee. See [GitHub's sensitive-data removal guidance](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository).
 
