@@ -8,7 +8,7 @@ AirLink transfers files and folders between computers and browsers on the same l
 
 **Current version: 0.8.1. Repository status: private development preview.** Source and release downloads are available only to people with access to this repository. The source is MIT licensed; repository visibility remains private. Version 0.8 adds guided device naming and receive-folder setup, a clearer desktop interface, direct receive destinations and a Windows EXE download. Windows runtime and physical-network acceptance remain open. Automated verification, private packaging, physical acceptance, and historical results remain separate delivery states recorded in [TESTING.md](docs/TESTING.md). The [release readiness gates](docs/RELEASE-READINESS.md) define the evidence still needed before 1.0; no release date is assigned.
 
-The 0.8.1 patch prepares source and distribution metadata for a publication privacy review. Historical GitHub cleanup and visibility remain separate steps; see [PRIVACY-REVIEW.md](docs/PRIVACY-REVIEW.md).
+The active repository is a newly created **private** repository containing the sanitized branch/tag history. Independent object/history and known old-object route checks passed for the new repository, and all six published 0.8.1 files match the reviewed local checksums. The earlier repository remains a separate private archive. Any later visibility decision belongs to the owner; the completed checks and their limits are recorded in [PRIVACY-REVIEW.md](docs/PRIVACY-REVIEW.md).
 
 ## The local transfer foundation
 

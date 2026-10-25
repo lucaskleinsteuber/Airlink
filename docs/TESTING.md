@@ -39,6 +39,22 @@ Choose the matching architecture on an Intel Mac. The integration case starts on
 
 Set `AIRLINK_GO=/absolute/path/to/go` for the shell scripts if needed. For a direct Go command, invoke that Go binary explicitly.
 
+## Independent repository migration — 2026-10-25
+
+The owner authorized retaining the earlier repository as a private, archived repository and creating a new independent private `lucasfd3/Airlink` under the active address. This migration changes repository storage/identity, not app behavior or version.
+
+| Area | Completed observation | Scope and limits |
+| --- | --- | --- |
+| Repository boundary | Active repository ID 1433237767 is private, active and not a fork; earlier ID 1431646266 is private and archived as `Airlink-private-archive` | No public visibility change was made. |
+| Sanitized import | Only main and nine version tags imported through a separate fast-export/import object database; all ref IDs preserved | Original local unreachable objects and editor refs were excluded. |
+| Independent fresh clone | Import revision `92cd7027606e54e8ff99c63172b43d724d3c651e`: 20 commits, nine annotated tags, 504 blobs, 172 trees; all 705 received objects checked, zero unreachable received objects | Source/history guard and independent exact original identity/home-account byte checks report zero findings. All author/committer/tagger identities use the public handle and Noreply address. |
+| Old-object route probes | All 17 original commit IDs explicitly absent through both authenticated commit APIs: 17 no-commit responses (422), 17 object-not-found responses (404), no redirects | Current clean HEAD returns the expected SHA with status 200 through both APIs. Anonymous HTML 404 checks are private-visibility controls only. |
+| Earlier tag and copyright objects | Eight original annotated-tag objects and ten original copyright blobs return authenticated object-not-found responses (404) | Across commits/tags/blobs there are 52 negative route probes with no redirects. Positive current HEAD/tag/license controls return status 200 with the exact expected SHA. |
+| Inherited metadata | Exactly one intended branch and nine tags; zero PRs, forks or Actions runs at the check | No historical release downloads or hosted runs imported. The earlier repository's retained-object observations below concern its separate private storage. |
+| Release copy | Private 0.8.1 published in the new active repository; all six remote file sizes/SHA-256 values exactly match the reviewed local inputs | The new repository has only this replacement release. No rebuild or new platform/runtime acceptance is implied. |
+
+The checks cover publication inputs and the probed repository routes, not provider-wide erasure or copies held elsewhere. The active repository remains private; its visibility is a separate owner decision.
+
 ## 0.8.1 privacy patch evidence — 2026-10-25
 
 | Area | Completed observation | Scope and limits |
@@ -49,8 +65,8 @@ Set `AIRLINK_GO=/absolute/path/to/go` for the shell scripts if needed. For a dir
 | New package privacy | Five final 0.8.1 packages inspected with zero findings: 929 payloads, 913 compressed bundle entries and 2,004 managed resources | Both Windows EXEs, both Linux TARs and read-only universal DMG. No packaged program was executed by the privacy audit. Personal home-path/first-party copyright and archive-owner rules supplement the historical secret scan. |
 | Native builds and smoke | Both Windows architectures and universal macOS app/helper built; managed/native package inspection and both final helper smoke checks passed | New first-party MIT license and publisher metadata use the public handle. Windows is unsigned; macOS remains ad hoc signed without a human Developer ID authority. |
 | Historical audit | Original 17 commits/eight annotated tags and eight release generations reviewed | Found old author/tagger identity, old first-party copyright, native debug paths and archive ownership. Two Gitleaks results were independently classified as synthetic/prose false positives. No actual credential was identified in the reviewed content/patterns. |
-| Remote cleanup | Approved rewrite applied; 48 old release files and eight hosted runs removed; private 0.8.1 published and all six remote asset digests/sizes verified | Independent fresh GitHub clone: 19 commits, nine tags, 502 historical blobs, zero guard findings; exact-value scan of all 700 reachable objects also clean. |
-| Retained provider objects | Two directly probed old commit IDs still return their previous author metadata | Existing repository is not cleared for a public visibility change. Other clones and provider object/cache retention are outside a branch/tag rewrite; the repository remains private. |
+| Earlier-repository cleanup | Approved rewrite applied; 48 old release files and eight hosted runs removed; private 0.8.1 published and all six remote asset digests/sizes verified | Historical observation before the repository migration: fresh clone had 19 commits, nine tags, 502 historical blobs, zero guard findings; exact-value scan of all 700 reachable objects also clean. |
+| Earlier retained provider objects | Two directly probed old commit IDs still returned their previous author metadata in the earlier repository | That earlier repository is now the separate private archive. Current active-repository route checks are recorded in the migration evidence above. No provider-wide erasure is claimed. |
 
 Ignored evidence is in `build/go-tests-0.8.1.jsonl`, `go-vet-0.8.1.log`, `dotnet-tests-0.8.1.log`, `swift-tests-0.8.1.log`, `web-tests-0.8.1.log`, `platform-build-0.8.1.log`, `smoke-*-0.8.1.log`, `package-privacy-0.8.1.log`, `package-0.8.1.log` and `dmg-verify-0.8.1.log`. Raw/private audit inputs are not publication artifacts. The installation and application data were not changed. No new throughput or 100 GiB claim is made for this metadata/privacy patch.
 
