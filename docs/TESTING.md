@@ -52,10 +52,12 @@ Set `AIRLINK_GO=/absolute/path/to/go` for the shell scripts if needed. For a dir
 | Web | All **68 Node tests** across seven files and production build passed | Existing browser functionality retained; no browser UI automation. |
 | Final helper smoke | Portable Apple Silicon helper and universal bundled helper passed `scripts/smoke-binary.py` | Embedded offline resources, verified TLS 1.3, private control boundaries, shares/ranges/quotas, clipboard, relay and organization. No physical LAN or browser UI claim. |
 | Distribution | Universal macOS DMG, two native Windows ZIPs and two Linux archives created; all five SHA-256 values, exact ZIP/TAR entries, native PE resources, universal architectures, bundle signature/metadata and DMG integrity checked | Private ad hoc macOS and unsigned Windows previews. Package integrity is distinct from installed interaction or physical runtime. |
+| Local Mac update | Installed and registered the final signed bundle as the sole `/Applications/AirLink.app` 0.6.0; signature verified and existing app-data file sizes/timestamps unchanged | The previous app was not running. No old app backup was left in Applications and no native GUI was launched. Installation is not interactive acceptance. |
+| Hosted CI | Hosted jobs did not execute | Local background evidence is recorded separately. |
 | Large-file evidence | The separate 0.5 single-file 100 GiB run below remains historical | It was not repeated for 0.6 and is not a physical-device or current-package 100 GiB claim. |
 | Physical devices | User reports the first Mac → Windows transfer in 0.5 worked and felt fast, with poor setup/receipt UX | File size, end-to-end hashes, interruption behavior and exact Windows runtime are not recorded. The new 0.6 Windows app has not completed physical acceptance. |
 
-Local evidence is ignored under `build/go-tests-0.6.jsonl`, `build/go-vet-0.6.log`, `build/dotnet-tests-0.6.log`, `build/web-tests-0.6.log`, `build/swift-tests-0.6.log`, `build/platform-build-0.6.log`, `build/macos-final-build-0.6.log`, `build/windows-publish-0.6.log` and the two `build/smoke-*-0.6.log` files. Package integrity and hosted CI observations are recorded after their completed checks.
+Local evidence is ignored under `build/go-tests-0.6.jsonl`, `build/go-vet-0.6.log`, `build/dotnet-tests-0.6.log`, `build/web-tests-0.6.log`, `build/swift-tests-0.6.log`, `build/platform-build-0.6.log`, `build/macos-final-build-0.6.log`, `build/windows-publish-0.6.log` and the two `build/smoke-*-0.6.log` files. Package integrity and hosted CI observations above are from completed inspections; the hosted run is blocked rather than passing.
 
 ## Historical 0.5 evidence — 2026-10-24
 
