@@ -1,8 +1,8 @@
 # Release readiness
 
-AirLink 0.8.0 is a private development preview. This document defines the acceptance gates for a maintainable 1.0 release; it does not declare those gates complete or assign a release date. Source implementation, completed background tests, package creation, physical device acceptance, and distribution are separate states.
+AirLink 0.8.1 is a private development preview. This document defines the acceptance gates for a maintainable 1.0 release; it does not declare those gates complete or assign a release date. Source implementation, completed background tests, package creation, physical device acceptance, and distribution are separate states.
 
-Historical hosted CI jobs did not execute; local test and build results are recorded separately.
+[TESTING.md](TESTING.md) is the record of actual completed runs, their logs and their limits. Historical results retain their original version and scope. A build or cross-compilation does not prove a platform role works at runtime. The historical aggregate 100 GiB run does not prove one 100 GB file. The separate 0.5 single-file 100 GiB background run is version-specific evidence, and a local two-helper loopback run does not prove physical LAN or browser download behavior. Hosted CI must actually execute successfully before being reported as passed; historical runs without executed jobs remain unverified hosted observations.
 
 All automated checks stay in the background. Physical and native-interaction acceptance below is manual; this checklist does not authorize desktop-controlling UI automation.
 

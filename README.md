@@ -6,7 +6,9 @@
 
 AirLink transfers files and folders between computers and browsers on the same local network. It combines native macOS and Windows apps, a portable Linux service, and a web interface for macOS, Windows, Linux, Android, and iOS.
 
-**Current version: 0.8.0. Repository status: private development preview.** Source and release downloads are available only to people with access to this repository. The source is MIT licensed; repository visibility remains private. Version 0.8 adds guided device naming and receive-folder setup, a clearer desktop interface, direct receive destinations and a Windows EXE download. Windows runtime and physical-network acceptance remain open. Automated verification, private packaging, physical acceptance, and historical results remain separate delivery states recorded in [TESTING.md](docs/TESTING.md). The [release readiness gates](docs/RELEASE-READINESS.md) define the evidence still needed before 1.0; no release date is assigned.
+**Current version: 0.8.1. Repository status: private development preview.** Source and release downloads are available only to people with access to this repository. The source is MIT licensed; repository visibility remains private. Version 0.8 adds guided device naming and receive-folder setup, a clearer desktop interface, direct receive destinations and a Windows EXE download. Windows runtime and physical-network acceptance remain open. Automated verification, private packaging, physical acceptance, and historical results remain separate delivery states recorded in [TESTING.md](docs/TESTING.md). The [release readiness gates](docs/RELEASE-READINESS.md) define the evidence still needed before 1.0; no release date is assigned.
+
+The 0.8.1 patch prepares source and distribution metadata for a publication privacy review. Historical GitHub cleanup and visibility remain separate steps; see [PRIVACY-REVIEW.md](docs/PRIVACY-REVIEW.md).
 
 ## The local transfer foundation
 
@@ -28,7 +30,7 @@ Version 0.4 adds **optional duplicate decisions and extension-based sorting for 
 
 ## Setup and desktop workflow in 0.8
 
-On first launch, choose a recognizable device name, such as **Mein MacBook** or **Laptop Windows**, and confirm the receive folder. **Downloads** is suggested for a fresh setup. An old conventional `Downloads/AirLink` default is offered as a change to Downloads during setup; an existing custom folder remains selected. Setup is saved only after the explicit completion action succeeds. You can edit the name and folder later in Settings. Saved pairings and history remain available through the update.
+On first launch, choose a recognizable device name, such as **My MacBook** or **Windows laptop**, and confirm the receive folder. **Downloads** is suggested for a fresh setup. An old conventional `Downloads/AirLink` default is offered as a change to Downloads during setup; an existing custom folder remains selected. Setup is saved only after the explicit completion action succeeds. You can edit the name and folder later in Settings. Saved pairings and history remain available through the update.
 
 The Windows sidebar is resizable, with two-line device names and separate **Devices**, **Transfers** and **Settings** destinations. The main view concentrates on the selected recipient, file drop and current results. Quick Share and Clipboard are under **More tools**; device permissions are behind the device menu.
 
@@ -72,7 +74,7 @@ For a manual check with a Mac, Windows laptop, iPhone and iPad, follow the [Germ
 
 ### macOS
 
-1. Download `AirLink-0.8.0-macos-universal.dmg` from the repository's [Releases](https://github.com/lucasfd3/Airlink/releases) when that version's asset is available.
+1. Download `AirLink-0.8.1-macos-universal.dmg` from the repository's [Releases](https://github.com/lucasfd3/Airlink/releases) when that version's asset is available.
 2. Quit the existing AirLink app from its menu-bar menu before updating. Open the disk image and drag **AirLink.app** to **Applications**, replacing the previous AirLink app if present.
 3. Open AirLink. Keep only the intended current app in `/Applications`; app updates preserve the separate AirLink data directory and received files.
 4. Complete the device-name and receive-folder setup. Choose **Connect device** to pair another computer; use connection information/QR to connect a browser.
@@ -83,7 +85,7 @@ Closing the window leaves AirLink running in the menu bar. **Quit** checkpoints 
 
 ### Windows
 
-1. Download **`AirLink-0.8.0-windows-x64.exe`** for an Intel/AMD laptop, or **`AirLink-0.8.0-windows-arm64.exe`** for Windows on ARM, from the private [Releases](https://github.com/lucasfd3/Airlink/releases). No ZIP extraction, separate .NET installation or terminal is needed. The private preview is not Authenticode signed; approve only the file obtained from this repository.
+1. Download **`AirLink-0.8.1-windows-x64.exe`** for an Intel/AMD laptop, or **`AirLink-0.8.1-windows-arm64.exe`** for Windows on ARM, from the private [Releases](https://github.com/lucasfd3/Airlink/releases). No ZIP extraction, separate .NET installation or terminal is needed. The private preview is not Authenticode signed; approve only the file obtained from this repository.
 2. When updating, quit the existing native app through its system-tray menu first. If the older console service is still running, stop it once with **Ctrl+C**. Then run the new EXE directly. The standard `%APPDATA%\AirLink` metadata directory retains identity, pairings, settings and history.
 3. Complete the two-step setup: a recognizable **device name** and the **receive folder**. Downloads is the usual choice. Licenses for AirLink and the bundled runtime are available under **Settings → Licenses**.
 4. Select the other computer in the sidebar. If it is new, use **Connect device**, compare the fingerprint shown directly on the other computer, and approve the request there. Existing pairings remain saved.

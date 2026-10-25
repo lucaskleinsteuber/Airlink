@@ -48,7 +48,7 @@ Implementation is present in the private 0.4 preview. Final automated verificati
 - Active slow/throttled HTTP work interrupted by pause, cancellation, or revoked permissions, while retaining shared directional limits and checkpoint-based recovery.
 - Browser pairing despite optional session-storage failures, server-authoritative share lifetime despite recipient clock skew, and portable source-name validation before hashing or transfer without silent renaming.
 
-Historical hosted CI jobs did not execute; local test and build results are recorded separately.
+Final automated, migration, package and large-file evidence is recorded in [TESTING.md](TESTING.md) after each completed run. A local loopback test, even a single file of at least 100 GB with hard restarts, does not establish physical network behavior or phone/browser saving. Historical hosted jobs did not execute; local checks are recorded separately, and no hosted success is inferred.
 
 ## 0.6 — Native Windows and clearer desktop transfers (private preview)
 
@@ -58,7 +58,7 @@ Historical hosted CI jobs did not execute; local test and build results are reco
 - Honest pending pairing on macOS and Windows, plus actual-destination reveal actions on both platforms. Skipped duplicate payloads have no new result to show. Empty staging directories are removed only after a new successful receive.
 - Windows native controls initially focus on core transfers. Native editors for Quick Share, clipboard, browser relays, detailed statistics and sorting rules are further interface work; the existing shared service/web features remain.
 
-Final background tests, cross-published package checks and physical Windows runtime acceptance are separate evidence in [TESTING.md](TESTING.md). The user's first 0.5 Mac-to-Windows transfer succeeded and felt fast, but its console/approval/result-location workflow was unsatisfactory. No exact size, independently compared hashes, interruption result or complete acceptance matrix was recorded for that manual report.
+Final background tests, cross-published package checks and physical Windows runtime acceptance are separate evidence in [TESTING.md](TESTING.md). A preliminary 0.5 Mac-to-Windows transfer report lacks exact size, independent hashes, interruption evidence and a complete acceptance matrix.
 
 ## 0.7 — Direct desktop sending and Windows conveniences (private preview)
 
@@ -79,7 +79,7 @@ Implementation and background tests remain separate from physical acceptance. Th
 - New incoming files are verified in private transfer-scoped partial storage, then published directly in the chosen folder with collision-safe names. Sent folders keep their hierarchy and use a new top-level name when necessary. Existing/in-progress legacy destinations stay fixed.
 - Performance investigation uses actual payload/hash and phase measurements. Same-host benchmark results remain distinct from Wi-Fi, Windows storage and physical-device evidence; no unmeasured cause or fixed throughput promise is inferred.
 
-Background verification and actual device interaction remain separate. Native setup/rendering, destination behavior on real platform filesystems and the user's 300 MB scenario still need the manual records in [DEVICE-CHECK.md](DEVICE-CHECK.md).
+Background verification and actual device interaction remain separate. Native setup/rendering, destination behavior on real platform filesystems and physical cross-device throughput still need the manual records in [DEVICE-CHECK.md](DEVICE-CHECK.md).
 
 ## 1.0 — Accepted and maintainable (physical acceptance pending)
 

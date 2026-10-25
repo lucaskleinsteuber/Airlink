@@ -2,6 +2,15 @@
 
 AirLink uses MAJOR.MINOR.PATCH versions. Entries describe implemented changes; distribution and verification status are recorded separately.
 
+## 0.8.1 — 2026-10-25
+
+- Use `lucasfd3` for first-party copyright and app metadata, with neutral setup examples and fixtures. Remove owner-specific observations and account details from publication documentation.
+- Remove local build paths from native release payloads; disable managed debug paths in the shared Windows assembly, map Swift paths and strip linker debug maps before signing. Go publication builds omit checkout revision metadata.
+- Package Linux archives with neutral ownership and timestamps instead of the packager's local account metadata.
+- Add background privacy regression checks for tracked publication inputs and historical author/tagger identities. These checks supplement the separate historical binary and GitHub metadata audit.
+
+Repository visibility remains private. Historical cleanup and replacement-download publication are recorded separately; this entry does not assert that unreachable GitHub objects or previously downloaded copies have been erased. No updater has been enabled in this patch.
+
 ## 0.8.0 — 2026-10-25
 
 - Added guided native setup for a recognizable device name and an explicit receive folder, with persisted completion state. Downloads is the normal initial destination; migration from the conventional AirLink subfolder is suggested and requires user confirmation. Existing custom destinations, trust and history remain separate from the app bundle.
@@ -13,7 +22,7 @@ AirLink uses MAJOR.MINOR.PATCH versions. Entries describe implemented changes; d
 - Wake the sender immediately after a new offer or resume and send an explicit length for buffered blocks. Three same-Mac 300 MiB TLS runs per version reduced median offer-to-completion time from 2.014 to 0.989 seconds; this establishes the removed startup delay, not resolution of the reported physical WLAN slowdown.
 - Kept device approval and directional automatic receive explicit. Setup does not grant new device permissions, and cancelling or failing setup does not mark it complete.
 
-This remains a private development preview. Completed background, packaging and performance observations belong in [TESTING.md](docs/TESTING.md). The reported slow physical transfer is not attributed to Windows or the user's network by a local benchmark. Native rendering, setup interaction, real Downloads redirection and cross-device throughput still require the manual checks. No desktop-controlling tests are introduced.
+This remains a private development preview. Completed background, packaging and performance observations belong in [TESTING.md](docs/TESTING.md). A local benchmark does not establish the cause of physical cross-device throughput limits. Native rendering, setup interaction, real Downloads redirection and cross-device throughput still require the manual checks. No desktop-controlling tests are introduced.
 
 ## 0.7.0 — 2026-10-25
 
@@ -39,7 +48,7 @@ This is a private usability preview. Completed final-source tests and artifact c
 - Replaced the macOS shared asynchronous-byte stdout reader with independent nonblocking readers per helper. Idle connections no longer starve another helper’s replies; malformed, incomplete and oversized messages fail with bounded buffers.
 - Added background service, transport, extraction/cache, protocol-model and native state regressions. Windows packages use the existing code-authored linked-arcs icon motif. No desktop-controlling tests are introduced.
 
-This remains a private development preview. Native Windows covers the core transfer workflow; advanced Quick Share, clipboard, relay-management, statistics and sorting-rule controls are not yet at native macOS parity. Completed final-source checks and package evidence belong in [TESTING.md](docs/TESTING.md). Cross-publishing a Windows GUI executable does not establish actual Windows interaction, Explorer/tray/notification behavior, or physical-network acceptance. The user's successful 0.5 Mac-to-Windows transfer remains a limited manual report, not a final 0.6 acceptance or independently hashed large-file result.
+This remains a private development preview. Native Windows covers the core transfer workflow; advanced Quick Share, clipboard, relay-management, statistics and sorting-rule controls are not yet at native macOS parity. Completed final-source checks and package evidence belong in [TESTING.md](docs/TESTING.md). Cross-publishing a Windows GUI executable does not establish actual Windows interaction, Explorer/tray/notification behavior, or physical-network acceptance. A preliminary 0.5 Mac-to-Windows report remains incomplete physical evidence; it does not establish final 0.6 acceptance or an independently hashed large-file result.
 
 ## 0.5.0 — 2026-10-24
 

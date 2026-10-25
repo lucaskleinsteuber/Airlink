@@ -11,12 +11,16 @@ for ARCH in arm64 x86_64; do
     echo "Missing $OUTPUT/airlink-darwin-$HELPER_ARCH; build Go helpers first." >&2
     exit 1
   fi
-  swift build --package-path "$ROOT/macos" --scratch-path "$OUTPUT/swift-$ARCH" --configuration release --triple "$ARCH-apple-macosx14.0"
+  swift build --package-path "$ROOT/macos" --scratch-path "$OUTPUT/swift-$ARCH" --configuration release --triple "$ARCH-apple-macosx14.0" \
+    -Xswiftc -gnone -Xswiftc -file-prefix-map -Xswiftc "$ROOT=/AirLink" \
+    -Xswiftc -debug-prefix-map -Xswiftc "$ROOT=/AirLink"
 done
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Helpers" "$APP/Contents/Resources" "$OUTPUT/icon-previews"
 ARM_BIN="$(swift build --package-path "$ROOT/macos" --scratch-path "$OUTPUT/swift-arm64" --configuration release --triple arm64-apple-macosx14.0 --show-bin-path)"
 INTEL_BIN="$(swift build --package-path "$ROOT/macos" --scratch-path "$OUTPUT/swift-x86_64" --configuration release --triple x86_64-apple-macosx14.0 --show-bin-path)"
 lipo -create "$ARM_BIN/AirLink" "$INTEL_BIN/AirLink" -output "$APP/Contents/MacOS/AirLink"
+# Remove linker debug-map paths before signing the distributed executable.
+xcrun strip -S "$APP/Contents/MacOS/AirLink"
 lipo -create "$OUTPUT/airlink-darwin-arm64" "$OUTPUT/airlink-darwin-amd64" -output "$APP/Contents/Helpers/airlink"
 cp "$ROOT/macos/Info.plist" "$APP/Contents/Info.plist"
 cp -R "$ROOT/macos/Resources/." "$APP/Contents/Resources/"

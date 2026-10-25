@@ -1,6 +1,6 @@
 package model
 
-const Version = "0.8.0"
+const Version = "0.8.1"
 const ChunkSize int64 = 8 * 1024 * 1024
 
 type File struct {

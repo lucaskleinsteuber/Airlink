@@ -13,7 +13,7 @@ func actualHelperStatusAndSettingsUseNativeContract() async throws {
     do {
         let data = try await client.request("status")
         let status = try JSONDecoder().decode(HostStatus.self, from: data)
-        #expect(status.version == "0.8.0")
+        #expect(status.version == "0.8.1")
         #expect(status.chunkSize == 8 * 1024 * 1024)
         #expect(status.fingerprint.count == 64)
         #expect(!status.urls.isEmpty)
@@ -68,7 +68,7 @@ func actualNativeTrustedPairAndReceivedResultUsePrivateContract() async throws {
         try await receiver.start(executable: URL(fileURLWithPath: path), dataDirectory: directory.appendingPathComponent("receiver-state"), receiveDirectory: directory.appendingPathComponent("receiver-files"), disableDiscovery: true)
         let first = try JSONDecoder().decode(HostStatus.self, from: await source.request("status"))
         let second = try JSONDecoder().decode(HostStatus.self, from: await receiver.request("status"))
-        #expect(first.version == "0.8.0" && second.version == "0.8.0")
+        #expect(first.version == "0.8.1" && second.version == "0.8.1")
         let address = try #require(second.urls.last(where: { $0.contains("localhost:") }))
         struct Requested: Decodable { var requestId: String }
         let requested = try JSONDecoder().decode(Requested.self, from: await source.request("peer.connectTrusted", params: JSONEncoder().encode(["url": address, "fingerprint": second.fingerprint])))

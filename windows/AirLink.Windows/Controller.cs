@@ -61,7 +61,7 @@ internal sealed class Controller : INotifyPropertyChanged
     public string DataDirectory => Path.Combine(Environment.GetEnvironmentVariable("APPDATA") ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AirLink");
     public Device? SelectedDevice => Status?.Devices.FirstOrDefault(d => d.Id == SelectedDeviceId);
     public int ActiveCount => (Status?.Transfers.Count(t => t.IsActive) ?? 0) + (Status?.Relays.Count(r => r.State is not ("delivered" or "cancelled" or "failed")) ?? 0);
-    public string Version => Status?.Version ?? "0.8.0";
+    public string Version => Status?.Version ?? "0.8.1";
 
     public Controller(Dispatcher dispatcher)
     {
@@ -96,7 +96,7 @@ internal sealed class Controller : INotifyPropertyChanged
     private static async Task<string> ExtractHelperAsync()
     {
         var assembly = Assembly.GetExecutingAssembly();
-        var version = assembly.GetName().Version?.ToString(3) ?? "0.8.0";
+        var version = assembly.GetName().Version?.ToString(3) ?? "0.8.1";
         var cache = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AirLink", "Runtime", version,
             RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant());
         Stream Open() => assembly.GetManifestResourceStream("AirLink.Windows.Helper") ?? throw new FileNotFoundException("The bundled AirLink service is missing. Download the complete app.");

@@ -16,7 +16,7 @@ import Testing
     #expect(SetupDraft.suggestedFolder(saved: "/Users/example/Downloads/AirLink", downloads: downloads) == downloads.path)
     #expect(SetupDraft.suggestedFolder(saved: "/Volumes/External/Incoming", downloads: downloads) == "/Volumes/External/Incoming")
     #expect(SetupDraft.suggestedFolder(saved: "/Users/example/Documents/AirLink", downloads: downloads) == "/Users/example/Documents/AirLink")
-    #expect(SetupDraft.suggestedName(saved: "b29fe82e.fritz.box", fallback: "Mein Mac") == "Mein Mac")
+    #expect(SetupDraft.suggestedName(saved: "12345678.fritz.box", fallback: "Mein Mac") == "Mein Mac")
     #expect(SetupDraft.suggestedName(saved: "Mein MacBook", fallback: "Mein Mac") == "Mein MacBook")
 }
 @Test func setupNameAndFolderValidationUseProtocolBounds() {

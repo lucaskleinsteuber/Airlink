@@ -25,7 +25,7 @@ internal static class Program
     public static void Main()
     {
         using var singleton = new Mutex(true, @"Local\lucasfd3.AirLink.Desktop", out var created);
-        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.8.0.0";
+        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.8.1.0";
         var sessionPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AirLink", "desktop-session-" + System.Diagnostics.Process.GetCurrentProcess().SessionId + ".json");
         if (!created)
         {
