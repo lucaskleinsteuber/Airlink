@@ -111,3 +111,5 @@ Completion requires reviewing the linked evidence, not a calculated percentage. 
 ## Native status scaling
 
 The current native transports bound each helper reply to 16 MiB (Windows counts decoded characters). The private status response still includes retained history and manifests. A future summary/pagination contract is required before claiming unlimited history or arbitrary folder-entry counts; payload file size is independent of this metadata bound. Since 0.7, native offer/share preparation and duplicate validation are exempt from the ordinary command deadline; large-folder preparation, cancellation and recovery still need physical acceptance.
+
+Actual offer/share source enumeration still runs serially through the Go stdio dispatcher. The native transport’s out-of-order tests use fake helpers; actual long enumeration can delay status commands. Background preparation with bounded concurrency and cancellation must be validated before claiming responsive status for arbitrary large or unavailable source trees.

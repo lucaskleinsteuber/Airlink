@@ -12,7 +12,7 @@ AirLink uses MAJOR.MINOR.PATCH versions. Entries describe implemented changes; d
 - Added Windows window shortcuts for choosing files and sending a prepared selection. Direct send keeps the selected recipient visible; receipt consent and certificate comparison remain explicit.
 - Refreshed mDNS browsing in 15-second windows so the discovery library's lifetime deduplication cache cannot permanently age out a live peer. Nearby hints expire after 45 seconds; saved pairings persist independently. Discovery remains a connection hint, not an authorization or physical-network reliability proof.
 
-- Kept macOS offer preparation, share creation and duplicate validation outside the ordinary command deadline; status remains responsive and ordinary timed-out commands leave a live helper usable.
+- Exempted macOS offer/share preparation and duplicate validation from the ordinary client deadline. Fake-helper tests cover independent replies during a delayed command and continued use after an ordinary timeout. Actual Go stdio offer/share capture remains serial and can delay status during long filesystem enumeration.
 
 This is a private usability preview. Completed final-source tests and artifact checks belong in [TESTING.md](docs/TESTING.md). The new Windows interaction, actual multicast/LAN behavior, notification clicks, dialogs and clipboard integration still require manual device acceptance. Native Windows relay administration, detailed statistics and sorting-rule editing remain further interface work. Historical 0.5 large-file evidence is not a new 0.7 result.
 
