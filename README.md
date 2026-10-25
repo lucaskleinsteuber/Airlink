@@ -73,7 +73,7 @@ For a manual check with a Mac, Windows laptop, iPhone and iPad, follow the [Germ
 ### macOS
 
 1. Download `AirLink-0.8.0-macos-universal.dmg` from the repository's [Releases](https://github.com/lucasfd3/Airlink/releases) when that version's asset is available.
-2. Open the disk image and drag **AirLink.app** to **Applications**, replacing the previous AirLink app if present.
+2. Quit the existing AirLink app from its menu-bar menu before updating. Open the disk image and drag **AirLink.app** to **Applications**, replacing the previous AirLink app if present.
 3. Open AirLink. Keep only the intended current app in `/Applications`; app updates preserve the separate AirLink data directory and received files.
 4. Complete the device-name and receive-folder setup. Choose **Connect device** to pair another computer; use connection information/QR to connect a browser.
 
@@ -83,8 +83,8 @@ Closing the window leaves AirLink running in the menu bar. **Quit** checkpoints 
 
 ### Windows
 
-1. Download **`AirLink-0.8.0-windows-x64.exe`** for an Intel/AMD laptop, or **`AirLink-0.8.0-windows-arm64.exe`** for Windows on ARM, from the private [Releases](https://github.com/lucasfd3/Airlink/releases). Run that EXE directly; no ZIP extraction, separate .NET installation or terminal is needed. The private preview is not Authenticode signed; approve only the file obtained from this repository.
-2. When updating, quit the existing native app through its system-tray menu first. If the older console service is still running, stop it once with **Ctrl+C**. The standard `%APPDATA%\AirLink` metadata directory retains identity, pairings, settings and history.
+1. Download **`AirLink-0.8.0-windows-x64.exe`** for an Intel/AMD laptop, or **`AirLink-0.8.0-windows-arm64.exe`** for Windows on ARM, from the private [Releases](https://github.com/lucasfd3/Airlink/releases). No ZIP extraction, separate .NET installation or terminal is needed. The private preview is not Authenticode signed; approve only the file obtained from this repository.
+2. When updating, quit the existing native app through its system-tray menu first. If the older console service is still running, stop it once with **Ctrl+C**. Then run the new EXE directly. The standard `%APPDATA%\AirLink` metadata directory retains identity, pairings, settings and history.
 3. Complete the two-step setup: a recognizable **device name** and the **receive folder**. Downloads is the usual choice. Licenses for AirLink and the bundled runtime are available under **Settings → Licenses**.
 4. Select the other computer in the sidebar. If it is new, use **Connect device**, compare the fingerprint shown directly on the other computer, and approve the request there. Existing pairings remain saved.
 5. Drop a file on the paired computer or its named drop area. New received files appear directly in the chosen folder; use **Show file** / **Open folder** to reach the actual result.
@@ -194,7 +194,7 @@ Browser downloads are saved by the browser's download manager. Individual downlo
 | macOS settings, pairing identity, transfer database | `~/Library/Application Support/AirLink` |
 | Windows settings, pairing identity, transfer database | `%APPDATA%\AirLink` |
 | Linux settings, pairing identity, transfer database | `$XDG_CONFIG_HOME/AirLink`, or `~/.config/AirLink` |
-| Received files | `~/Downloads/AirLink`, configurable locally |
+| Received files | The chosen receive folder directly; Downloads is the initial default. Existing custom/legacy destinations remain saved until changed in setup/settings. |
 
 The private state directory contains the TLS identity, device credentials, settings, SQLite transfer/relay metadata, the verified managed-file duplicate index, durable share definitions/sessions, and lifetime payload counters. Relay payload blocks and clipboard text are not persisted there. Authorized owners can recover share links after restart, so protect this directory as private application data. Keep application state separate from the bundle. Sending and sharing reference selected source files; they do not move, replace, or create a whole-file staging copy of the originals.
 
