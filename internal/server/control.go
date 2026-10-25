@@ -103,7 +103,11 @@ func (s *Server) Control(method string, params json.RawMessage) (any, error) {
 		s.stopTransferRequests(id.ID)
 		return map[string]bool{"ok": true}, err
 	case "transfer.resume":
-		return map[string]bool{"ok": true}, s.engine.Resume(id.ID)
+		err := s.engine.Resume(id.ID)
+		if err == nil {
+			s.wakeOutgoing()
+		}
+		return map[string]bool{"ok": true}, err
 	case "transfer.cancel":
 		s.stopSender(id.ID)
 		err := s.engine.Cancel(id.ID)
@@ -122,7 +126,11 @@ func (s *Server) Control(method string, params json.RawMessage) (any, error) {
 		if !ok {
 			return nil, errors.New("pair the receiving device first")
 		}
-		return s.engine.OfferWithRequestID(rec.Device, v.Paths, v.RequestID)
+		transfer, err := s.engine.OfferWithRequestID(rec.Device, v.Paths, v.RequestID)
+		if err == nil {
+			s.wakeOutgoing()
+		}
+		return transfer, err
 	case "peer.connect", "peer.connectTrusted":
 		var v struct {
 			URL         string `json:"url"`
@@ -134,7 +142,10 @@ func (s *Server) Control(method string, params json.RawMessage) (any, error) {
 		rid, e := s.connectPeerWithTrust(v.URL, v.Fingerprint, method == "peer.connectTrusted")
 		return map[string]string{"requestId": rid}, e
 	case "settings.update":
-		v := s.store.snapshot().Settings
+		s.settingsMu.Lock()
+		defer s.settingsMu.Unlock()
+		previous := s.store.snapshot().Settings
+		v := previous
 		if e := json.Unmarshal(params, &v); e != nil {
 			return nil, e
 		}
@@ -155,18 +166,23 @@ func (s *Server) Control(method string, params json.RawMessage) (any, error) {
 			return nil, err
 		}
 		v.Organization = organization
-		if e := s.engine.SetReceiveDirectory(v.ReceiveDirectory); e != nil {
+		v.Name = strings.TrimSpace(v.Name)
+		s.store.Lock()
+		e := s.engine.ConfigureIncoming(v.ReceiveDirectory, v.Organization, func() error {
+			s.store.data.Settings = v
+			if err := s.store.save(); err != nil {
+				s.store.data.Settings = previous
+				return err
+			}
+			return nil
+		})
+		s.store.Unlock()
+		if e != nil {
 			return nil, e
 		}
-		s.store.Lock()
-		s.store.data.Settings = v
-		e := s.store.save()
-		s.store.Unlock()
-		if e == nil {
-			e = s.traffic.SetLimits(v.SendLimitBytesPerSecond, v.ReceiveLimitBytesPerSecond)
-		}
-		if e == nil {
-			e = s.engine.SetOrganization(v.Organization)
+		e = s.traffic.SetLimits(v.SendLimitBytesPerSecond, v.ReceiveLimitBytesPerSecond)
+		if e == nil && previous.Name != v.Name {
+			s.refreshDiscoveryName()
 		}
 		return v, e
 	case "shutdown":

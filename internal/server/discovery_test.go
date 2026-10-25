@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/grandcat/zeroconf"
 	"github.com/lucasfd3/Airlink/internal/model"
@@ -86,18 +89,119 @@ func TestDiscoveryRefreshUpdatesOnlyTheExistingPinnedIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.recordDiscovered(discoveryEntry(device.ID, "wrong-fingerprint", "192.168.1.99"), s.store.snapshot().ID, at)
-	if got := s.store.snapshot().Devices[device.ID].Device; got.Address != device.Address || got.Fingerprint != device.Fingerprint {
+	if got := s.store.snapshot().Devices[device.ID].Device; got.Address != device.Address || got.Fingerprint != device.Fingerprint || got.Name != device.Name {
 		t.Fatal("untrusted advertisement replaced a paired address or certificate", got)
 	}
-	s.recordDiscovered(discoveryEntry(device.ID, device.Fingerprint, "192.168.1.20"), s.store.snapshot().ID, at)
+	renamed := discoveryEntry(device.ID, device.Fingerprint, "192.168.1.20")
+	renamed.Text[1] = "name=Mein MacBook"
+	s.recordDiscovered(renamed, s.store.snapshot().ID, at)
 	got := s.store.snapshot().Devices[device.ID].Device
-	if got.Address != "https://192.168.1.20:43871" || got.Fingerprint != device.Fingerprint || !got.AutoAccept || !got.CanSend || !got.CanReceive {
+	if got.Address != "https://192.168.1.20:43871" || got.Name != "Mein MacBook" || got.Fingerprint != device.Fingerprint || !got.AutoAccept || !got.CanSend || !got.CanReceive {
 		t.Fatal("legitimate address refresh lost trust or permissions", got)
 	}
 	before := len(s.discovered)
 	s.recordDiscovered(discoveryEntry(s.store.snapshot().ID, "self", "192.168.1.3"), s.store.snapshot().ID, at)
 	if len(s.discovered) != before {
 		t.Fatal("installation discovered itself")
+	}
+}
+
+func TestDiscoveryRejectsInvalidDisplayNamesWithoutChangingPairedDevices(t *testing.T) {
+	s := integrationHost(t)
+	device, _ := integrationDevice(t, s, true)
+	device.Kind = "engine"
+	device.Fingerprint = "saved-fingerprint"
+	if err := s.store.edit(device.ID, func(record *deviceRecord) { record.Device = device }); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"", " leading", "trailing ", "line\nbreak", "null\x00byte", strings.Repeat("a", 121), string([]byte{0xff})} {
+		entry := discoveryEntry(device.ID, device.Fingerprint, "192.168.1.50")
+		entry.Text[1] = "name=" + name
+		s.recordDiscovered(entry, s.store.snapshot().ID, time.Now())
+		if got := s.store.snapshot().Devices[device.ID].Device; got.Name != device.Name || got.Address != device.Address {
+			t.Fatal("invalid display name changed a paired device", name, got)
+		}
+		if len(s.discovered) != 0 {
+			t.Fatal("invalid name entered nearby cache")
+		}
+	}
+	name := strings.Repeat("電", 40)
+	instance := discoveryInstanceName(name, "0123456789abcdef")
+	if !utf8.ValidString(instance) || len(instance) > 49 || !strings.HasSuffix(instance, "-01234567") {
+		t.Fatal("instance truncation split UTF-8 or lost identity suffix", instance)
+	}
+}
+
+func TestDiscoveryAdvertisementRenameHasOneOwnerAndStopsPreviousRegistration(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	changed := make(chan struct{}, 1)
+	s := &Server{discoveryNames: changed}
+	var name atomic.Value
+	name.Store("MacBook")
+	var mu sync.Mutex
+	events := []string{}
+	registered := make(chan string, 8)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		manageDiscoveryAdvertisements(ctx, changed, 10*time.Millisecond, func() string { return name.Load().(string) }, func(current string) (func(), error) {
+			mu.Lock()
+			events = append(events, "start:"+current)
+			mu.Unlock()
+			registered <- current
+			return func() { mu.Lock(); events = append(events, "stop:"+current); mu.Unlock() }, nil
+		})
+	}()
+	wait := func(expected string) {
+		t.Helper()
+		select {
+		case got := <-registered:
+			if got != expected {
+				t.Fatal(got, expected)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("advertisement did not register", expected)
+		}
+	}
+	wait("MacBook")
+	name.Store("Mein MacBook")
+	for range 100 {
+		s.refreshDiscoveryName()
+	}
+	wait("Mein MacBook")
+	// Repeated settings saves and retry ticks must not restart unchanged data.
+	for range 100 {
+		s.refreshDiscoveryName()
+	}
+	time.Sleep(35 * time.Millisecond)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("advertisement owner failed to stop")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	expected := []string{"start:MacBook", "stop:MacBook", "start:Mein MacBook", "stop:Mein MacBook"}
+	if strings.Join(events, "|") != strings.Join(expected, "|") {
+		t.Fatal("overlapping registration or repeated shutdown", events)
+	}
+}
+
+func TestDiscoveryAdvertisementFailureRetriesAtBoundedInterval(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var calls atomic.Int32
+	started := time.Now()
+	manageDiscoveryAdvertisements(ctx, nil, 10*time.Millisecond, func() string { return "Laptop Windows" }, func(string) (func(), error) {
+		if calls.Add(1) == 3 {
+			cancel()
+		}
+		return nil, errors.New("fixture registration failed")
+	})
+	if calls.Load() != 3 || time.Since(started) < 15*time.Millisecond {
+		t.Fatal("advertisement retries spun without a delay", calls.Load(), time.Since(started))
 	}
 }
 

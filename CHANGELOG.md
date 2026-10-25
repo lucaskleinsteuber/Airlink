@@ -2,6 +2,19 @@
 
 AirLink uses MAJOR.MINOR.PATCH versions. Entries describe implemented changes; distribution and verification status are recorded separately.
 
+## 0.8.0 — 2026-10-25
+
+- Added guided native setup for a recognizable device name and an explicit receive folder, with persisted completion state. Downloads is the normal initial destination; migration from the conventional AirLink subfolder is suggested and requires user confirmation. Existing custom destinations, trust and history remain separate from the app bundle.
+- Reworked the Windows interface around a resizable device sidebar, readable two-line names, selected-recipient drop area, focused transfer cards and a dedicated Settings page. Device permissions and advanced tools are separated from the everyday send view.
+- Replaced the primary Windows ZIP packages with direct self-contained x64 and ARM64 EXE downloads. The matching service, runtime, icon, MIT license and runtime notices are bundled; license text is accessible in Settings. Builds inspect managed resources without loading WPF or executing Windows code.
+- Changed new receive publication to the chosen destination directly. Name collisions receive a distinct file or top-level folder name; sent folders keep their hierarchy. Private partial data remains scoped to its transfer, while older/in-progress receive records retain their saved layout.
+- Reclaim known direct-receive partial files after durable cancellation, with writer exclusion and bounded shutdown; retained cancelled records retry cleanup at startup. Published content and legacy layouts are preserved.
+- Announce committed device-name changes through owned mDNS registrations and pinned peer heartbeat responses.
+- Wake the sender immediately after a new offer or resume and send an explicit length for buffered blocks. Three same-Mac 300 MiB TLS runs per version reduced median offer-to-completion time from 2.014 to 0.989 seconds; this establishes the removed startup delay, not resolution of the reported physical WLAN slowdown.
+- Kept device approval and directional automatic receive explicit. Setup does not grant new device permissions, and cancelling or failing setup does not mark it complete.
+
+This remains a private development preview. Completed background, packaging and performance observations belong in [TESTING.md](docs/TESTING.md). The reported slow physical transfer is not attributed to Windows or the user's network by a local benchmark. Native rendering, setup interaction, real Downloads redirection and cross-device throughput still require the manual checks. No desktop-controlling tests are introduced.
+
 ## 0.7.0 — 2026-10-25
 
 - Added direct desktop sending: dropping a batch on a paired computer sends to that computer; the named central drop area sends to the selected desktop, and the Windows file/folder picker starts its selected batch directly. The macOS picker retains a prepared selection and Send action. Without a suitable recipient, files remain staged for an explicit Send. Offline paired computers retain their queued offers.

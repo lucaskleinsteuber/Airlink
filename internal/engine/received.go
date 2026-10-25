@@ -33,10 +33,7 @@ func (e *Engine) ReceivedItems(id string) (ReceivedResult, error) {
 		return ReceivedResult{}, err
 	}
 	t := clone(r.Transfer)
-	directory := r.ReceiveRoot
-	if directory == "" {
-		directory = t.Destination
-	}
+	directory := publishedRoot(r)
 	e.mu.Unlock()
 	if t.Direction != "receive" || t.State != "completed" {
 		return ReceivedResult{}, ErrConflict
@@ -153,4 +150,14 @@ func cleanupCompletedReceive(r *record) {
 		return
 	}
 	_ = root.Remove(".airlink-partials")
+	root.Close()
+	if r.DirectReceive {
+		parent, err := organizationRoot(r.Transfer.Destination)
+		if err != nil {
+			return
+		}
+		defer parent.Close()
+		_ = parent.Remove(filepath.Join(".airlink-partials", r.Transfer.ID))
+		_ = parent.Remove(".airlink-partials")
+	}
 }

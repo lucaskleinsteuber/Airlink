@@ -5,14 +5,8 @@ cd "$ROOT"
 VERSION="$(cat VERSION)"
 mkdir -p dist
 for ARCH in x64 arm64; do
-  STAGE="build/package-windows-$ARCH-native"
-  mkdir -p "$STAGE"
-  cp "build/windows-$ARCH/AirLink.exe" "$STAGE/AirLink.exe"
-  cp windows/QUICKSTART.md "$STAGE/README.md"
-  cp "build/windows-$ARCH/THIRD-PARTY-NOTICES.txt" LICENSE "$STAGE/"
-  # Replacing the archive prevents leftover entries from earlier packaging runs.
-  rm -f "dist/AirLink-$VERSION-windows-$ARCH.zip"
-  (cd "$STAGE" && zip -q "$ROOT/dist/AirLink-$VERSION-windows-$ARCH.zip" AirLink.exe README.md LICENSE THIRD-PARTY-NOTICES.txt)
+  # Windows is a direct self-contained executable; licenses are embedded in-app.
+  cp "build/windows-$ARCH/AirLink.exe" "dist/AirLink-$VERSION-windows-$ARCH.exe"
 done
 for ARCH in arm64 amd64; do
   STAGE="build/package-linux-$ARCH"
@@ -28,4 +22,4 @@ if [[ "$(uname -s)" == Darwin ]]; then
  if [[ ! -L "$STAGE/Applications" ]]; then ln -s /Applications "$STAGE/Applications"; fi
  hdiutil create -volname AirLink -srcfolder "$STAGE" -ov -format UDZO "dist/AirLink-$VERSION-macos-universal.dmg"
 fi
-(cd dist && shopt -s nullglob && shasum -a 256 ./*-"$VERSION"-*.dmg ./*-"$VERSION"-*.zip ./*-"$VERSION"-*.tar.gz > SHA256SUMS.txt)
+(cd dist && shopt -s nullglob && shasum -a 256 ./*-"$VERSION"-*.dmg ./*-"$VERSION"-*.exe ./*-"$VERSION"-*.tar.gz > SHA256SUMS.txt)

@@ -343,7 +343,7 @@ func TestLegacySkipAndQueuedKeepPublishWithoutSourceAcrossRestart(t *testing.T) 
 	if done.CompletedBytes != int64(len(payload)) || done.SkippedBytes != 0 || !done.Files[0].Skipped {
 		t.Fatal("legacy skip lost actual network bytes", done)
 	}
-	if _, err := os.Stat(filepath.Join(legacy.Destination, partialName("file-a"))); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(partialPathForTest(e, legacy.ID, "file-a")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("legacy skip retained app-owned staging")
 	}
 	keep := incoming(t, e, "legacy-keep", payload)

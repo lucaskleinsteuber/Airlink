@@ -28,6 +28,8 @@ struct FailedDirectSend: Identifiable {
     @Published private(set) var failedDirectSends: [FailedDirectSend] = []
     @Published private(set) var sendNotice: String?
     @Published var showConnection = false
+    @Published var showSetup = false
+    private var setupOffered = false
     @Published var connectionDraft = PeerConnectionDraft()
     @Published private(set) var pendingConnection: PeerConnectionAttempt?
     @Published var registeredShortcut = Shortcut(enabled: false)
@@ -59,6 +61,8 @@ struct FailedDirectSend: Identifiable {
     }
     var sendingFiles: Bool { sendSelection.isSending || preparingDirectSend }
     var isReady: Bool { lifecycle == .ready && engineError == nil && status != nil }
+    var setupComplete: Bool { status?.settings.setupCompleted == true }
+    var setupRequired: Bool { isReady && !setupComplete }
     var canRetry: Bool { lifecycle == .failed }
 
     func start(receiveDirectory: URL? = nil) async {
@@ -121,6 +125,7 @@ struct FailedDirectSend: Identifiable {
             guard lifecycleGeneration == generation, lifecycle != .stopping else { return }
             let previous = status
             status = next; engineError = nil; lifecycle = .ready
+            if !next.settings.setupCompleted && !setupOffered { setupOffered = true; showSetup = true }
             if let pending = pendingConnection, let connected = pending.draft.pairedDevice(in: next.devices) {
                 if selectedDeviceID == nil || selectedDevice?.fingerprint == connected.fingerprint { selectedDeviceID = connected.id }
                 pendingConnection = nil
@@ -199,6 +204,15 @@ struct FailedDirectSend: Identifiable {
             shortcutError = error.localizedDescription
             throw error
         }
+    }
+    func completeSetup(_ draft: SetupDraft) async throws {
+        try requireReady()
+        guard draft.validName, draft.validFolder else { throw NativeError.unavailable(text("Bitte einen gültigen Namen und Empfangsordner wählen.", "Choose a valid name and receive folder.")) }
+        guard var settings = status?.settings else { throw NativeError.unavailable(text("AirLink ist noch nicht bereit.", "AirLink is not ready yet.")) }
+        settings.name = draft.normalizedName; settings.receiveDirectory = draft.receiveDirectory; settings.setupCompleted = true
+        try await saveSettings(settings)
+        guard setupComplete else { throw NativeError.unavailable(text("Die Einrichtung konnte noch nicht bestätigt werden. Bitte erneut versuchen.", "Setup has not been confirmed yet. Please retry.")) }
+        showSetup = false
     }
     func captureShortcut(_ enabled: Bool) {
         shortcutRecording = enabled
@@ -297,6 +311,7 @@ struct FailedDirectSend: Identifiable {
         showMainWindow()
     }
     func send() {
+        guard setupComplete else { showSetup = true; return }
         guard isReady, !preparingDirectSend, let device = selectedDevice, device.canReceive,
               let submission = sendSelection.begin(deviceID: device.id) else { return }
         sendNotice = nil
@@ -316,6 +331,7 @@ struct FailedDirectSend: Identifiable {
     /// The recipient is captured by the drop target before item providers load.
     /// A direct batch never reads or clears the separately staged picker selection.
     func receiveDrop(_ providers: [NSItemProvider], to recipient: Device?) -> Bool {
+        guard setupComplete else { showSetup = true; return false }
         let files = providers.filter { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }
         guard !files.isEmpty else { return false }
         if let recipient {

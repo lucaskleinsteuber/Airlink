@@ -6,7 +6,7 @@
 
 AirLink transfers files and folders between computers and browsers on the same local network. It combines native macOS and Windows apps, a portable Linux service, and a web interface for macOS, Windows, Linux, Android, and iOS.
 
-**Current version: 0.7.0. Repository status: private development preview.** Source and release downloads are available only to people with access to this repository. The source is MIT licensed; repository visibility remains private. Version 0.7 makes desktop sending more direct and adds native Windows Quick Share and clipboard controls. Windows runtime and physical-network acceptance remain open. Automated verification, private packaging, physical acceptance, and historical results remain separate delivery states recorded in [TESTING.md](docs/TESTING.md). The [release readiness gates](docs/RELEASE-READINESS.md) define the evidence still needed before 1.0; no release date is assigned.
+**Current version: 0.8.0. Repository status: private development preview.** Source and release downloads are available only to people with access to this repository. The source is MIT licensed; repository visibility remains private. Version 0.8 adds guided device naming and receive-folder setup, a clearer desktop interface, direct receive destinations and a Windows EXE download. Windows runtime and physical-network acceptance remain open. Automated verification, private packaging, physical acceptance, and historical results remain separate delivery states recorded in [TESTING.md](docs/TESTING.md). The [release readiness gates](docs/RELEASE-READINESS.md) define the evidence still needed before 1.0; no release date is assigned.
 
 ## The local transfer foundation
 
@@ -26,9 +26,13 @@ The complete web interface is embedded in the desktop service. Normal use needs 
 
 Version 0.4 adds **optional duplicate decisions and extension-based sorting for new desktop receives**. Both are off by default, including upgrades. They do not organize browser-managed downloads or relay payloads. See the [organization workflow](#optional-incoming-file-organization) and [roadmap](docs/ROADMAP.md).
 
-## Desktop workflow in 0.7
+## Setup and desktop workflow in 0.8
 
-After pairing, **drop files or folders directly onto a computer in the device list** to send that batch to it. The central drop area names its selected recipient and also starts that batch directly. On Windows, **Send files…** / **Send folders…** starts the picked batch after selection when a suitable desktop recipient is selected. The macOS picker keeps its reviewable prepared selection and Send action. If no recipient is selected, files stay in a prepared selection: choose a computer, then select **Send**. An explicitly selected offline computer keeps its queued offer until it becomes reachable.
+On first launch, choose a recognizable device name, such as **Mein MacBook** or **Laptop Windows**, and confirm the receive folder. **Downloads** is suggested for a fresh setup. An old conventional `Downloads/AirLink` default is offered as a change to Downloads during setup; an existing custom folder remains selected. Setup is saved only after the explicit completion action succeeds. You can edit the name and folder later in Settings. Saved pairings and history remain available through the update.
+
+The Windows sidebar is resizable, with two-line device names and separate **Devices**, **Transfers** and **Settings** destinations. The main view concentrates on the selected recipient, file drop and current results. Quick Share and Clipboard are under **More tools**; device permissions are behind the device menu.
+
+After pairing, **drop files or folders directly onto a computer in the device list** to send that batch to it. The central drop area names its selected recipient and also starts that batch directly. On Windows, **Choose files** / **Choose folder** starts the picked batch after selection when a suitable desktop recipient is selected. The macOS picker keeps its reviewable prepared selection and Send action. If no recipient is selected, files stay in a prepared selection: choose a computer, then select **Send**. An explicitly selected offline computer keeps its queued offer until it becomes reachable.
 
 An empty, idle draft may choose the sole online paired desktop with receive permission automatically. Discovery never redirects an existing recipient or a pending selection to a different computer. Each submission pins its recipient and selected entry identities. Files added or reselected during preparation remain for a later send; a failed submission retains its sources for an explicit retry. Dropping another batch while preparation is busy produces a visible message rather than silently creating another offer. If an offer reply is lost, retrying the unchanged selection recovers the same transfer instead of creating a second one. Choosing a different recipient or a new selection remains a new send.
 
@@ -38,7 +42,7 @@ On Windows, double-click a paired desktop to open its file picker. **Ctrl+O** op
 
 On both desktop apps, pairing remains pending until the other device actually approves it. **Automatically receive from this device** is an explicit choice for the computer where it is enabled. Pairing alone does not enable it on either side. You can choose it during pairing, when accepting an incoming transfer, or later in device permissions; the other computer controls its own separate choice. Existing pairings retain their saved permissions.
 
-Completed incoming transfers provide **Show file** / **Open folder** actions for their actual published destinations, including sorting rules and older transfer locations. AirLink still isolates each transfer in its own folder to prevent overwrites. A skipped duplicate has no newly received file and cannot redirect this action to an existing candidate. Empty internal partial directories are removed after a new successful completion; historical folders are not reorganized.
+Completed incoming transfers provide **Show file** / **Open folder** actions for their actual published destinations, including sorting rules and older transfer locations. New receives are published directly in the chosen folder, after verification. A single `report.pdf` arrives as `Downloads/report.pdf`; a name collision gets a distinct name such as `report (2).pdf`. A sent folder retains its own hierarchy, with a unique top-level name on collision rather than merging into an existing folder. Older received files and saved in-progress destinations retain their historical paths. A skipped duplicate has no newly received file and cannot redirect this action to an existing candidate. Empty internal partial directories are removed after a new successful completion; historical folders are not reorganized.
 
 Windows now provides native Quick Share creation/list/revocation and explicit clipboard Paste/Edit/Send/Copy/Dismiss. Browser-relay administration, detailed statistics and the sorting-rule editor still use the existing web or macOS controls; the native interfaces do not yet have full feature parity. Windows runtime acceptance on a physical laptop remains a separate check in [TESTING.md](docs/TESTING.md).
 
@@ -68,10 +72,10 @@ For a manual check with a Mac, Windows laptop, iPhone and iPad, follow the [Germ
 
 ### macOS
 
-1. Download `AirLink-0.7.0-macos-universal.dmg` from the repository's [Releases](https://github.com/lucasfd3/Airlink/releases) when that version's asset is available.
+1. Download `AirLink-0.8.0-macos-universal.dmg` from the repository's [Releases](https://github.com/lucasfd3/Airlink/releases) when that version's asset is available.
 2. Open the disk image and drag **AirLink.app** to **Applications**, replacing the previous AirLink app if present.
 3. Open AirLink. Keep only the intended current app in `/Applications`; app updates preserve the separate AirLink data directory and received files.
-4. Open the QR button to connect a browser, or **Connect device** to pair another computer.
+4. Complete the device-name and receive-folder setup. Choose **Connect device** to pair another computer; use connection information/QR to connect a browser.
 
 The current private build is **ad hoc signed and not notarized**. macOS may require explicit approval in **System Settings → Privacy & Security → Open Anyway** after the first attempted launch. Approve only the app obtained from this repository. A Developer ID signed and notarized distribution is a later release requirement.
 
@@ -79,13 +83,13 @@ Closing the window leaves AirLink running in the menu bar. **Quit** checkpoints 
 
 ### Windows
 
-1. Download `AirLink-0.7.0-windows-x64.zip` for an Intel/AMD Windows laptop, or `AirLink-0.7.0-windows-arm64.zip` for Windows on ARM, from the private [Releases](https://github.com/lucasfd3/Airlink/releases).
-2. Extract the ZIP completely into a folder you want to keep, then open **AirLink.exe**. A separate .NET installation and an open terminal are not needed. The private preview is not a Windows Authenticode-signed release; approve only the package obtained from this repository.
-3. If the previous console-based AirLink service is still running, stop that console once with **Ctrl+C**, then choose **Retry** in the app. Both versions use `%APPDATA%\AirLink`; the app does not delete your identity, pairings, settings, history, or received files. Two services cannot open that directory together.
-4. Choose a discovered device or **Connect device**, compare its fingerprint directly on the other computer, and approve the pairing there. An existing paired Mac should already appear without pairing again.
-5. Drop files or folders onto the paired computer in the device list, or select it and use the central drop area or **Send files…**. That batch is offered immediately; receiver approval still follows its saved policy. If files were staged before a recipient was selected, choose one and use **Send**. For a completed receive, use **Show file** / **Open folder** to go straight to the saved result.
+1. Download **`AirLink-0.8.0-windows-x64.exe`** for an Intel/AMD laptop, or **`AirLink-0.8.0-windows-arm64.exe`** for Windows on ARM, from the private [Releases](https://github.com/lucasfd3/Airlink/releases). Run that EXE directly; no ZIP extraction, separate .NET installation or terminal is needed. The private preview is not Authenticode signed; approve only the file obtained from this repository.
+2. When updating, quit the existing native app through its system-tray menu first. If the older console service is still running, stop it once with **Ctrl+C**. The standard `%APPDATA%\AirLink` metadata directory retains identity, pairings, settings and history.
+3. Complete the two-step setup: a recognizable **device name** and the **receive folder**. Downloads is the usual choice. Licenses for AirLink and the bundled runtime are available under **Settings → Licenses**.
+4. Select the other computer in the sidebar. If it is new, use **Connect device**, compare the fingerprint shown directly on the other computer, and approve the request there. Existing pairings remain saved.
+5. Drop a file on the paired computer or its named drop area. New received files appear directly in the chosen folder; use **Show file** / **Open folder** to reach the actual result.
 
-Enable **Automatically receive from this device** only for a device you want to send to this Windows computer without approving every new transfer. The sender's permission and the receiver's auto-receive choice are separate. Closing the window keeps AirLink in the system tray; use the tray menu to reopen it, open the receive folder, or quit.
+Enable **Automatically receive from this device** in that device's settings only for a sender you trust. This is the local receiver's choice; the other computer controls its own independent receipt policy. Closing the window keeps AirLink in the system tray. Use its menu to reopen the app, open the receive folder or quit.
 
 ### Linux
 
@@ -222,7 +226,7 @@ bash scripts/test.sh
 bash scripts/package.sh
 ```
 
-`build.sh` installs web dependencies, builds and embeds the web UI, and compiles amd64/arm64 services for macOS, Windows, and Linux. It also publishes self-contained native Windows apps with the corresponding Go helper embedded. On macOS it builds the native universal app. `package.sh` creates native Windows ZIPs, Linux archives, a macOS DMG when run on macOS, and SHA-256 checksums under `dist/`. Packaging does not publish a GitHub release or notarize the app.
+`build.sh` installs web dependencies, builds and embeds the web UI, and compiles amd64/arm64 services for macOS, Windows, and Linux. It also publishes self-contained native Windows apps with the corresponding Go helper embedded. On macOS it builds the native universal app. `package.sh` creates direct native Windows EXEs, Linux archives, a macOS DMG when run on macOS, and SHA-256 checksums under `dist/`. Packaging does not publish a GitHub release or notarize the app.
 
 Set `AIRLINK_GO=/absolute/path/to/go` when Go is not on your PATH and `AIRLINK_DOTNET=/absolute/path/to/dotnet` for a nonstandard .NET SDK location. Windows builds disable .NET CLI telemetry. To publish the Windows apps after their Go helpers exist, use `bash scripts/build-windows.sh`. To rebuild only the macOS app after both macOS helpers exist, use `bash scripts/build-macos.sh`.
 

@@ -39,7 +39,27 @@ Choose the matching architecture on an Intel Mac. The integration case starts on
 
 Set `AIRLINK_GO=/absolute/path/to/go` for the shell scripts if needed. For a direct Go command, invoke that Go binary explicitly.
 
-## 0.7 evidence — 2026-10-25
+## 0.8 evidence — 2026-10-25
+
+| Area | Completed observation | Scope and limits |
+| --- | --- | --- |
+| Go | **154 top-level race suites / 242 cases passed**; `go vet ./...` passed | Includes unchanged tagged 0.3–0.7 helper upgrades. Historical 0.1/0.2 and large-file stress remain gated. |
+| Direct receiving | Ten new direct-publication suites passed | Files publish into the chosen root; collision suffixes, per-transfer stages, identical file IDs, independent receivers, folders/empty directories, external collisions, restart, legacy paths and fresh index reuse were exercised. Existing files are never overwritten by publication. |
+| Setup/settings | Three new server suites passed | New defaults, explicit setup flag, legacy/custom settings preservation, validation and failed-save rollback. Incoming configuration changes only with the settings commit. Names refresh through owned mDNS registrations and pinned heartbeat responses; tests use background/fake advertisement seams, not real multicast. |
+| Cancellation | Five new race suites passed | Known direct-receive partials are reclaimed only after durable cancellation and file-lock exclusion; published content, unknown files, symlinks and legacy layouts are preserved. Close remains bounded and startup retries pending cleanup. |
+| Windows Core | **28/28 tests passed**, no skips, with the actual 0.8 helper | Setup defaults/name bounds and local-version metadata join existing private transport, offer replay, trust, TLS receive, direct result, lifecycle and draft tests. The Core executes on macOS, not Windows UI. |
+| macOS Core | **59 Swift tests / 63 cases passed**, no skips, both actual helper cases enabled | Explicit setup defaults/roundtrip/validation plus all prior transport, direct-send, retry and two-helper TLS checks. Both final native CPU architectures compile. No app window was automated. |
+| Web | **68 tests across seven files passed**, production build passed | Existing browser functionality retained; no browser automation. |
+| Native Windows packaging | x64 and ARM64 GUI executables published; native PE and managed resource inspection passed | Inspected version 0.8.0.0, icon/manifest resources, matching embedded Go helper hash, MIT license and resolved runtime notices without loading WPF or running Windows code. The primary Windows download is now a self-contained EXE. |
+| Final helper smoke | Portable arm64 and universal bundled helpers passed | Embedded offline assets, verified TLS 1.3 and private/source/share/relay/clipboard boundaries. This is headless protocol execution on macOS. |
+| Measured comparison | Three actual 300 MiB transfers per version: released 0.7 median **2.014076 s**, final 0.8 median **0.988569 s** from offer through both services completing | Same Mac/loopback, TLS, non-sparse 314,572,800-byte source, freshly written/cache-warm data and unlimited rates. Independent whole-file hashes matched in every run. This removes about one second of idle sender scheduling, not a demonstrated fix for the user's 60-second WLAN result. |
+| First confirmed payload and RSS | Median first observed block **1.147704 → 0.193612 s**; final 0.8 sampled RSS maxima source **45,973,504 B**, receiver **48,562,176 B** | Observed polling and sampled RSS, not exact high-water marks or fully occupied duplex capacity. Source preparation, payload and verification observations are in the report. |
+| Exact benchmark helper | Final arm64 SHA-256 `9c802884452d3886ca7425a05a25afdf01cdbb4e467d3d5c3a4f5654f0f22d8f` | File SHA-256 `c94f9518a31d14b56d671b997ff6d3c99dc5dd58109f0c409b60f21bd748e6ea`. The bundled universal helper is separately signed and smoke-checked. |
+| Large-file/physical acceptance | No new 100 GiB test or native Windows interaction was run | Historical 0.5 100 GiB evidence remains below. New Windows rendering, high-DPI setup, Explorer actions, actual WLAN/multicast, cancellation on NTFS and physical performance remain open. |
+
+Final ignored evidence is in `build/go-tests-0.8.jsonl`, `go-vet-0.8.log`, `dotnet-tests-0.8.log`, `swift-tests-0.8.log`, `web-tests-0.8.log`, `web-build-0.8.log`, `windows-publish-0.8.log`, `macos-final-build-0.8.log`, `performance-0.7-baseline.json`, `performance-0.8-final.json` / `.log`, and `smoke-*-0.8.log`. Windows EXE equality, Linux archive entries/payloads, universal architectures, bundle version/build 0.8.0/8, ad hoc signature, staged app equality, DMG integrity and all five SHA-256 values passed. Hosted CI is recorded after its run is inspected. The tracked benchmark is `scripts/benchmark-transfer.py`.
+
+## Historical 0.7 evidence — 2026-10-25
 
 | Area | Completed observation | Scope and limits |
 | --- | --- | --- |

@@ -15,8 +15,10 @@ internal static class Program
     private static async Task<int> Main(string[] arguments)
     {
         if (arguments.Length >= 2 && arguments[0] == "--fake-helper") return await FakeHelper.RunAsync(arguments);
+        if (arguments.Length > 0 && arguments[0] == "--inspect-native") return NativePackageInspection.Run(arguments);
         (string Name, Func<Task> Run)[] cases = [
             ("settings preserve existing permissions and unknown additive fields", SettingsRoundTrip),
+            ("setup is explicit and preserves custom destinations", SetupTests.ExplicitDefaults),
             ("old defaults and 100 GiB progress remain exact", DefaultsAndLargeProgress),
             ("pairing completion follows certificate identity and validates local connection origins", PairingIdentity),
             ("automatic receive consent applies only to the offered sender", ReceiveConsent),
@@ -446,7 +448,7 @@ internal static class Program
         await using var fixture = new Fixture(); await using var client = new DaemonClient(new DaemonClientOptions { DisableDiscovery = true });
         await client.StartAsync(Path.GetFullPath(helper), fixture.Data, fixture.Received);
         var before = await client.RequestAsync<HostStatus>("status");
-        var expectedVersion = Environment.GetEnvironmentVariable("AIRLINK_TEST_VERSION") ?? "0.7.0";
+        var expectedVersion = Environment.GetEnvironmentVariable("AIRLINK_TEST_VERSION") ?? "0.8.0";
         Require(before.Version == expectedVersion && before.Fingerprint.Length == 64 && before.ChunkSize == 8 * 1024 * 1024, "Unexpected service contract/version");
         var settings = ProtocolJson.Clone(before.Settings);
         settings.Appearance = "dark"; settings.Language = "en"; settings.Notifications = false;
@@ -671,7 +673,7 @@ internal static class FakeHelper
                     if (mode != "hang-no-ack") await Reply(id, new { ok = true });
                     if (!mode.StartsWith("hang", StringComparison.Ordinal)) return 0;
                     break;
-                case "status": await Reply(id, new { id = "fake-host", version = "0.7.0", name = "Fake service", settings = new HostSettings() }); break;
+                case "status": await Reply(id, new { id = "fake-host", version = "0.8.0", name = "Fake service", settings = new HostSettings() }); break;
                 case "echo": await Reply(id, root.GetProperty("params").Clone()); break;
                 case "reject": await Reply(id, error: "This transfer still requires recipient approval."); break;
                 case "slow":

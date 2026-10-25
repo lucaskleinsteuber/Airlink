@@ -37,41 +37,22 @@ internal static class Dialogs
     {
         if (c.Status is null) return;
         var settings = ProtocolJson.Clone(c.Status.Settings);
-        var form = new Form(owner, c.T("Einstellungen", "Settings"), 600);
-        var name = form.Input(c.T("Name dieses PCs", "This PC's name"), settings.Name);
-        var directory = form.Input(c.T("Empfangsordner", "Receive folder"), settings.ReceiveDirectory);
-        var choose = Theme.Button(c.T("Ordner wählen …", "Choose folder …"), () =>
-        {
-            var picker = new OpenFolderDialog { Title = c.T("Empfangsordner wählen", "Choose receive folder"), Multiselect = false };
-            if (System.IO.Directory.Exists(directory.Text)) picker.InitialDirectory = directory.Text;
-            if (picker.ShowDialog(form.Window) == true) directory.Text = picker.FolderName;
-        });
-        form.Add(choose);
-        var appearance = form.Options(c.T("Darstellung", "Appearance"),
-            [c.T("System", "System"), c.T("Hell", "Light"), c.T("Dunkel", "Dark")],
-            Array.IndexOf(new[] { "system", "light", "dark" }, settings.Appearance));
-        var language = form.Options(c.T("Sprache", "Language"),
-            [c.T("System", "System"), "Deutsch", "English"],
-            Array.IndexOf(new[] { "system", "de", "en" }, settings.Language));
-        var notifications = form.Check(c.T("Bei empfangenen Dateien benachrichtigen", "Notify when files are received"), settings.Notifications);
-        var duplicates = form.Check(c.T("Empfangene Dateien auf identische Inhalte prüfen", "Check received files for identical content"), settings.Organization.DetectDuplicates);
+        var form = new Form(owner, c.T("Erweiterte Einstellungen", "Advanced settings"), 600);
+        form.Help(c.T("Begrenze die Übertragungsgeschwindigkeit oder prüfe empfangene Dateien auf vorhandene identische Inhalte.",
+            "Limit transfer speed or check received files for existing identical content."));
         var sendLimit = form.Input(c.T("Sendelimit in MB/s (0 = unbegrenzt)", "Upload limit in MB/s (0 = unlimited)"), Limit(settings.SendLimitBytesPerSecond));
         var receiveLimit = form.Input(c.T("Empfangslimit in MB/s (0 = unbegrenzt)", "Download limit in MB/s (0 = unlimited)"), Limit(settings.ReceiveLimitBytesPerSecond));
+        var duplicates = form.Check(c.T("Identische Dateien beim Empfang erkennen", "Detect identical files when receiving"), settings.Organization.DetectDuplicates);
+        form.Help(c.T("AirLink fragt vor dem Überspringen einer identischen Datei. Bereits vorhandene Dateien werden nicht gelöscht.",
+            "AirLink asks before skipping an identical file. Existing files are preserved."));
         if (settings.Organization.SortEnabled)
             form.Help(c.T("Deine bestehenden Sortierregeln sind aktiv und bleiben erhalten. Der Regeleditor ist derzeit in der Weboberfläche verfügbar.",
                 "Your existing sorting rules are active and will be preserved. The rule editor is currently available in the web interface."));
         form.Commit(c.T("Speichern", "Save"), async () =>
         {
-            if (string.IsNullOrWhiteSpace(name.Text)) throw new ArgumentException(c.T("Bitte einen Gerätenamen eingeben.", "Enter a device name."));
-            if (!System.IO.Path.IsPathFullyQualified(directory.Text.Trim()))
-                throw new ArgumentException(c.T("Bitte einen vollständigen Empfangspfad wählen.", "Choose an absolute receive folder path."));
-            settings.Name = name.Text.Trim(); settings.ReceiveDirectory = directory.Text.Trim();
-            settings.Appearance = new[] { "system", "light", "dark" }[Math.Max(0, appearance.SelectedIndex)];
-            settings.Language = new[] { "system", "de", "en" }[Math.Max(0, language.SelectedIndex)];
-            settings.Notifications = notifications.IsChecked == true;
-            settings.Organization.DetectDuplicates = duplicates.IsChecked == true;
             settings.SendLimitBytesPerSecond = ParseLimit(sendLimit.Text, c);
             settings.ReceiveLimitBytesPerSecond = ParseLimit(receiveLimit.Text, c);
+            settings.Organization.DetectDuplicates = duplicates.IsChecked == true;
             await c.SaveSettingsAsync(settings);
         });
         form.Show();
@@ -183,7 +164,7 @@ internal static class Dialogs
         {
             Window = new Window
             {
-                Owner = owner, Title = title, Width = width, MaxHeight = 830, MinHeight = 250,
+                Owner = owner, Title = title, Width = Math.Min(width, SystemParameters.WorkArea.Width - 32), MaxHeight = Math.Max(320, Math.Min(830, SystemParameters.WorkArea.Height - 40)), MinHeight = 250,
                 SizeToContent = SizeToContent.Height, WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Background = Theme.Background, Foreground = Theme.Foreground, ShowInTaskbar = false,
                 FontFamily = new System.Windows.Media.FontFamily("Segoe UI"), FontSize = 14

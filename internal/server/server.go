@@ -51,6 +51,7 @@ type Server struct {
 	clipboardMu                          sync.Mutex
 	clipboardMessages                    []model.ClipboardMessage
 	store                                *stateStore
+	settingsMu                           sync.Mutex
 	opts                                 Options
 	fingerprint                          string
 	certificate                          []byte
@@ -62,6 +63,8 @@ type Server struct {
 	rate                                 map[string][]time.Time
 	senders                              map[string]bool
 	senderCancels                        map[string]context.CancelFunc
+	outgoingWake                         chan struct{}
+	discoveryNames                       chan struct{}
 	active                               map[string]map[string]context.CancelFunc
 	transferRequests                     map[string]map[string]context.CancelFunc
 	chunkSlots                           chan struct{}
@@ -147,7 +150,7 @@ func New(opts Options) (*Server, error) {
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Server{engine: eng, shares: shareStore, relays: relayStore, traffic: meter, store: store, opts: opts, fingerprint: fp, certificate: ca, pending: map[string]*pendingPair{}, discovered: map[string]model.Device{}, rate: map[string][]time.Time{}, senders: map[string]bool{}, senderCancels: map[string]context.CancelFunc{}, active: map[string]map[string]context.CancelFunc{}, chunkSlots: make(chan struct{}, 2), ctx: ctx, cancel: cancel, lock: lock}
+	s := &Server{engine: eng, shares: shareStore, relays: relayStore, traffic: meter, store: store, opts: opts, fingerprint: fp, certificate: ca, pending: map[string]*pendingPair{}, discovered: map[string]model.Device{}, rate: map[string][]time.Time{}, senders: map[string]bool{}, senderCancels: map[string]context.CancelFunc{}, outgoingWake: make(chan struct{}, 1), discoveryNames: make(chan struct{}, 1), active: map[string]map[string]context.CancelFunc{}, chunkSlots: make(chan struct{}, 2), ctx: ctx, cancel: cancel, lock: lock}
 	port := opts.Port
 	if port == 0 {
 		port = 43871

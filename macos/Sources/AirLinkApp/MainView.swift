@@ -35,34 +35,47 @@ struct MainView: View {
                     }
                 }
             }
-            .navigationSplitViewColumnWidth(min: 200, ideal: 230, max: 290)
+            .navigationSplitViewColumnWidth(min: 270, ideal: 310, max: 460)
             .safeAreaInset(edge: .bottom) {
-                Button { model.showConnection = true } label: { Label(model.text("Gerät verbinden", "Connect device"), systemImage: "plus") }
-                    .buttonStyle(.plain).padding().frame(maxWidth: .infinity, alignment: .leading).disabled(!model.isReady)
+                VStack(alignment: .leading, spacing: 14) {
+                    Button { model.showConnection = true } label: { Label(model.text("Gerät hinzufügen", "Add device"), systemImage: "plus.circle") }.disabled(!model.isReady || !model.setupComplete)
+                    Divider()
+                    Button { showHistory = true } label: { Label(model.text("Übertragungen", "Transfers"), systemImage: "clock") }.disabled(!model.isReady)
+                    Menu {
+                        Button("Quick Share") { showShares = true }
+                        Button(model.text("Zwischenablage", "Clipboard")) { showClipboard = true }
+                        Button(model.text("Browser-Relays", "Browser relays")) { showRelays = true }
+                    } label: { Label(model.text("Weitere Funktionen", "More features"), systemImage: "ellipsis.circle") }.disabled(!model.isReady || !model.setupComplete)
+                    SettingsLink { Label(model.text("Einstellungen", "Settings"), systemImage: "gearshape") }
+                }.buttonStyle(.plain).padding(18).frame(maxWidth: .infinity, alignment: .leading)
             }
         } detail: {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     title
                     if !model.isReady { HelperAvailabilityView().environmentObject(model) }
+                    if model.setupRequired {
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text(model.text("Willkommen bei AirLink", "Welcome to AirLink")).font(.title2.weight(.semibold))
+                            Text(model.text("Gib diesem Mac einen verständlichen Namen und lege fest, wo empfangene Dateien landen.", "Give this Mac a recognizable name and choose where received files arrive.")).foregroundStyle(.secondary)
+                            Button(model.text("AirLink einrichten", "Set up AirLink")) { model.showSetup = true }.buttonStyle(.borderedProminent)
+                        }.padding(24).frame(maxWidth: .infinity, alignment: .leading).background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
+                    } else {
                     pairingRequests
                     failedDirectSends
                     dropArea
+                    }
                     transfers
                 }.padding(30).frame(maxWidth: 1000, alignment: .leading).frame(maxWidth: .infinity)
             }
             .background(Color(nsColor: .windowBackgroundColor))
             .toolbar {
                 ToolbarItem { Button { model.openReceiveDirectory() } label: { Label(model.text("Empfangsordner", "Receive folder"), systemImage: "tray.and.arrow.down") }.labelStyle(.titleAndIcon).disabled(!model.isReady) }
-                ToolbarItem { Button { showHistory = true } label: { Label(model.text("Verlauf", "History"), systemImage: "clock") }.disabled(!model.isReady) }
-                ToolbarItem { Button { showRelays = true } label: { Label(model.text("Browser-Relays", "Browser relays"), systemImage: "arrow.triangle.branch") }.disabled(!model.isReady) }
-                ToolbarItem { Button { showShares = true } label: { Label("Quick Share", systemImage: "link") }.disabled(!model.isReady) }
-                ToolbarItem { Button { showClipboard = true } label: { Label(model.text("Zwischenablage", "Clipboard"), systemImage: "clipboard") }.disabled(!model.isReady) }
                 ToolbarItem { Button { showLocalConnection = true } label: { Label(model.text("Verbindung", "Connection"), systemImage: "qrcode") }.disabled(!model.isReady) }
-                ToolbarItem { SettingsLink { Label(model.text("Einstellungen", "Settings"), systemImage: "gearshape") } }
             }
         }
         .sheet(isPresented: $model.showConnection) { ConnectView().environmentObject(model) }
+        .sheet(isPresented: $model.showSetup) { SetupView().environmentObject(model) }
         .sheet(isPresented: $showLocalConnection) { LocalConnectionView().environmentObject(model) }
         .sheet(item: $editingDevice) { device in DeviceSettingsView(device: device).environmentObject(model) }
         .sheet(isPresented: $showShares) { ShareListView().environmentObject(model) }
@@ -103,13 +116,13 @@ struct MainView: View {
         return HStack(spacing: 10) {
             Image(systemName: device.kind == "browser" ? "globe" : "desktopcomputer").font(.title3).frame(width: 24)
             VStack(alignment: .leading, spacing: 2) {
-                Text(device.name).lineLimit(1)
+                Text(device.name).fontWeight(.medium).lineLimit(2).fixedSize(horizontal: false, vertical: true).help(device.name)
                 Text(dropDeviceID == device.id && direct ? model.text("Ablegen → direkt senden", "Drop → send directly") : device.online ? model.text("Verbunden", "Connected") : model.text("Nicht erreichbar", "Unavailable")).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
             Circle().fill(device.online ? .green : .secondary).frame(width: 6, height: 6)
         }
-        .padding(.vertical, 5).tag(device.id)
+        .padding(.vertical, 9).tag(device.id)
         .background(dropDeviceID == device.id && direct ? Color.accentColor.opacity(0.13) : .clear, in: RoundedRectangle(cornerRadius: 8))
         .contextMenu { Button(model.text("Berechtigungen …", "Permissions …")) { editingDevice = device } }
         .onDrop(of: [UTType.fileURL], isTargeted: Binding(get: { dropDeviceID == device.id }, set: { entered in

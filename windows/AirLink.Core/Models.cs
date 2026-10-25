@@ -40,6 +40,7 @@ public sealed class HostStatus
 
 public sealed class HostSettings
 {
+    public bool SetupCompleted { get; set; }
     public string Name { get; set; } = "";
     public string ReceiveDirectory { get; set; } = "";
     public string Appearance { get; set; } = "system";

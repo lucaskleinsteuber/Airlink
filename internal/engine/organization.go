@@ -203,15 +203,23 @@ func (e *Engine) loadManaged() error {
 	return rows.Err()
 }
 func (e *Engine) indexFileLocked(r *record, f model.File) error {
+	return e.indexFileLockedMode(r, f, false)
+}
+
+func (e *Engine) indexPublishedFileLocked(r *record, f model.File) error {
+	return e.indexFileLockedMode(r, f, true)
+}
+
+func (e *Engine) indexFileLockedMode(r *record, f model.File, published bool) error {
 	if r.Transfer.Direction != "receive" || !f.Completed || f.Directory || f.Skipped || !validHash(f.SHA256) {
 		return nil
 	}
 	relative := destination(f)
-	key := filepath.Join(organizationSystemPath(r.ReceiveRoot), filepath.FromSlash(relative))
-	if e.managedSeen[key] {
+	key := filepath.Join(organizationSystemPath(publishedRoot(r)), filepath.FromSlash(relative))
+	if e.managedSeen[key] && !published {
 		return nil
 	}
-	c := managedFile{ID: identifier(), Root: organizationSystemPath(r.ReceiveRoot), Relative: relative, Size: f.Size, SHA256: f.SHA256}
+	c := managedFile{ID: identifier(), Root: organizationSystemPath(publishedRoot(r)), Relative: relative, Size: f.Size, SHA256: f.SHA256}
 	in, info, err := openManagedRaw(c)
 	if err == nil {
 		c.Identity, err = managedIdentity(in, info)
@@ -231,6 +239,17 @@ func (e *Engine) indexFileLocked(r *record, f model.File) error {
 		return err
 	}
 	defer tx.Rollback()
+	replaced := []string{}
+	if published {
+		for id, previous := range e.managed {
+			if filepath.Join(previous.Root, filepath.FromSlash(previous.Relative)) == key {
+				if _, err = tx.Exec("DELETE FROM managed_files WHERE id=?", id); err != nil {
+					return err
+				}
+				replaced = append(replaced, id)
+			}
+		}
+	}
 	if _, err = tx.Exec("INSERT INTO managed_files(id,sha,size,document)VALUES(?,?,?,?)", c.ID, c.SHA256, c.Size, b); err != nil {
 		return err
 	}
@@ -239,6 +258,9 @@ func (e *Engine) indexFileLocked(r *record, f model.File) error {
 	}
 	if err = tx.Commit(); err != nil {
 		return err
+	}
+	for _, id := range replaced {
+		delete(e.managed, id)
 	}
 	e.managed[c.ID] = c
 	e.managedSeen[key] = true

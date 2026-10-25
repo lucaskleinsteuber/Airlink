@@ -25,7 +25,19 @@ internal static class Program
     public static void Main()
     {
         using var singleton = new Mutex(true, @"Local\lucasfd3.AirLink.Desktop", out var created);
-        if (!created) { PostMessage(new IntPtr(0xffff), ShowMessage, IntPtr.Zero, IntPtr.Zero); return; }
+        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.8.0.0";
+        var sessionPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AirLink", "desktop-session-" + System.Diagnostics.Process.GetCurrentProcess().SessionId + ".json");
+        if (!created)
+        {
+            PostMessage(new IntPtr(0xffff), ShowMessage, IntPtr.Zero, IntPtr.Zero);
+            if (!DesktopSession.SameVersionRunning(sessionPath, version))
+            {
+                var english = System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "en";
+                MessageBox.Show(english ? "AirLink is already running. To open this update, quit the existing app using its system-tray menu next to the clock, then open the new EXE again. Your devices and files are preserved." : "AirLink läuft bereits. Beende die bisherige App über ihr Symbol im Infobereich neben der Uhr und öffne danach die neue EXE erneut. Deine Geräte und Dateien bleiben erhalten.", english ? "Open the AirLink update" : "AirLink-Update öffnen", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            return;
+        }
+        using var registration = DesktopSession.Register(sessionPath, version);
         SetCurrentProcessExplicitAppUserModelID("lucasfd3.AirLink");
         var application = new System.Windows.Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         Theme.Apply("system");

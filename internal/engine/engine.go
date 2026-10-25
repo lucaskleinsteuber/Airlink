@@ -41,13 +41,15 @@ type source struct {
 	Identity string `json:"identity,omitempty"`
 }
 type record struct {
-	Transfer       model.Transfer     `json:"transfer"`
-	Sources        map[string]source  `json:"sources,omitempty"`
-	ReceiveRoot    string             `json:"receiveRoot,omitempty"`
-	Organization   model.Organization `json:"organization"`
-	LegacyVerified map[string]string  `json:"legacyVerified,omitempty"`
-	OfferRequestID string             `json:"offerRequestId,omitempty"`
-	OfferInputHash string             `json:"offerInputHash,omitempty"`
+	Transfer          model.Transfer     `json:"transfer"`
+	Sources           map[string]source  `json:"sources,omitempty"`
+	ReceiveRoot       string             `json:"receiveRoot,omitempty"`
+	Organization      model.Organization `json:"organization"`
+	LegacyVerified    map[string]string  `json:"legacyVerified,omitempty"`
+	OfferRequestID    string             `json:"offerRequestId,omitempty"`
+	OfferInputHash    string             `json:"offerInputHash,omitempty"`
+	DirectReceive     bool               `json:"directReceive,omitempty"`
+	DirectDirectories map[string]string  `json:"directDirectories,omitempty"`
 }
 
 type Engine struct {
@@ -174,6 +176,11 @@ CREATE TABLE IF NOT EXISTS chunks(transfer_id TEXT NOT NULL,file_id TEXT NOT NUL
 			}
 		}
 	}
+	e.mu.Lock()
+	for _, r := range e.records {
+		e.queueCancelledCleanupLocked(r)
+	}
+	e.mu.Unlock()
 	return e, nil
 }
 
@@ -377,20 +384,11 @@ func (e *Engine) CreateIncoming(device model.Device, files []model.File) (model.
 		return model.Transfer{}, err
 	}
 	id := identifier()
-	label := strings.Map(func(r rune) rune {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' {
-			return r
-		}
-		return '-'
-	}, device.Name)
-	if label == "" {
-		label = "Device"
+	r := &record{Transfer: model.Transfer{ID: id, DeviceID: device.ID, DeviceName: device.Name, Direction: "receive", State: "offered", Files: files, TotalBytes: total, CreatedAt: now(), Destination: e.receiveDir}, ReceiveRoot: filepath.Join(e.receiveDir, ".airlink-partials", id), Organization: policy, LegacyVerified: map[string]string{}, DirectReceive: true}
+	r.Transfer.Files, err = e.directDestinationsLocked(r)
+	if err != nil {
+		return model.Transfer{}, err
 	}
-	if len(label) > 40 {
-		label = "Device"
-	}
-	dir := filepath.Join(e.receiveDir, "AirLink-"+time.Now().Format("20060102-150405")+"-"+label+"-"+id[:8])
-	r := &record{Transfer: model.Transfer{ID: id, DeviceID: device.ID, DeviceName: device.Name, Direction: "receive", State: "offered", Files: files, TotalBytes: total, CreatedAt: now(), Destination: dir}, ReceiveRoot: dir, Organization: policy, LegacyVerified: map[string]string{}}
 	e.records[id] = r
 	if err = e.saveLocked(r); err != nil {
 		delete(e.records, id)
@@ -405,6 +403,9 @@ func (e *Engine) CreateIncoming(device model.Device, files []model.File) (model.
 }
 
 func (e *Engine) ensureIncoming(r *record) error {
+	if r.DirectReceive {
+		return e.ensureDirectIncoming(r)
+	}
 	parentRoot, err := organizationRoot(filepath.Dir(r.ReceiveRoot))
 	if err != nil {
 		return err
@@ -549,6 +550,9 @@ func (e *Engine) stateChange(id, state, reason string) error {
 	*r = updated
 	e.cancelVerificationLocked(id)
 	e.cancelSourceOperationsLocked(id)
+	if state == "cancelled" {
+		e.queueCancelledCleanupLocked(r)
+	}
 	return e.scheduleLocked()
 }
 func (e *Engine) Resume(id string) error {
@@ -881,21 +885,27 @@ func (e *Engine) CompleteFile(ctx context.Context, id, fileID, hash string) erro
 			return err
 		}
 	}
-	if err = ensureOrganizationDirs(root, path.Dir(destination(f))); err != nil {
-		return e.failLocked(r, err)
-	}
-	if _, err = root.Lstat(filepath.FromSlash(destination(f))); err == nil {
-		return e.failLocked(r, fmt.Errorf("%w: destination already exists", ErrConflict))
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return e.failLocked(r, err)
-	}
-	// Both publication mechanisms refuse to replace an existing file. The
-	// rename fallback also supports exFAT, which has no hardlinks.
-	if err = publish(root, partialName(fileID), filepath.FromSlash(destination(f))); err != nil {
-		return e.failLocked(r, err)
-	}
-	if err = syncRootDirectory(root, filepath.Dir(filepath.FromSlash(destination(f)))); err != nil {
-		return e.failLocked(r, err)
+	if r.DirectReceive {
+		if err = e.publishDirectLocked(r, i); err != nil {
+			return e.failLocked(r, err)
+		}
+	} else {
+		if err = ensureOrganizationDirs(root, path.Dir(destination(f))); err != nil {
+			return e.failLocked(r, err)
+		}
+		if _, err = root.Lstat(filepath.FromSlash(destination(f))); err == nil {
+			return e.failLocked(r, fmt.Errorf("%w: destination already exists", ErrConflict))
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return e.failLocked(r, err)
+		}
+		// Both publication mechanisms refuse to replace an existing file. The
+		// rename fallback also supports exFAT, which has no hardlinks.
+		if err = publish(root, partialName(fileID), filepath.FromSlash(destination(f))); err != nil {
+			return e.failLocked(r, err)
+		}
+		if err = syncRootDirectory(root, filepath.Dir(filepath.FromSlash(destination(f)))); err != nil {
+			return e.failLocked(r, err)
+		}
 	}
 	r.Transfer.Files[i].SHA256 = hash
 	r.Transfer.Files[i].Completed = true
@@ -908,8 +918,11 @@ func (e *Engine) CompleteFile(ctx context.Context, id, fileID, hash string) erro
 	if err = e.saveLocked(r); err != nil {
 		return err
 	}
+	if r.DirectReceive {
+		_ = root.Close()
+	}
 	cleanupCompletedReceive(r)
-	if err = e.indexFileLocked(r, r.Transfer.Files[i]); err != nil {
+	if err = e.indexPublishedFileLocked(r, r.Transfer.Files[i]); err != nil {
 		return err
 	}
 	return e.scheduleLocked()
@@ -966,6 +979,17 @@ func (e *Engine) recoverIncoming(r *record) error {
 		return err
 	}
 	defer root.Close()
+	finalRoot := root
+	if r.DirectReceive {
+		finalRoot, err = organizationRoot(r.Transfer.Destination)
+		if err != nil {
+			return err
+		}
+		defer finalRoot.Close()
+		if err = validateDirectDirectories(finalRoot, r); err != nil {
+			return err
+		}
+	}
 	r.Transfer.CompletedBytes = 0
 	r.Transfer.SkippedBytes = 0
 	for i, f := range r.Transfer.Files {
@@ -982,10 +1006,22 @@ func (e *Engine) recoverIncoming(r *record) error {
 		// Publication may have completed immediately before a process crash,
 		// while the SQLite completion record did not. Reconcile using the
 		// expected hash persisted before publication; never overwrite it.
-		if finalInfo, statErr := root.Lstat(filepath.FromSlash(destination(f))); statErr == nil && finalInfo.Mode()&os.ModeSymlink != 0 {
+		if r.DirectReceive {
+			finalInfo, finalErr := finalRoot.Lstat(filepath.FromSlash(destination(f)))
+			partialInfo, partialErr := root.Lstat(partialName(f.ID))
+			if finalErr == nil && (!validHash(f.SHA256) || partialErr == nil && !os.SameFile(finalInfo, partialInfo)) {
+				chosen, chooseErr := unusedDestination(finalRoot, collisionBase(f), false, nil)
+				if chooseErr != nil {
+					return chooseErr
+				}
+				r.Transfer.Files[i].DestinationPath = chosen
+				f = r.Transfer.Files[i]
+			}
+		}
+		if finalInfo, statErr := finalRoot.Lstat(filepath.FromSlash(destination(f))); statErr == nil && finalInfo.Mode()&os.ModeSymlink != 0 {
 			return ErrConflict
 		}
-		if final, openErr := root.Open(filepath.FromSlash(destination(f))); openErr == nil {
+		if final, openErr := finalRoot.Open(filepath.FromSlash(destination(f))); openErr == nil {
 			info, statErr := final.Stat()
 			h := sha256.New()
 			_, hashErr := io.CopyBuffer(h, final, make([]byte, 256*1024))

@@ -24,10 +24,7 @@ for ARCH in x64 arm64; do
   fi
   DEST="$OUTPUT/windows-$ARCH"
   mkdir -p "$DEST"
-  "$DOTNET_BIN" publish windows/AirLink.Windows/AirLink.Windows.csproj \
-    --configuration Release --runtime "win-$ARCH" --self-contained true \
-    --output "$DEST" -p:AirLinkHelperPath="$HELPER"
-  python3 scripts/verify-windows-pe.py "$DEST/AirLink.exe" --arch "$ARCH"
+  "$DOTNET_BIN" restore windows/AirLink.Windows/AirLink.Windows.csproj --runtime "win-$ARCH"
   # Runtime packages carry the exact licensing material for the published version.
   # Locate versions from NuGet's resolved assets rather than guessing the runtime patch.
   python3 - "$ROOT" "$DEST" "$ARCH" <<'PY'
@@ -52,4 +49,10 @@ for stem in ('Microsoft.NETCore.App.Runtime.win-', 'Microsoft.WindowsDesktop.App
     if not found: raise SystemExit('Missing runtime license: '+key)
 (dest/'THIRD-PARTY-NOTICES.txt').write_text(''.join(parts), encoding='utf-8')
 PY
+  "$DOTNET_BIN" publish windows/AirLink.Windows/AirLink.Windows.csproj \
+    --configuration Release --runtime "win-$ARCH" --self-contained true \
+    --output "$DEST" -p:AirLinkHelperPath="$HELPER" -p:AirLinkNoticesPath="$DEST/THIRD-PARTY-NOTICES.txt"
+  python3 scripts/verify-windows-pe.py "$DEST/AirLink.exe" --arch "$ARCH"
+  "$DOTNET_BIN" run --project windows/AirLink.Core.Tests/AirLink.Core.Tests.csproj --configuration Release -- \
+    --inspect-native "$ROOT/windows/AirLink.Windows/bin/Release/net10.0-windows/win-$ARCH/AirLink.dll" "$HELPER"
 done

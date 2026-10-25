@@ -71,6 +71,16 @@ Final background tests, cross-published package checks and physical Windows runt
 
 Implementation and background tests remain separate from physical acceptance. The Windows laptop, Mac, iPhone and iPad still need the relevant manual runs in [DEVICE-CHECK.md](DEVICE-CHECK.md); Linux and Android remain separate gates. Native Windows browser-relay administration, detailed statistics and sorting-rule editing are not yet complete.
 
+## 0.8 — Setup, understandable destinations and desktop presentation
+
+- A first-run native setup asks for a recognizable device name and receive folder. The explicit completion flag is persisted only after save succeeds; existing installations are guided through the choice without discarding pairings, history or custom destinations.
+- Windows uses a resizable sidebar with readable names and clear Devices / Transfers / Settings navigation. The everyday send view concentrates on one recipient and file drop; permissions and advanced tools remain available separately.
+- Direct Windows EXE downloads include the runtime/helper and in-app license notices, avoiding ZIP extraction for ordinary startup.
+- New incoming files are verified in private transfer-scoped partial storage, then published directly in the chosen folder with collision-safe names. Sent folders keep their hierarchy and use a new top-level name when necessary. Existing/in-progress legacy destinations stay fixed.
+- Performance investigation uses actual payload/hash and phase measurements. Same-host benchmark results remain distinct from Wi-Fi, Windows storage and physical-device evidence; no unmeasured cause or fixed throughput promise is inferred.
+
+Background verification and actual device interaction remain separate. Native setup/rendering, destination behavior on real platform filesystems and the user's 300 MB scenario still need the manual records in [DEVICE-CHECK.md](DEVICE-CHECK.md).
+
 ## 1.0 — Accepted and maintainable (physical acceptance pending)
 
 Still pending: reach the full agreed platform, reliability, integrity, security, usability, and distribution acceptance bar. Stable release claims require completed evidence, including real cross-device transfers, large single files, interrupted transfers, platform-specific file handling, usable native Windows interaction, and macOS distribution checks. A native Windows client is now a required part of the 1.0 product, following the first real transfer feedback.

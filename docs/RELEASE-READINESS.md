@@ -1,6 +1,6 @@
 # Release readiness
 
-AirLink 0.7.0 is a private development preview. This document defines the acceptance gates for a maintainable 1.0 release; it does not declare those gates complete or assign a release date. Source implementation, completed background tests, package creation, physical device acceptance, and distribution are separate states.
+AirLink 0.8.0 is a private development preview. This document defines the acceptance gates for a maintainable 1.0 release; it does not declare those gates complete or assign a release date. Source implementation, completed background tests, package creation, physical device acceptance, and distribution are separate states.
 
 Historical hosted CI jobs did not execute; local test and build results are recorded separately.
 
@@ -33,6 +33,14 @@ The following checks remain open until their records are linked from TESTING.md.
 - [ ] Observe real multicast discovery through several 15-second browse refreshes, a peer disappearing beyond the 45-second hint lifetime, a changed address and sleep/wake. Library/state unit tests do not prove discovery on a real router.
 - [ ] Check an isolated/guest Wi-Fi or unavailable multicast case: discovery failure is explained, a reachable manual address works, and unreachable peers do not produce an endless ready state.
 - [ ] Record any supported-platform/browser limits explicitly. A missing platform run stays open rather than being inferred from another device.
+
+## Setup and destination usability
+
+- [ ] On a fresh native install, choose recognizable names and the normal Downloads target. Cancel before completion, recover from a failed save, restart, and verify the explicit setup-completion state. Confirm updated names appear on the other host.
+- [ ] On upgrade, preserve identity, pairings, history and custom receive folders. A conventional old AirLink subfolder may be suggested as a change to Downloads only with confirmation. Existing files and saved transfer roots must stay where they were.
+- [ ] Check the direct Windows EXE startup, embedded license pane, sidebar resizing/name readability, normal device selection, separate Settings, first-run wizard and primary result action on real supported Windows hardware.
+- [ ] Verify a single receive lands directly in the selected folder; existing names get safe distinct names. Concurrent file and folder collisions must not overwrite or merge user content, and old/in-progress records must keep their original layout.
+- [ ] Measure the reported approximately 300 MB physical scenario in both directions, recording source preparation, payload and final verification separately. Same-host throughput does not attribute the real Windows/Wi-Fi bottleneck or establish a physical speed claim.
 
 ## Interruption, recovery, and integrity
 
@@ -113,3 +121,7 @@ Completion requires reviewing the linked evidence, not a calculated percentage. 
 The current native transports bound each helper reply to 16 MiB (Windows counts decoded characters). The private status response still includes retained history and manifests. A future summary/pagination contract is required before claiming unlimited history or arbitrary folder-entry counts; payload file size is independent of this metadata bound. Since 0.7, native offer/share preparation and duplicate validation are exempt from the ordinary command deadline; large-folder preparation, cancellation and recovery still need physical acceptance.
 
 Actual offer/share source enumeration still runs serially through the Go stdio dispatcher. The native transport’s out-of-order tests use fake helpers; actual long enumeration can delay status commands. Background preparation with bounded concurrency and cancellation must be validated before claiming responsive status for arbitrary large or unavailable source trees.
+
+## Direct-root filesystem acceptance
+
+Publication uses a confined selected root, identity checks on accepted source-folder roots and no-replace file publication. A simultaneous local process replacing a destination parent between validation and publication can still redirect a new file within that chosen root; parent descriptors are not pinned through the entire syscall. Remote manifests cannot create such links, and existing files are not overwritten. Strict local filesystem-race resistance remains a hardening item. A crash before an accepted source-folder reservation is committed may leave an empty original-named folder; recovery conservatively chooses a suffix and never adopts or deletes unproven user content.

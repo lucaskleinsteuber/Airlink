@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,7 +48,7 @@ func openStore(dir, receive string) (*stateStore, error) {
 		return nil, err
 	}
 	if s.data.ID == "" {
-		name, _ := os.Hostname()
+		name := initialDeviceName()
 		s.data = persisted{ID: randomID(), Settings: model.Settings{Name: name, ReceiveDirectory: receive, Appearance: "system", Language: "system", Notifications: true}, Devices: map[string]deviceRecord{}}
 		s.data.Settings.Shortcut = model.Shortcut{Enabled: true, KeyCode: 37, Modifiers: 768}
 	}
@@ -60,10 +62,30 @@ func openStore(dir, receive string) (*stateStore, error) {
 		s.data.Settings.ReceiveDirectory = receive
 	}
 	if s.data.Settings.ReceiveDirectory == "" {
-		home, _ := os.UserHomeDir()
-		s.data.Settings.ReceiveDirectory = filepath.Join(home, "Downloads", "AirLink")
+		s.data.Settings.ReceiveDirectory = defaultReceiveDirectory()
 	}
 	return s, s.save()
+}
+
+func fallbackReceiveDirectory() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, "Downloads")
+}
+
+func initialDeviceName() string {
+	name, _ := os.Hostname()
+	name = strings.TrimSpace(strings.SplitN(name, ".", 2)[0])
+	if name != "" && len(name) <= 40 && !strings.Contains(name, "-") {
+		return name
+	}
+	switch runtime.GOOS {
+	case "darwin":
+		return "Mac"
+	case "windows":
+		return "Windows-PC"
+	default:
+		return "Linux-PC"
+	}
 }
 func (s *stateStore) save() error {
 	b, e := json.MarshalIndent(s.data, "", "  ")

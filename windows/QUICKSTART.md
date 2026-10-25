@@ -1,37 +1,36 @@
-# AirLink 0.7 for Windows
+# AirLink 0.8 for Windows
 
-Requires a supported 64-bit Windows 10 or Windows 11 installation (x64 or ARM64).
+Requires a supported 64-bit Windows 10 or Windows 11 installation. Download the **x64 EXE** for an Intel/AMD computer or the **ARM64 EXE** for Windows on ARM. Run the downloaded EXE directly; the matching service and runtime are included. No ZIP extraction, .NET installation, terminal or administrator account is needed for ordinary use.
 
-1. Extract the complete ZIP to a folder of your choice and open **AirLink.exe**. No terminal, browser, separate .NET installation or administrator account is needed.
-2. Keep both computers on the same local network. Pair the other computer once if it is not already saved: select it, compare the fingerprint shown directly there, and approve the request on that computer. A discovered address is only a connection hint.
-3. **Drop files or folders directly onto that paired computer in the device list.** That batch is offered immediately. You can also select the computer and use the named central drop area or **Send files…** / **Send folders…**.
-4. If no suitable recipient is selected, files stay prepared. Choose a computer and click **Send**. An explicitly selected offline computer retains its queued offer until reachable. The receiver still approves unless its local automatic-receive policy permits the sender.
-5. After receipt, choose **Show file** / **Open folder** in the recent-transfer result to reach the actual saved content.
+## First launch
 
-An empty, idle draft can choose its sole online authorized desktop automatically. An existing recipient or pending selection is never redirected by discovery. A direct drop sends only its batch, preserving unrelated prepared files. Files added or reselected during preparation remain for a later send. If preparation is busy, finish that offer before dropping another batch; a failed offer keeps its sources for an explicit retry.
+1. Give this computer a name you will recognize on the Mac, for example **Laptop Windows**.
+2. Choose the folder for received files. **Downloads** is the normal choice. Finish setup to save these decisions.
+3. Choose your Mac in the device sidebar. For a new pairing, compare its fingerprint directly on the Mac and approve the request there. Existing pairings remain saved.
+4. Drop a file or folder onto that paired computer, or use its named drop area and **Choose files** / **Choose folder**. That batch is offered immediately. With no recipient selected, a prepared selection waits for your explicit Send.
 
-**Ctrl+O** opens file selection while AirLink has focus; **Ctrl+Enter** sends a prepared selection. These are window shortcuts, not global shortcuts. Double-clicking a paired desktop opens file selection for it.
+New files arrive directly in the chosen folder: `Downloads/report.pdf`, for example. If that name already exists, AirLink chooses a distinct name such as `report (2).pdf`. A sent folder keeps its contents together; a conflicting top-level folder gets a new name rather than merging into the existing folder. Earlier files and transfers keep their saved destinations. **Show file** / **Open folder** opens the actual verified result.
 
-**Updating:** quit the old native AirLink through its notification-area menu before replacing the executable. If an earlier console service is still running, stop it once with **Ctrl+C**. The native app and old service use the same `%APPDATA%\AirLink` metadata folder, preserving identity, settings, pairings and history. Received files stay outside the app folder, normally under `Downloads\AirLink`; the folder is visible and changeable in Settings. Two services cannot use the same metadata directory at once.
+The sidebar can be widened by dragging its divider. Device names wrap onto two lines, with the full name in their tooltip. **Transfers** shows active and recent work. **Settings** contains this PC's name, receive folder, appearance, language and notifications; rate limits and duplicate detection are under Advanced settings. Device-specific permissions are in the selected device's **···** menu. **Quick Share**, **Clipboard** and phone connection details are under **More tools**.
 
-Automatic receiving is optional and applies to one trusted sender. Your choice on Windows controls files arriving on Windows; the Mac has its own independent choice. Ordinary pairing does not silently enable either side.
+Automatic receiving is an explicit local choice for a trusted sender. Enabling it on Windows controls incoming Mac → Windows files; the Mac has its own independent choice. Ordinary pairing does not enable it automatically.
 
-**Quick Share** creates local links from selected files/folders or eligible completed transfers. Set an optional password, expiry and download limit, copy the complete link, and revoke it from the share list. The host and original source files must stay available; recipients still need a reachable local network and trust in this computer’s certificate. Links do not create internet access.
+**Ctrl+O** chooses files while the send view has focus; **Ctrl+Enter** sends an already prepared selection. Direct drops pin their recipient and batch; unrelated prepared files are kept separate. An unchanged retry after a lost offer response recovers the existing retained transfer instead of creating another one.
 
-**Clipboard** supports explicit Paste/Edit/Send/Copy/Dismiss. Enable clipboard permission for the paired device; desktop peers need permission on both sides. Receiving text never reads or replaces the system clipboard automatically. Text is bounded to 64 KiB UTF-8 and remains in memory for up to one hour and 100 messages.
+## Updating and quitting
 
-Closing the main window keeps AirLink running in the notification area. When notifications are enabled, requests, pending choices, text and new completions can draw your attention there. Use its menu to reopen AirLink, open the receive folder or quit. Native browser-relay administration, detailed statistics and sorting-rule editing remain further interface work; existing web/macOS controls remain available.
+Quit the old native app through its notification-area menu before replacing/running the new EXE. If the legacy console service is still running, stop it once with **Ctrl+C**. The standard `%APPDATA%\AirLink` metadata directory retains identity, pairings, settings and history. During first setup after upgrading, the old conventional `Downloads\AirLink` destination is offered as a change to Downloads; confirm the destination you want. Custom folders remain selected. Already received files are not relocated.
 
-These are private prerelease builds. The executable is not Authenticode signed. Only run the package from the private AirLink repository. Cross-building and background tests do not establish Windows interaction, tray/Explorer behavior, real multicast discovery or physical transfer acceptance; those checks remain manual.
+Closing the window keeps AirLink running in the notification area so transfers can continue. Use **Beenden / Quit** there to stop the app and checkpoint work.
+
+This is a private, unsigned prerelease. Only run the file obtained from the private AirLink repository. **Settings → Licenses** displays the bundled MIT license and runtime notices. Cross-building/resource checks do not prove the new UI, tray, Explorer, clipboard or real network performance on a Windows laptop; those checks are manual. Native relay administration, detailed statistics and sorting-rule editing remain further interface work.
 
 ## Deutsch
 
-ZIP vollständig entpacken und **AirLink.exe** öffnen. Beim Update die bisherige native App zuerst über den Infobereich beenden. Falls noch der alte Konsolendienst läuft, diesen einmal mit **Strg+C** beenden. Die separate Identität, Kopplungen, Einstellungen und empfangenen Dateien bleiben erhalten.
+Lade die passende **EXE** herunter und öffne sie direkt. Beim Update die bisherige App zuerst über **Beenden / Quit** im Infobereich beenden. Ein altes Konsolenfenster bei Bedarf einmal mit **Strg+C** stoppen. Ein Entpacken ist nicht erforderlich.
 
-Mac und Windows müssen im selben erreichbaren lokalen Netzwerk sein. Bereits gespeicherte Geräte bleiben gekoppelt. Ein neues Gerät einmal verbinden, den Fingerabdruck direkt vergleichen und die Anfrage dort bestätigen.
+Bei der Einrichtung vergibst du einen verständlichen **Gerätenamen**, zum Beispiel **Laptop Windows**, und wählst den **Zielordner**, normalerweise **Downloads**. Neue Dateien landen direkt dort; bei einem Namenskonflikt erhält die neue Datei einen Zusatz. Bereits empfangene Dateien und laufende ältere Übertragungen behalten ihren Speicherort.
 
-**Dateien oder Ordner direkt auf den gekoppelten Computer in der Geräteliste ziehen.** Alternativ den Computer wählen und auf die mit seinem Namen beschriftete Fläche ziehen oder **Dateien senden …** verwenden. Dieser Stapel wird direkt angeboten. Ohne geeigneten Empfänger bleibt die Auswahl vorbereitet: Gerät wählen, dann **Senden** beziehungsweise **Strg+Enter**. **Strg+O** öffnet die Dateiauswahl im AirLink-Fenster. Ein offline ausgewählter Computer behält sein Angebot in der Warteschlange.
+Wähle den Mac in der breiten, verstellbaren Seitenleiste. Ein neues Gerät einmal koppeln, den Fingerabdruck direkt vergleichen und die Anfrage auf dem anderen Gerät bestätigen. Danach Dateien auf das gekoppelte Gerät oder seine beschriftete Ablagefläche ziehen. Die Übertragung startet für diesen Stapel; die Empfangsbestätigung richtet sich nach der ausdrücklich gespeicherten Einstellung des Empfängers.
 
-Nach dem Empfang führt **Datei zeigen** oder **Ordner öffnen** direkt zum Ergebnis. Automatisches Annehmen lässt sich ausdrücklich pro vertrautem Gerät einschalten und gilt jeweils nur auf dem Empfänger. **Quick Share** erstellt lokale Freigabelinks mit optionalem Passwort, Ablauf und Downloadlimit. **Zwischenablage** sendet und kopiert Text nur durch deine ausdrückliche Aktion.
-
-Das Schließen des Fensters lässt AirLink im Infobereich weiterlaufen. Zum vollständigen Beenden dort **Beenden / Quit** wählen. Die neue Bedienung, Benachrichtigungen und Geräteerkennung sind auf dem echten Windows-Laptop noch manuell zu prüfen; es gibt keine UI-Automation.
+**Einstellungen** enthält Namen und Zielordner. Die Geräteberechtigungen liegen im **···**-Menü des Geräts. **Übertragungen** zeigt Fortschritt und Ergebnisse; **Datei zeigen** beziehungsweise **Ordner öffnen** führt direkt zum Ergebnis. Quick Share, Zwischenablage und die Handy-Verbindung stehen unter **Weitere Funktionen**. Im Einstellungsbereich findest du auch **Lizenzen**.

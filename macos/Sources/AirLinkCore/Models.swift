@@ -87,6 +87,7 @@ public struct PairRequest: Codable, Identifiable, Sendable {
 }
 
 public struct HostSettings: Codable, Equatable, Sendable {
+    public var setupCompleted: Bool
     public var name: String
     public var receiveDirectory: String
     public var appearance: String
@@ -96,16 +97,18 @@ public struct HostSettings: Codable, Equatable, Sendable {
     public var receiveLimitBytesPerSecond: Int64
     public var shortcut: Shortcut
     public var organization: Organization
-    public init(name: String = "", receiveDirectory: String = "", appearance: String = "system", language: String = "de", notifications: Bool = true, sendLimitBytesPerSecond: Int64 = 0, receiveLimitBytesPerSecond: Int64 = 0, shortcut: Shortcut = Shortcut(), organization: Organization = Organization()) {
+    public init(name: String = "", receiveDirectory: String = "", appearance: String = "system", language: String = "de", notifications: Bool = true, sendLimitBytesPerSecond: Int64 = 0, receiveLimitBytesPerSecond: Int64 = 0, shortcut: Shortcut = Shortcut(), organization: Organization = Organization(), setupCompleted: Bool = false) {
+        self.setupCompleted = setupCompleted
         self.name = name; self.receiveDirectory = receiveDirectory; self.appearance = appearance; self.language = language; self.notifications = notifications
         self.sendLimitBytesPerSecond = sendLimitBytesPerSecond; self.receiveLimitBytesPerSecond = receiveLimitBytesPerSecond; self.shortcut = shortcut
         self.organization = organization
     }
     enum CodingKeys: String, CodingKey {
-        case name, receiveDirectory, appearance, language, notifications, sendLimitBytesPerSecond, receiveLimitBytesPerSecond, shortcut, organization
+        case name, receiveDirectory, appearance, language, notifications, sendLimitBytesPerSecond, receiveLimitBytesPerSecond, shortcut, organization, setupCompleted
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        setupCompleted = try c.decodeIfPresent(Bool.self, forKey: .setupCompleted) ?? false
         name = try c.decode(String.self, forKey: .name)
         receiveDirectory = try c.decode(String.self, forKey: .receiveDirectory)
         appearance = try c.decode(String.self, forKey: .appearance)

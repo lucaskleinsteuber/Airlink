@@ -1,6 +1,6 @@
-# AirLink protocol 1 — 0.7.0
+# AirLink protocol 1 — 0.8.0
 
-The baseline transfer routes introduced in 0.1 remain compatible with the current 0.7 implementation. Additive share/clipboard interfaces are specified in [API-0.2.md](API-0.2.md), relay/rate/history/statistics in [API-0.3.md](API-0.3.md), and optional incoming-file organization in [API-0.4.md](API-0.4.md). The 0.6 local-only additions below remain available; 0.7 native sending, shares and clipboard controls reuse these existing methods rather than adding recipient approval or filesystem powers to the LAN API. Wire protocol version remains 1.
+The baseline transfer routes introduced in 0.1 remain compatible with the current 0.8 implementation. Additive share/clipboard interfaces are specified in [API-0.2.md](API-0.2.md), relay/rate/history/statistics in [API-0.3.md](API-0.3.md), and optional incoming-file organization in [API-0.4.md](API-0.4.md). The 0.6 local-only additions below remain available; 0.7 native sending, shares and clipboard controls reuse these existing methods rather than adding recipient approval or filesystem powers to the LAN API. Wire protocol version remains 1.
 
 The Go definitions in `internal/model` define JSON names. All byte counts and offsets are signed 64-bit integers. State and transfer updates are persisted. Empty lists are JSON arrays.
 
@@ -38,7 +38,7 @@ Daemon `--stdio` accepts one JSON object per line `{id,method,params}` and repli
 - `offer` `{deviceId,paths:[absolute filesystem paths],requestId?}` → Transfer. Native paired engines receive direct TLS transfers; browser peers download offered host files. Since 0.7, an optional request ID of 32 lowercase hexadecimal characters makes creation idempotent: the same ID, device and ordered cleaned paths return the original persisted transfer/file IDs, including after service restart. Reuse with different input returns a conflict. The key is saved in the same transfer document as the initial offer, and a failed save does not consume it. Replaying a key returns the existing state; it does not resume, modify or resend the job. The key lasts with its retained transfer record: explicitly clearing that terminal history also removes its replay record. Omit the ID for legacy behavior.
 - `peer.connect` `{url,fingerprint}` → `{requestId}`; user must compare the fingerprint displayed directly by the target, then approve the request at the target. Request acknowledgment is still pending, not a completed pairing. Polling completes reciprocal credentials after approval.
 - `peer.connectTrusted` `{url,fingerprint}` → `{requestId}`: the same pairing flow, with an explicit local choice to receive automatically from the target after successful approval. It does not enable the target's independent auto-receive policy. A denied/expired/failed request does not save this receipt grant.
-- `settings.update` full Settings → normalized Settings. Preserve unrelated shortcut/rate fields. Organization defaults to `{detectDuplicates:false,sortEnabled:false,rules:[]}`; explicit rules affect only new incoming offers.
+- `settings.update` full Settings → normalized Settings. Since 0.8, `setupCompleted` is an additive persisted boolean, defaulting false when absent. Native setup explicitly saves the chosen name/folder and completion flag; a failed save cannot claim completion. Older callers omitting the field preserve the current setting. This flag guides native onboarding and does not replace device authorization or disable the CLI/web protocol. Preserve unrelated shortcut/rate fields. Organization defaults to `{detectDuplicates:false,sortEnabled:false,rules:[]}`; explicit rules affect only new incoming offers.
 - `duplicate.resolve` `{transferId,fileId,action:"keep"|"skip",candidateId?}` → Transfer. Private host only; Skip streams and revalidates the selected matching candidate.
 - `duplicate.path` `{candidateId}` → `{path}`. Private host only, for explicit Show/Copy actions. Neither duplicate command is a guest API.
 - `shutdown` → clean exit after checkpointing.
@@ -47,7 +47,12 @@ The macOS and Windows apps own their bundled daemon through these private pipes.
 
 CLI starts the same daemon without stdio. A loopback-only administrative setup console uses a per-run unguessable URL token printed to terminal; it exposes these same local methods, never on LAN. Peer transfer tokens use Authorization headers, never URL query strings.
 
-## Native interaction rules in 0.7
+## Setup and native interaction rules in 0.8
+
+Native first-run setup asks for the local device name and receive folder. Confirming the old conventional `Downloads/AirLink` default as Downloads is a user action; a custom folder remains selected. The normal native send flow waits until setup is complete. Device names and receive destinations remain editable in Settings. Ordinary pairing and automatic receipt stay independent, explicit device permissions.
+
+New incoming transfers use the selected receive folder as their publication root. Relative private destination mappings resolve filename collisions (`report (2).pdf`) and whole-folder collisions (`Photos (2)/...`) without overwriting or merging into an existing user folder. Private partial storage remains transfer-scoped. `transfer.received` returns the current validated published paths through local control; guest filenames and source manifests remain unchanged. Existing and in-progress older records retain their historical root and mapping. Changing Settings affects new offers only.
+
 
 A drop on a paired desktop is an explicit `offer` intent for that batch and pinned `deviceId`. A named central drop area behaves the same way; the Windows recipient-bound file picker also starts its picked batch directly. The macOS picker retains the prepared-selection workflow. Without a suitable desktop recipient, the UI stages the selection and requires a later Send. Desktop native direct-send choices exclude browser peers; browser download and relay roles retain their existing contracts.
 

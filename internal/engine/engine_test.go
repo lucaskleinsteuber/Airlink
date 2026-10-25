@@ -271,8 +271,12 @@ func TestDestinationLinkCannotEscapeAndCollisionNeverOverwrites(t *testing.T) {
 		t.Fatal(err)
 	}
 	putAll(t, e, other, b)
-	if err := e.CompleteFile(context.Background(), other.ID, "file-a", digest(b)); err == nil {
-		t.Fatal("collision overwritten")
+	if err := e.CompleteFile(context.Background(), other.ID, "file-a", digest(b)); err != nil {
+		t.Fatal("collision could not be renamed", err)
+	}
+	completed, _ := e.Get(other.ID)
+	if completed.Files[0].DestinationPath != "existing (2)" {
+		t.Fatal("unexpected collision name", completed.Files[0].DestinationPath)
 	}
 	got, _ := os.ReadFile(filepath.Join(other.Destination, "existing"))
 	if !bytes.Equal(got, original) {
@@ -342,7 +346,7 @@ func TestRecoverUnacknowledgedTailAndPublishedCompletion(t *testing.T) {
 	b := []byte("resilient bytes")
 	tr := incoming(t, e, "file", b)
 	putAll(t, e, tr, b)
-	part := filepath.Join(tr.Destination, partialName("file-a"))
+	part := partialPathForTest(e, tr.ID, "file-a")
 	f, err := os.OpenFile(part, os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		t.Fatal(err)
@@ -483,7 +487,7 @@ func TestPauseCancelsVerificationWithoutStalePublication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	partial, err := os.OpenFile(filepath.Join(tr.Destination, partialName("large")), os.O_CREATE|os.O_RDWR, 0600)
+	partial, err := os.OpenFile(partialPathForTest(e, tr.ID, "large"), os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -563,4 +567,10 @@ func TestPauseCancelsVerificationWithoutStalePublication(t *testing.T) {
 	if current.State != "verifying" {
 		t.Fatal("stale error reset current verification")
 	}
+}
+
+func partialPathForTest(e *Engine, transferID, fileID string) string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return filepath.Join(e.records[transferID].ReceiveRoot, partialName(fileID))
 }

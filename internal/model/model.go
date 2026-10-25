@@ -1,6 +1,6 @@
 package model
 
-const Version = "0.7.0"
+const Version = "0.8.0"
 const ChunkSize int64 = 8 * 1024 * 1024
 
 type File struct {
@@ -55,6 +55,7 @@ type PairRequest struct {
 	CreatedAt string `json:"createdAt"`
 }
 type Settings struct {
+	SetupCompleted             bool         `json:"setupCompleted"`
 	Name                       string       `json:"name"`
 	ReceiveDirectory           string       `json:"receiveDirectory"`
 	Appearance                 string       `json:"appearance"`

@@ -18,14 +18,28 @@ import (
 )
 
 func (s *Server) outgoingLoop() {
-	defer s.wg.Done()
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
+	s.runOutgoingLoop(tick.C)
+}
+
+// Coalescing wakes remove the polling delay for a new user submission. The
+// periodic fallback still discovers recovered work and changed permissions.
+func (s *Server) wakeOutgoing() {
+	select {
+	case s.outgoingWake <- struct{}{}:
+	default:
+	}
+}
+
+func (s *Server) runOutgoingLoop(ticks <-chan time.Time) {
+	defer s.wg.Done()
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
-		case <-tick.C:
+		case <-ticks:
+		case <-s.outgoingWake:
 		}
 		p := s.store.snapshot()
 		for _, t := range s.engine.Transfers("") {
@@ -289,6 +303,9 @@ func (s *Server) sendTransfer(ctx context.Context, t model.Transfer, rec deviceR
 				req.Header.Set("Authorization", "Bearer "+rec.OutboundToken)
 				req.Header.Set("X-Chunk-SHA256", chunkHash)
 				req.Header.Set("Content-Type", "application/octet-stream")
+				// The block already exists in a bounded buffer. Explicit length
+				// avoids chunked request framing around every metered 32 KiB read.
+				req.ContentLength = int64(len(data))
 				res, err := client.Do(req)
 				if err == nil {
 					if res.StatusCode != 200 {

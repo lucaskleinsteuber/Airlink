@@ -33,6 +33,19 @@ internal sealed class Controller : INotifyPropertyChanged
     public HostStatus? Status { get; private set; }
     public bool Ready { get; private set; }
     public bool Starting => starting;
+    public bool SetupComplete => Status?.Settings.SetupCompleted == true;
+    public bool SetupRequired => Ready && !SetupComplete;
+    public string SuggestedReceiveDirectory
+    {
+        get
+        {
+            var downloads = WindowsFolders.Downloads();
+            var saved = Status?.Settings.ReceiveDirectory;
+            var conventional = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+            if (!SetupComplete && (string.Equals(saved, conventional, StringComparison.OrdinalIgnoreCase) || string.Equals(saved, Path.Combine(conventional, "AirLink"), StringComparison.OrdinalIgnoreCase))) return downloads;
+            return SetupDefaults.SuggestReceiveDirectory(saved, downloads);
+        }
+    }
     public bool Sending => draft.IsSending;
     public string? Error => actionError ?? serviceError;
     public bool HasActionError => actionError is not null;
@@ -48,7 +61,7 @@ internal sealed class Controller : INotifyPropertyChanged
     public string DataDirectory => Path.Combine(Environment.GetEnvironmentVariable("APPDATA") ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AirLink");
     public Device? SelectedDevice => Status?.Devices.FirstOrDefault(d => d.Id == SelectedDeviceId);
     public int ActiveCount => (Status?.Transfers.Count(t => t.IsActive) ?? 0) + (Status?.Relays.Count(r => r.State is not ("delivered" or "cancelled" or "failed")) ?? 0);
-    public string Version => Status?.Version ?? "0.7.0";
+    public string Version => Status?.Version ?? "0.8.0";
 
     public Controller(Dispatcher dispatcher)
     {
@@ -83,7 +96,7 @@ internal sealed class Controller : INotifyPropertyChanged
     private static async Task<string> ExtractHelperAsync()
     {
         var assembly = Assembly.GetExecutingAssembly();
-        var version = assembly.GetName().Version?.ToString(3) ?? "0.7.0";
+        var version = assembly.GetName().Version?.ToString(3) ?? "0.8.0";
         var cache = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AirLink", "Runtime", version,
             RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant());
         Stream Open() => assembly.GetManifestResourceStream("AirLink.Windows.Helper") ?? throw new FileNotFoundException("The bundled AirLink service is missing. Download the complete app.");
@@ -200,6 +213,7 @@ internal sealed class Controller : INotifyPropertyChanged
     public async Task SendPathsAsync(IEnumerable<string> paths, string? deviceId = null, bool useCurrentSelection = true)
     {
         RequireReady();
+        RequireSetup();
         var files = ExistingPaths(paths);
         var target = deviceId ?? (useCurrentSelection ? SelectedDeviceId : null);
         if (Sending) throw new IOException(T("Die aktuelle Auswahl wird gerade vorbereitet. Bitte danach erneut ablegen.", "The current selection is being prepared. Please drop the next files when it is ready."));
@@ -216,6 +230,7 @@ internal sealed class Controller : INotifyPropertyChanged
     public async Task SendAsync()
     {
         RequireReady();
+        RequireSetup();
         var submitted = draft.TryBegin(Status?.Devices ?? [], Ready);
         if (submitted is not null) await SubmitAsync(submitted);
     }
@@ -238,6 +253,16 @@ internal sealed class Controller : INotifyPropertyChanged
         RequireReady();
         await client.RequestAsync<HostSettings>("settings.update", settings, lifetime.Token);
         await RefreshAsync();
+    }
+    public async Task CompleteSetupAsync(string name, string folder)
+    {
+        RequireReady();
+        var settings = ProtocolJson.Clone(Status!.Settings);
+        try { settings.Name = SetupDefaults.NormalizeName(name); }
+        catch (ArgumentException) { throw new ArgumentException(T("Bitte einen Gerätenamen mit höchstens 120 UTF-8 Bytes ohne Steuerzeichen eingeben.", "Enter a device name of at most 120 UTF-8 bytes without control characters.")); }
+        if (!Path.IsPathFullyQualified(folder.Trim())) throw new ArgumentException(T("Bitte einen vollständigen Empfangsordner wählen.", "Choose an absolute receive folder."));
+        settings.ReceiveDirectory = folder.Trim(); settings.SetupCompleted = true;
+        await SaveSettingsAsync(settings);
     }
 
     public async Task SaveDeviceAsync(Device device)
@@ -310,5 +335,6 @@ internal sealed class Controller : INotifyPropertyChanged
         return message;
     }
     private void RequireReady() { if (!Ready) throw new IOException(T("Der AirLink-Dienst ist nicht bereit. Bitte erneut starten.", "The AirLink service is not ready. Please retry.")); }
+    private void RequireSetup() { if (!SetupComplete) throw new IOException(T("Lege zuerst deinen Gerätenamen und Empfangsordner in der Einrichtung fest.", "First choose your device name and receive folder in setup.")); }
     private void Changed([CallerMemberName] string? property = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));
 }

@@ -81,7 +81,7 @@ func TestAcceptTrustedRejectsRevokedGrantAndFailedAcceptance(t *testing.T) {
 			case "already-accepted":
 				err = s.engine.Accept(tr.ID)
 			case "destination":
-				err = os.WriteFile(tr.Destination, []byte("destination collision"), 0600)
+				err = os.WriteFile(filepath.Join(tr.Destination, ".airlink-partials"), []byte("private stage collision"), 0600)
 			}
 			if err != nil {
 				t.Fatal(err)

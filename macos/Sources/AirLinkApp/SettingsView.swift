@@ -24,6 +24,7 @@ struct SettingsView: View {
         Form {
             Section(model.text("Allgemein", "General")) {
                 TextField(model.text("Gerätename", "Device name"), text: $settings.name)
+                Text(model.text("So erscheint dieser Mac auf deinen anderen Geräten.", "This is how this Mac appears on your other devices.")).font(.caption).foregroundStyle(.secondary)
                 Picker(model.text("Darstellung", "Appearance"), selection: $settings.appearance) {
                     Text(model.text("System", "System")).tag("system"); Text(model.text("Hell", "Light")).tag("light"); Text(model.text("Dunkel", "Dark")).tag("dark")
                 }
@@ -51,7 +52,8 @@ struct SettingsView: View {
                         }
                     }
                 }
-                Text(model.text("Originaldateien werden beim Senden nicht verschoben oder verändert.", "Sending never moves or changes your original files.")).font(.caption).foregroundStyle(.secondary)
+                Text(model.text("Neue Dateien landen direkt im gewählten Ordner. Gleichnamige Dateien erhalten einen Namenszusatz. Bisherige Transfers behalten ihren Speicherort.", "New files arrive directly in the chosen folder. Name collisions receive a suffix. Previous transfers keep their existing locations.")).font(.caption).foregroundStyle(.secondary)
+                Button(model.text("Einrichtung erneut öffnen …", "Open setup again …")) { model.showSetup = true; model.showMainWindow() }
             }
             OrganizationSection(organization: $settings.organization).environmentObject(model)
             Section(model.text("Geschwindigkeit", "Speed")) {
