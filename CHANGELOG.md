@@ -9,8 +9,9 @@ AirLink uses MAJOR.MINOR.PATCH versions. Entries describe implemented changes; d
 - Add manual **Check for Updates…** to the macOS AirLink menu and menu-bar panel, and to Windows Settings and the tray menu. macOS uses Sparkle 2.10; Windows uses NetSparkle 3.1 and the new Setup package.
 - Pin an Ed25519 public key and require signed feeds and signed update archives/installers. Checks are user initiated; scheduled checks, automatic downloads and system profiling are disabled. An unavailable private feed is reported as unavailable, not as an up-to-date result.
 - Add an offline release-signing/public-verification tool and background installer/privacy/signature checks. The private signing seed stays outside Git; reviewed upstream licenses are preserved.
+- Publish the active repository with owner approval while keeping the earlier archive private. Withdraw untested Linux binary downloads from 0.8.1 and 0.9.0 and from future release packaging; Linux remains experimental and available from source. Curate package manifests/checksums without changing native packages or signed update feeds.
 
-GitHub feeds and downloads require public access for token-free updating. Repository visibility remains a separate owner decision. Background, build and cryptographic verification are recorded in [TESTING.md](docs/TESTING.md); this entry does not claim a physical Windows installer or interactive native updater acceptance run.
+GitHub feeds and native downloads are publicly reachable and verified without credentials. Background, build, delivery and cryptographic verification are recorded in [TESTING.md](docs/TESTING.md); this entry does not claim a physical Windows installer or interactive native updater acceptance run.
 
 ## 0.8.1 — 2026-10-25
 
@@ -19,7 +20,7 @@ GitHub feeds and downloads require public access for token-free updating. Reposi
 - Package Linux archives with neutral ownership and timestamps instead of the packager's local account metadata.
 - Add background privacy regression checks for tracked publication inputs and historical author/tagger identities. These checks supplement the separate historical binary and GitHub metadata audit.
 
-Repository visibility remains private. Historical cleanup and replacement-download publication are recorded separately; this entry does not assert that unreachable GitHub objects or previously downloaded copies have been erased. No updater has been enabled in this patch.
+At original publication, repository visibility remained private. The later public visibility and Linux download withdrawal are recorded in 0.9.0. Historical cleanup and replacement-download publication are recorded separately; this entry does not assert that unreachable GitHub objects or previously downloaded copies have been erased. No updater was enabled in this patch.
 
 ## 0.8.0 — 2026-10-25
 

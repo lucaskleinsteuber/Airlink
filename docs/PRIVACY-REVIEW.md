@@ -1,6 +1,6 @@
 # Publication privacy review
 
-AirLink's active repository is now a newly created **private** repository. The earlier repository remains a separate **private, archived** repository. The migration separates the active publication inputs from the earlier repository identity that retained old provider objects; it does not claim to erase those objects or other copies.
+AirLink's active repository is now **public**, following the owner's approved visibility change. It is the independent repository created during the migration; the earlier repository remains a separate **private, archived** repository. The migration separates the active publication inputs from the earlier repository identity that retained old provider objects; it does not claim to erase those objects or other copies.
 
 The first-party public maintainer identity is **lucasfd3**. Repository-local Git configuration uses the ID-based GitHub Noreply address for new author/committer metadata. The license, app metadata, setup examples and test fixtures use the public identity or neutral examples. Third-party license authors and copyright notices remain intact.
 
@@ -8,7 +8,7 @@ The first-party public maintainer identity is **lucasfd3**. Repository-local Git
 
 | Repository | Role and recorded state |
 | --- | --- |
-| `lucasfd3/Airlink` | Newly created active private repository, REST repository ID `1433237767`; independently created rather than a fork. Only the sanitized branch/tag graph was imported. |
+| `lucasfd3/Airlink` | Active public repository, REST repository ID `1433237767`; independently created rather than a fork. Only the sanitized branch/tag graph was imported before the approved public visibility change. |
 | `lucasfd3/Airlink-private-archive` | Earlier repository identity, REST repository ID `1431646266`, retained as private and archived. Earlier provider-retained objects remain an archive concern; they are not claimed to have been erased. |
 
 Reusing the `Airlink` name and URL does not make these the same GitHub repository identity. The initial import used an isolated fast-export/import stream preserving the sanitized object IDs, with 20 commits and nine annotated version tags at that snapshot. The import object database was scanned for the reviewed original private identity/home-account values with zero matches. An independent fresh clone at that snapshot contained 705 received objects, 20 commits and nine tags. Its complete received object database was clean under the reviewed checks, with no unreachable objects. Follow-up documentation commits have their own later scope.
@@ -25,13 +25,13 @@ Reusing the `Airlink` name and URL does not make these the same GitHub repositor
 | Surface | State and boundary |
 | --- | --- |
 | Current source/docs | First-party identity and examples sanitized; private owner observations removed. |
-| New-repository import and fresh clone | Sanitized main/version refs imported into the new private repository. Independent fresh clone: all 705 received objects, 20 commits and nine tags checked clean, with zero unreachable objects at the recorded snapshot. |
+| New-repository import and fresh clone | Sanitized main/version refs were imported while the new repository was private, before the later public visibility decision. Independent fresh clone: all 705 received objects, 20 commits and nine tags checked clean, with zero unreachable objects at the recorded snapshot. |
 | Earlier history cleanup | Before archiving, the earlier repository received an owner-approved rewrite. Its then-fresh clone had 19 commits, nine tags and 502 historical blobs with zero guard findings; an exact-value scan of its 700 reachable objects was also clean. These are historical graph checks, not a new-repository or provider-erasure claim. |
 | Earlier downloads and hosted metadata | Before archiving, all 40 earlier 0.1.0–0.8.0 packages, eight accompanying checksum files and eight approved old hosted runs were withdrawn. Those actions concern the earlier repository; their metadata is not part of the Git export/import. |
 | Earlier retained provider objects | Two known old commit IDs remained retrievable with earlier author metadata in the earlier repository after its rewrite. That repository is now private and archived. No provider-wide deletion claim is made. |
 | New-route isolation checks | All 17 original commit IDs were absent from the new repository: commit API responses explicitly reported no commit found, and Git-object requests returned not-found. All eight original annotated-tag objects and ten original copyright blobs also returned not-found. The 52 negative probes had no redirects; positive head/tag/license controls returned the expected objects and exact SHA values. |
-| Replacement downloads | The five reviewed 0.8.1 packages passed the local privacy check and are published in the new active repository. All six new-repository files, including checksums, match the reviewed local sizes/SHA-256 values. Only the replacement 0.8.1 release was imported. |
-| Visibility decision | Both repositories remain private. The reviewed source/history, known-object routes and replacement release files passed the completed checks. The owner decides visibility separately; the earlier archive should remain private. |
+| Replacement downloads | At the migration snapshot, the five reviewed 0.8.1 packages passed the local privacy check and were published in the new active repository. All six files, including checksums, matched the reviewed local sizes/SHA-256 values. Only the replacement 0.8.1 release was imported at that point; these are historical publication checks rather than the current download inventory. |
+| Visibility decision | The owner approved making the active repository public, and its visibility is confirmed public. The earlier repository remains private and archived. The reviewed source/history, known-object routes and replacement release files passed the recorded checks; the visibility change does not turn those checks into a provider-erasure or runtime-acceptance guarantee. |
 
 The earlier rewrite preserved commit topology, dates and version tag names while changing affected object IDs. Only the intended branch and version tags enter publication refs; editor checkpoint refs and unreachable local snapshots are excluded. Existing external clones must not merge the old history back into the cleaned branch.
 

@@ -1,6 +1,6 @@
 # AirLink 0.9.0 for Windows
 
-Requires a supported 64-bit Windows 10 or Windows 11 installation. Download **`AirLink-0.9.0-windows-x64-setup.exe`** for an Intel/AMD computer or **`AirLink-0.9.0-windows-arm64-setup.exe`** for Windows on ARM from the private [AirLink releases](https://github.com/lucasfd3/Airlink/releases).
+Requires a supported 64-bit Windows 10 or Windows 11 installation. Download **`AirLink-0.9.0-windows-x64-setup.exe`** for an Intel/AMD computer or **`AirLink-0.9.0-windows-arm64-setup.exe`** for Windows on ARM from the public [AirLink releases](https://github.com/lucasfd3/Airlink/releases).
 
 ## Install
 
@@ -33,11 +33,11 @@ Closing the window keeps AirLink running in the notification area so transfers c
 
 To uninstall, open **Windows Settings → Apps → Installed apps → AirLink → Uninstall**. Quit AirLink through its notification-area menu if asked. Uninstallation removes the installed app, Start menu shortcut and uninstall registration. It preserves the application data and caches listed above, received files and other files placed in the installation directory; that directory remains when it contains other files.
 
-This is a private, unsigned prerelease. Only run Setup obtained from the private AirLink repository. **Settings → Licenses** displays the bundled MIT license and runtime notices. Cross-building/resource checks do not prove installer execution, the new UI, tray, Explorer, clipboard or real network performance on a Windows laptop. The provided installer acceptance test runs silently in a disposable Windows user; completed-run evidence is recorded separately in [TESTING.md](../docs/TESTING.md), and it is not executed on macOS. Native relay administration, detailed statistics and sorting-rule editing remain further interface work.
+This is an unsigned development preview, published in the public AirLink repository. Only run Setup obtained from that repository's releases. **Settings → Licenses** displays the bundled MIT license and runtime notices. Cross-building/resource checks do not prove installer execution, the new UI, tray, Explorer, clipboard or real network performance on a Windows laptop. The provided installer acceptance test runs silently in a disposable Windows user; completed-run evidence is recorded separately in [TESTING.md](../docs/TESTING.md), and it is not executed on macOS. Native relay administration, detailed statistics and sorting-rule editing remain further interface work.
 
 ## Deutsch
 
-Lade **`AirLink-0.9.0-windows-x64-setup.exe`** für einen Intel-/AMD-Rechner oder **`AirLink-0.9.0-windows-arm64-setup.exe`** für Windows auf ARM aus den privaten [AirLink-Releases](https://github.com/lucasfd3/Airlink/releases) herunter und öffne **Setup**. Falls AirLink noch läuft, über **Beenden / Quit** im Infobereich beenden und im Setup erneut versuchen. Nur das Hauptfenster zu schließen beendet die App nicht. Ein altes Konsolenfenster bei Bedarf einmal mit **Strg+C** stoppen.
+Lade **`AirLink-0.9.0-windows-x64-setup.exe`** für einen Intel-/AMD-Rechner oder **`AirLink-0.9.0-windows-arm64-setup.exe`** für Windows auf ARM aus den öffentlichen [AirLink-Releases](https://github.com/lucasfd3/Airlink/releases) herunter und öffne **Setup**. Falls AirLink noch läuft, über **Beenden / Quit** im Infobereich beenden und im Setup erneut versuchen. Nur das Hauptfenster zu schließen beendet die App nicht. Ein altes Konsolenfenster bei Bedarf einmal mit **Strg+C** stoppen.
 
 Setup installiert AirLink für dein Benutzerkonto unter **`%LOCALAPPDATA%\Programs\AirLink`** und legt Einträge im **Startmenü** und unter **Installierte Apps** an. Ein Administratorkonto, Entpacken, eine separate .NET-Installation und ein Terminal sind nicht erforderlich. Öffne AirLink nach der Installation über die Abschlussseite oder das Startmenü.
 
@@ -51,4 +51,4 @@ Für ein Update das neuere **Setup** ausführen. Sobald die installierte App aus
 
 Zum Entfernen **Windows-Einstellungen → Apps → Installierte Apps → AirLink → Deinstallieren** wählen. Die Deinstallation entfernt die installierte App und ihre Startmenü- und Deinstallationseinträge. App-Daten, Laufzeitdateien, empfangene Dateien und andere Dateien im Installationsordner bleiben erhalten. Enthält der Installationsordner solche anderen Dateien, bleibt auch der Ordner bestehen.
 
-Dies ist eine private, nicht Authenticode-signierte Vorabversion. Verwende nur Setup aus dem privaten Repository. Hintergrundtests und Paketprüfungen ersetzen keine Abnahme auf einem echten Windows-Gerät; die tatsächlich ausgeführten Prüfungen stehen in [TESTING.md](../docs/TESTING.md).
+Dies ist eine Vorabversion ohne Authenticode-Signatur aus dem öffentlichen AirLink-Repository. Verwende nur Setup aus dessen Releases. Hintergrundtests und Paketprüfungen ersetzen keine Abnahme auf einem echten Windows-Gerät; die tatsächlich ausgeführten Prüfungen stehen in [TESTING.md](../docs/TESTING.md).

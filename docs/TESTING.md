@@ -39,7 +39,22 @@ Choose the matching architecture on an Intel Mac. The integration case starts on
 
 Set `AIRLINK_GO=/absolute/path/to/go` for the shell scripts if needed. For a direct Go command, invoke that Go binary explicitly.
 
-## 0.9 native installation and signed manual updates — 2026-10-25
+## Public delivery and Linux download withdrawal — 2026-10-25
+
+The owner approved public visibility for the active repository and withdrew untested Linux binaries. Linux remains an experimental source-only target; its cross-builds do not establish runtime acceptance. The observations below supplement the original private publication evidence without rebuilding or relabeling the native apps.
+
+| Area | Completed observation | Scope and limits |
+| --- | --- | --- |
+| Repository boundary | Active repository ID 1433237767 is public, active and not a fork; earlier ID 1431646266 stays private and archived | Anonymous active-repository API succeeds; archived repository routes remain unavailable anonymously. |
+| Anonymous source audit | Fresh clone at `3d4430389838a37190896867518a99ab46519124`: all 800 received objects checked, all reachable, fsck clean; 243 current files/history guard clean | Exact original identity/home-account and publishing-seed checks report zero findings. Known original commit/tag/blob routes remain absent in the independent active repository; this does not assert provider-wide erasure. |
+| Anonymous native delivery | All three appcasts and both detached signatures return HTTP 200 with exact local bytes; all three native packages return HTTP 200 with exact size, bytes and SHA-256 | No cookies, Authorization header or private GitHub token. The actual Sparkle verifier accepts the public macOS feed/DMG and rejects a wrong key; NetSparkle accepts both public Windows feeds/Setup files. No updater GUI or installation was run. |
+| Linux withdrawal | Both Linux TAR downloads withdrawn from each of 0.8.1 and 0.9.0; release metadata/checksums retain only macOS and Windows packages | The release tool and packaging script now select only the three native artifacts. Linux source and development cross-builds remain available. Existing source tags and native package/feed/signature bytes are preserved. |
+| Metadata curation | Public-key-only `native-only` curation and strict verification passed for the final 0.9.0 manifest/checksums; 14 release-tool race tests and `go vet` passed | Curation preserves native package signatures, all feed/signature bytes and publication time, and does not access the private signing seed. The 0.8.1 checksum list is likewise limited to its three retained native packages. |
+| Retained native privacy | Three final 0.9.0 packages: 1,032 payloads, 919 bundle entries, 2,010 managed resources, four NSIS streams; zero findings | Read-only package inspection. No new platform runtime, throughput, hosted CI, installation or 100 GiB acceptance is implied. |
+
+Ignored evidence includes `build/public-0.9-publication-audit.json`, `build/public-delivery-0.9/`, `build/linux-download-withdrawal.json`, `build/linux-native-only-curation-0.9.0.log` and `build/native-public-package-privacy-0.9.0.log`. The installed app and separate application data are unchanged.
+
+## Original 0.9 native installation and signed manual updates — 2026-10-25
 
 | Area | Completed observation | Scope and limits |
 | --- | --- | --- |
@@ -52,8 +67,8 @@ Set `AIRLINK_GO=/absolute/path/to/go` for the shell scripts if needed. For a dir
 | Final signed artifacts | The public-only Go verifier accepts all five actual packages, three exact feeds, manifest and checksums; actual NetSparkle accepts both final architecture feeds/Setup files; official Sparkle verifies the final macOS appcast and universal DMG | Signing is Ed25519 authenticity, separate from OS Developer ID/Authenticode. Altered feeds/packages are rejected in regression fixtures. |
 | Installer handoff | Independent source review found and resolved upstream batch launch and later-exception recovery issues | Windows adapter uses absolute cmd.exe, a bounded fixed-PID no-kill waiter, literal paths and recovery of disabled/prepared UI state. This is source/background proof, not physical Windows interaction. |
 | Hosted/physical acceptance | Disposable-user silent Setup acceptance and Windows-only waiter execution are provided in CI; neither was executed on this Mac | No GUI automation, new physical throughput or 100 GiB run. Local checks are not hosted CI or physical-runtime success. |
-| Online channel | Source/config and signed feeds target the active GitHub repository; its current visibility is private | Token-free live delivery requires public feed/assets. Private/unavailable metadata is an error, not an up-to-date result. Visibility is a separate owner decision. |
-| Private release delivery | 0.9.0 published privately; all seven remote file sizes/SHA-256 values match the reviewed local packages, signature manifest and checksums | Actual anonymous delivery remains gated by the owner's visibility decision. No GitHub token is placed in either app. |
+| Original online channel | Source/config and signed feeds targeted the active GitHub repository while it was still private | Historical pre-publication observation; current anonymous delivery is recorded above. Private/unavailable metadata is an error, not an up-to-date result. |
+| Original private release delivery | 0.9.0 originally published privately; all seven remote file sizes/SHA-256 values matched the reviewed local packages, signature manifest and checksums | Historical inventory before the approved Linux withdrawal. No GitHub token is placed in either app. |
 | Final publication privacy | Independent fresh GitHub clone at `946267c8a1afe2a1133438640c54d067e31b47b2`: all 796 received objects (565 blobs, 198 trees, 23 commits, ten tags) checked clean; 243 current files/history guard passed | Includes exact original identity/home-account and actual publisher seed raw/base64/hex checks without outputting secret values. All objects reachable, fsck clean, alias/Noreply metadata only. |
 
 Ignored evidence: `build/go-tests-0.9.0.jsonl`, `go-vet-0.9.0.log`, `swift-tests-0.9.0.log`, `web-tests-0.9.0.log`, `web-build-0.9.0.log`, `windows-updater-core-tests-0.9.0.log`, `windows-updater-compilation-0.9.0.log`, `windows-publish-0.9.0.log`, `macos-sparkle-*.log`, `package-guard-tests-0.9.0.log`, `package-0.9.0.log`, `dmg-verify-0.9.0.log`, `release-signature-verify-0.9.0.log`, `update-package-netverify-*-0.9.0.log` and `update-*-sparkle-verify-0.9.0.log`. Private signing material is outside Git and is never a test/release artifact. The installed 0.8.1 Mac app and application data were not changed.
@@ -72,7 +87,7 @@ The owner authorized retaining the earlier repository as a private, archived rep
 | Inherited metadata | Exactly one intended branch and nine tags; zero PRs, forks or Actions runs at the check | No historical release downloads or hosted runs imported. The earlier repository's retained-object observations below concern its separate private storage. |
 | Release copy | Private 0.8.1 published in the new active repository; all six remote file sizes/SHA-256 values exactly match the reviewed local inputs | The new repository has only this replacement release. No rebuild or new platform/runtime acceptance is implied. |
 
-The checks cover publication inputs and the probed repository routes, not provider-wide erasure or copies held elsewhere. The active repository remains private; its visibility is a separate owner decision.
+These historical migration checks cover publication inputs and the probed repository routes, not provider-wide erasure or copies held elsewhere. The active repository was private at this check; the later approved visibility change and Linux download withdrawal are recorded above.
 
 ## 0.8.1 privacy patch evidence — 2026-10-25
 

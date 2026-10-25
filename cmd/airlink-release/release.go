@@ -62,9 +62,13 @@ func packageNames(version string) []string {
 		"AirLink-" + version + "-macos-universal.dmg",
 		"AirLink-" + version + "-windows-x64-setup.exe",
 		"AirLink-" + version + "-windows-arm64-setup.exe",
-		"airlink-" + version + "-linux-amd64.tar.gz",
-		"airlink-" + version + "-linux-arm64.tar.gz",
 	}
+}
+
+// Used only to validate and curate metadata from the former five-package
+// publication policy. New releases publish the three native packages above.
+func legacyPackageNames(version string) []string {
+	return append(packageNames(version), "airlink-"+version+"-linux-amd64.tar.gz", "airlink-"+version+"-linux-arm64.tar.gz")
 }
 
 func readBounded(path string, limit int64) ([]byte, error) {
@@ -237,6 +241,13 @@ func signRelease(options releaseOptions) error {
 			return err
 		}
 	}
+	if err := writeReleaseMetadata(options, manifest); err != nil {
+		return err
+	}
+	return verifyRelease(options)
+}
+
+func writeReleaseMetadata(options releaseOptions, manifest releaseManifest) error {
 	manifestData, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return err
@@ -256,7 +267,7 @@ func signRelease(options releaseOptions) error {
 	if err := atomicPublicFile(filepath.Join(options.Dist, "SHA256SUMS.txt"), []byte(sums.String())); err != nil {
 		return err
 	}
-	return verifyRelease(options)
+	return nil
 }
 
 type enclosure struct {
@@ -305,27 +316,44 @@ func verifyEnclosure(content []byte, platform string, options releaseOptions, en
 	return nil
 }
 
-func verifyRelease(options releaseOptions) error {
+func loadReleaseManifest(options releaseOptions, allowLegacy bool) (releaseManifest, []byte, ed25519.PublicKey, error) {
+	var manifest releaseManifest
 	if err := validateRelease(options.Version, options.Build); err != nil {
-		return err
+		return manifest, nil, nil, err
 	}
 	_, public, err := publicKey(options.PublicConfig)
 	if err != nil {
-		return err
+		return manifest, nil, nil, err
 	}
 	data, err := readBounded(filepath.Join(options.Dist, manifestName), 1024*1024)
 	if err != nil {
-		return err
+		return manifest, nil, nil, err
 	}
-	var manifest releaseManifest
-	if json.Unmarshal(data, &manifest) != nil || manifest.SchemaVersion != 1 || manifest.Version != options.Version || manifest.Build != options.Build || manifest.KeyFingerprint != fingerprint(public) || len(manifest.Packages) != 5 || len(manifest.Feeds) != 3 {
-		return errors.New("release signature manifest is invalid or belongs to another key/version")
+	if json.Unmarshal(data, &manifest) != nil || manifest.SchemaVersion != 1 || manifest.Version != options.Version || manifest.Build != options.Build || manifest.KeyFingerprint != fingerprint(public) || len(manifest.Feeds) != 3 {
+		return manifest, nil, nil, errors.New("release signature manifest is invalid or belongs to another key/version")
 	}
+	if _, err := time.Parse(time.RFC3339, manifest.Published); err != nil {
+		return manifest, nil, nil, errors.New("release manifest publication timestamp is invalid")
+	}
+	if len(manifest.Packages) != len(packageNames(options.Version)) && !(allowLegacy && len(manifest.Packages) == len(legacyPackageNames(options.Version))) {
+		return manifest, nil, nil, errors.New("release manifest must contain only the three native packages; curate legacy metadata explicitly with native-only")
+	}
+	return manifest, data, public, nil
+}
+
+func verifyManifestFiles(options releaseOptions, manifest releaseManifest, data []byte, public ed25519.PublicKey) error {
 	names := packageNames(options.Version)
+	nativeCount := len(names)
+	if len(manifest.Packages) > nativeCount {
+		names = legacyPackageNames(options.Version)
+	}
 	for index, entry := range manifest.Packages {
 		if entry.File != names[index] {
 			return errors.New("release manifest contains an unexpected package path")
 		}
+		if index >= nativeCount {
+			continue
+		} // Removed Linux payloads are not needed to validate retained native content.
 		payload, err := readBounded(filepath.Join(options.Dist, entry.File), packageLimit)
 		if err != nil {
 			return err
@@ -378,4 +406,32 @@ func verifyRelease(options releaseOptions) error {
 		return errors.New("release checksum list does not cover the final signed package set")
 	}
 	return nil
+}
+
+func verifyRelease(options releaseOptions) error {
+	manifest, data, public, err := loadReleaseManifest(options, false)
+	if err != nil {
+		return err
+	}
+	return verifyManifestFiles(options, manifest, data, public)
+}
+
+// nativeOnly curates existing release metadata with the public key only. It
+// never signs, rewrites feeds, reads the private seed, or changes package files.
+func nativeOnly(options releaseOptions) error {
+	manifest, data, public, err := loadReleaseManifest(options, true)
+	if err != nil {
+		return err
+	}
+	if err := verifyManifestFiles(options, manifest, data, public); err != nil {
+		return err
+	}
+	if len(manifest.Packages) == len(packageNames(options.Version)) {
+		return nil
+	}
+	manifest.Packages = manifest.Packages[:len(packageNames(options.Version))]
+	if err := writeReleaseMetadata(options, manifest); err != nil {
+		return err
+	}
+	return verifyRelease(options)
 }

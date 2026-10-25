@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -31,6 +32,214 @@ func fixture(t *testing.T) releaseOptions {
 		}
 	}
 	return options
+}
+
+func legacyFixture(t *testing.T) releaseOptions {
+	t.Helper()
+	options := fixture(t)
+	if err := signRelease(options); err != nil {
+		t.Fatal(err)
+	}
+	private, err := privateSeed(options.KeyDirectory, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest releaseManifest
+	data, err := os.ReadFile(filepath.Join(options.Dist, manifestName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range legacyPackageNames(options.Version)[3:] {
+		payload := []byte("Legacy synthetic Linux package: " + name + "\n")
+		if err := os.WriteFile(filepath.Join(options.Dist, name), payload, 0644); err != nil {
+			t.Fatal(err)
+		}
+		manifest.Packages = append(manifest.Packages, record(name, payload, private))
+	}
+	if err := writeReleaseMetadata(options, manifest); err != nil {
+		t.Fatal(err)
+	}
+	return options
+}
+
+func snapshotFiles(t *testing.T, paths []string) map[string][]byte {
+	t.Helper()
+	result := make(map[string][]byte)
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result[path] = data
+	}
+	return result
+}
+
+func unchangedFiles(t *testing.T, snapshot map[string][]byte) {
+	t.Helper()
+	for path, before := range snapshot {
+		after, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(before, after) {
+			t.Fatal("metadata curation changed a preserved file")
+		}
+	}
+}
+
+func TestNewReleasePublishesOnlyThreeNativePackages(t *testing.T) {
+	options := fixture(t)
+	var legacyPaths []string
+	for _, name := range legacyPackageNames(options.Version)[3:] {
+		path := filepath.Join(options.Dist, name)
+		if err := os.WriteFile(path, []byte("Ignored former package"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		legacyPaths = append(legacyPaths, path)
+	}
+	snapshot := snapshotFiles(t, legacyPaths)
+	if err := signRelease(options); err != nil {
+		t.Fatal(err)
+	}
+	manifest, _, _, err := loadReleaseManifest(options, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Packages) != 3 {
+		t.Fatal("new release did not use the native-only package policy")
+	}
+	sums, err := os.ReadFile(filepath.Join(options.Dist, "SHA256SUMS.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(sums, []byte("linux")) || len(strings.Split(strings.TrimSpace(string(sums)), "\n")) != 4 {
+		t.Fatal("new release checksums include unpublished packages")
+	}
+	unchangedFiles(t, snapshot)
+}
+
+func TestNativeOnlyCuratesLegacyMetadataWithoutPrivateKeyOrResigning(t *testing.T) {
+	options := legacyFixture(t)
+	if verifyRelease(options) == nil {
+		t.Fatal("regular verification silently accepted the obsolete five-package publication policy")
+	}
+	before, _, _, err := loadReleaseManifest(options, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var preservedPaths []string
+	for _, name := range legacyPackageNames(options.Version) {
+		preservedPaths = append(preservedPaths, filepath.Join(options.Dist, name))
+	}
+	for _, name := range []string{"public-keys.json", "macos.xml", "windows-x64.xml", "windows-x64.xml.signature", "windows-arm64.xml", "windows-arm64.xml.signature"} {
+		preservedPaths = append(preservedPaths, filepath.Join(options.Updates, name))
+	}
+	snapshot := snapshotFiles(t, preservedPaths)
+	if err := os.Remove(filepath.Join(options.KeyDirectory, seedName)); err != nil {
+		t.Fatal(err)
+	}
+	options.KeyDirectory = filepath.Join(t.TempDir(), "must-not-be-accessed")
+	if err := nativeOnly(options); err != nil {
+		t.Fatal(err)
+	}
+	after, _, _, err := loadReleaseManifest(options, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Published != before.Published || after.Version != before.Version || after.Build != before.Build || after.KeyFingerprint != before.KeyFingerprint || !reflect.DeepEqual(after.Packages, before.Packages[:3]) || !reflect.DeepEqual(after.Feeds, before.Feeds) {
+		t.Fatal("curation changed retained native signatures, feeds, timestamp, or release identity")
+	}
+	unchangedFiles(t, snapshot)
+	sums, err := os.ReadFile(filepath.Join(options.Dist, "SHA256SUMS.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(sums, []byte("linux")) {
+		t.Fatal("Linux checksum records survived native-only curation")
+	}
+	metadata := snapshotFiles(t, []string{filepath.Join(options.Dist, manifestName), filepath.Join(options.Dist, "SHA256SUMS.txt")})
+	if err := nativeOnly(options); err != nil {
+		t.Fatal("idempotent curation failed:", err)
+	}
+	unchangedFiles(t, metadata)
+}
+
+func TestNativeOnlyDoesNotRequireRemovedLinuxDownloads(t *testing.T) {
+	options := legacyFixture(t)
+	for _, name := range legacyPackageNames(options.Version)[3:] {
+		if err := os.Remove(filepath.Join(options.Dist, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Remove(filepath.Join(options.KeyDirectory, seedName)); err != nil {
+		t.Fatal(err)
+	}
+	if err := nativeOnly(options); err != nil {
+		t.Fatal("removed Linux payloads were required for native curation:", err)
+	}
+	if err := verifyRelease(options); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNativeOnlyRejectsTamperingBeforeChangingMetadata(t *testing.T) {
+	for _, target := range []string{"package", "macos-feed", "windows-feed", "windows-signature", "manifest", "checksums"} {
+		t.Run(target, func(t *testing.T) {
+			options := legacyFixture(t)
+			paths := map[string]string{
+				"package":           filepath.Join(options.Dist, packageNames(options.Version)[1]),
+				"macos-feed":        filepath.Join(options.Updates, "macos.xml"),
+				"windows-feed":      filepath.Join(options.Updates, "windows-x64.xml"),
+				"windows-signature": filepath.Join(options.Updates, "windows-x64.xml.signature"),
+				"manifest":          filepath.Join(options.Dist, manifestName),
+				"checksums":         filepath.Join(options.Dist, "SHA256SUMS.txt"),
+			}
+			path := paths[target]
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data[len(data)/2] ^= 1
+			if err := os.WriteFile(path, data, 0644); err != nil {
+				t.Fatal(err)
+			}
+			snapshot := snapshotFiles(t, []string{filepath.Join(options.Dist, manifestName), filepath.Join(options.Dist, "SHA256SUMS.txt")})
+			if nativeOnly(options) == nil {
+				t.Fatal("native-only curation accepted tampered retained content")
+			}
+			unchangedFiles(t, snapshot)
+		})
+	}
+}
+
+func TestNativeOnlyCLIUsesPublicConfigurationAndPreservesPublicationMetadata(t *testing.T) {
+	options := legacyFixture(t)
+	if err := os.Remove(filepath.Join(options.KeyDirectory, seedName)); err != nil {
+		t.Fatal(err)
+	}
+	// Public verification/curation must work without a publishing directory or
+	// even a configured user home. Neither command needs the signing seed.
+	t.Setenv("HOME", "")
+	t.Setenv("APPDATA", "")
+	arguments := []string{"native-only", "--version", options.Version, "--build", options.Build,
+		"--dist", options.Dist, "--updates", options.Updates, "--public-config", options.PublicConfig}
+	if err := run(arguments); err != nil {
+		t.Fatal(err)
+	}
+	arguments[0] = "verify"
+	if err := run(arguments); err != nil {
+		t.Fatal(err)
+	}
+	arguments[0] = "native-only"
+	for _, extra := range [][]string{{"--published", "2026-12-01T00:00:00Z"}, {"--notes-file", "must-not-be-read"}} {
+		if run(append(append([]string{}, arguments...), extra...)) == nil {
+			t.Fatal("metadata-only curation accepted a timestamp or notes override")
+		}
+	}
 }
 
 func TestRFC8032Ed25519Compatibility(t *testing.T) {
@@ -86,7 +295,7 @@ func TestSignedReleaseRoundTripAndTampering(t *testing.T) {
 
 func TestMissingFinalPackageDoesNotPublishFeeds(t *testing.T) {
 	options := fixture(t)
-	if err := os.Remove(filepath.Join(options.Dist, packageNames(options.Version)[4])); err != nil {
+	if err := os.Remove(filepath.Join(options.Dist, packageNames(options.Version)[2])); err != nil {
 		t.Fatal(err)
 	}
 	if signRelease(options) == nil {

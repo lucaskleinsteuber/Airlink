@@ -14,7 +14,7 @@ These update signatures are separate from Developer ID, notarization or Windows 
 
 ## Publishing a version
 
-1. Update MAJOR.MINOR.PATCH and the monotonically increasing macOS bundle build. Build/test the final source and create the five intended packages. Keep the packages immutable after this point.
+1. Update MAJOR.MINOR.PATCH and the monotonically increasing macOS bundle build. Build/test the final source and create the three native packages: the universal macOS DMG and Windows x64/ARM64 Setup. Keep the packages immutable after this point. Linux is an experimental source-only target until runtime acceptance is recorded.
 2. Sign the exact packages and generate the feeds with the local Go tool, for example:
 
    ```sh
@@ -23,10 +23,12 @@ These update signatures are separate from Developer ID, notarization or Windows 
    ```
 
 3. Verify the actual feeds/packages with the official Sparkle CLI and the Windows Core `--verify-update-release` entry point. Review/stage only the intended source, public configuration and generated XML/signature files.
-4. Publish the matching Git tag, the five packages, `UPDATE-SIGNATURES.json` and `SHA256SUMS.txt`. Verify remote sizes/digests. Feed URLs point to the versioned GitHub assets, so do not overwrite a different binary under an existing signed version.
-5. Verify anonymous HTTPS feed/download access after any separately authorized public visibility change. Publishing source to a private repository does not make its raw feed public.
+4. Publish the matching Git tag, the three native packages, `UPDATE-SIGNATURES.json` and `SHA256SUMS.txt`. Verify remote sizes/digests. Feed URLs point to the versioned GitHub assets, so do not overwrite a different binary under an existing signed version.
+5. Verify anonymous HTTPS feed/download access. The active repository is public with owner approval; the earlier archive remains private. Publishing source to a private repository would not make its raw feed public.
 
-The generator writes one signed macOS appcast, two Windows architecture appcasts and their detached signatures. Its manifest records SHA-256, length and Ed25519 signatures for the five packages and exact feeds. Public-only verification needs no private material. The checksum file includes the five packages and signature manifest; the manifest records feed verification data separately.
+The generator writes one signed macOS appcast, two Windows architecture appcasts and their detached signatures. Its manifest records SHA-256, length and Ed25519 signatures for the three native packages and exact feeds. Public-only verification needs no private material. The checksum file includes the three packages and signature manifest; the manifest records feed verification data separately.
+
+For the owner-approved removal of untested Linux downloads from an already signed release, `native-only` verifies retained data and removes only the Linux manifest/checksum records. It preserves the publication time, native package bytes/signatures and every feed/signature byte, and needs no private key. It never rebuilds or silently relabels an existing signed package.
 
 ## Publishing key
 

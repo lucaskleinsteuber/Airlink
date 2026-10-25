@@ -215,11 +215,15 @@ func fingerprint(public ed25519.PublicKey) string {
 
 func run(arguments []string) error {
 	if len(arguments) == 0 {
-		return errors.New("choose init, sign, or verify")
+		return errors.New("choose init, sign, verify, or native-only")
 	}
-	defaults, err := defaultKeyDirectory()
-	if err != nil {
-		return err
+	defaults := ""
+	if arguments[0] == "init" || arguments[0] == "sign" {
+		var err error
+		defaults, err = defaultKeyDirectory()
+		if err != nil {
+			return err
+		}
 	}
 	flags := flag.NewFlagSet(arguments[0], flag.ContinueOnError)
 	directory := flags.String("key-dir", defaults, "private publishing directory outside Git")
@@ -236,6 +240,9 @@ func run(arguments []string) error {
 	}
 	if flags.NArg() != 0 {
 		return errors.New("unexpected positional arguments")
+	}
+	if arguments[0] == "native-only" && (*published != "" || *notesFile != "") {
+		return errors.New("native-only preserves publication metadata and feed content; no timestamp or notes override is allowed")
 	}
 	if arguments[0] == "init" {
 		if err := initialize(*directory, *publicPath, *repository); err != nil {
@@ -264,14 +271,19 @@ func run(arguments []string) error {
 		if err := signRelease(options); err != nil {
 			return err
 		}
-		fmt.Println("Signed and verified five immutable packages and three native update feeds; release checksums include the signature manifest.")
+		fmt.Println("Signed and verified three native packages and three update feeds; release checksums include the signature manifest.")
 	case "verify":
 		if err := verifyRelease(options); err != nil {
 			return err
 		}
-		fmt.Println("Verified five release packages, three signed native update feeds, and final release checksums using the public key only.")
+		fmt.Println("Verified three native packages, three signed update feeds, and final release checksums using the public key only.")
+	case "native-only":
+		if err := nativeOnly(options); err != nil {
+			return err
+		}
+		fmt.Println("Curated and verified three native packages using the public key only; native payloads, feed bytes, signatures and publication timestamp were preserved.")
 	default:
-		return errors.New("choose init, sign, or verify")
+		return errors.New("choose init, sign, verify, or native-only")
 	}
 	return nil
 }
