@@ -1,10 +1,12 @@
 # Architecture
 
-AirLink 0.5 focuses on recovery, source identity, and interruption handling while retaining 0.4 optional organization, browser relay, aggregate payload limits, history/statistics, Quick Share and explicit clipboard text. Native and browser interfaces use the same local host. Runtime resources are bundled; no hosted signaling service, external relay, account, or online asset server is required. Feature additions are specified in [API-0.2.md](API-0.2.md), [API-0.3.md](API-0.3.md), and [API-0.4.md](API-0.4.md).
+AirLink 0.6 adds a native Windows transfer interface and improves desktop pairing/received-file access. The shared service retains failure recovery, source identity, optional organization, browser relay, aggregate payload limits, history/statistics, Quick Share and explicit clipboard text. Native and browser interfaces use the same local host. Runtime resources are bundled; no hosted signaling service, external relay, account, or online asset server is required. Feature additions are specified in [API-0.2.md](API-0.2.md), [API-0.3.md](API-0.3.md), and [API-0.4.md](API-0.4.md).
 
 ```mermaid
 flowchart LR
   Mac[Native macOS app] <-->|Private stdin / stdout| Host[Local Go service]
+  Windows[Native Windows app] <-->|Private stdin / stdout| WindowsHost[Local Go service]
+  WindowsHost <-->|Pinned TLS / direct transfer| Host
   Browser[Desktop or mobile browser] <-->|HTTPS + SSE| Host
   Peer[Paired desktop Go service] <-->|Pinned TLS / direct transfer| Host
   Recipient[Share recipient browser] -->|HTTPS / share session| Host
@@ -75,11 +77,13 @@ Statistics describe the remaining history. Daily groups put each record's accumu
 
 - **LAN transfer endpoint:** TLS 1.3, device authentication, same-origin/Host checks, and authorization for each transfer. Browser responses expose only that device's authorized transfer data.
 - **Certificate bootstrap endpoint:** a separate HTTP listener serving public certificate material and setup instructions. It grants no access to transfer or administrator functions. The user compares its fingerprint with the local host display before trusting the certificate.
-- **Local administrator console:** loopback only, protected by a per-run secret setup URL. Native macOS control uses JSON-lines stdin/stdout instead of exposing administrative powers on the LAN.
+- **Local administrator console:** loopback only, protected by a per-run secret setup URL. Native macOS and Windows control uses JSON-lines stdin/stdout instead of exposing administrative powers on the LAN.
 
 Each host keeps a local CA identity and issues a server certificate covering its local addresses. Desktop pairing pins the CA fingerprint and still verifies the certificate chain, hostname, expiry, and intended use. Discovery advertises presence through `_airlink._tcp`; discovered identity information must be confirmed out of band before pairing.
 
 Browser sessions use Secure, HttpOnly, SameSite cookies. A browser's pairing request grants no access until approved locally. Device send/receive rights and auto-accept are independently managed; revocation invalidates future authenticated access and cancels associated active work.
+
+The 0.6 trusted pairing/accept commands are explicit private host actions. Ordinary pairing and ordinary acceptance keep the existing auto-receive setting. Trusted pairing saves a local auto-receive flag only when the pairing completes successfully; the remote host chooses its own independent policy. Trusted transfer acceptance checks that the sender remains paired and authorized while accepting, then persists only that sender's auto-receive flag. If that final save fails, the transfer remains accepted and the error states that future automatic receipt was not saved. A stale or revoked device cannot regain access through this command.
 
 Active transfer HTTP requests carry cancellation tied to their transfer and device. Pause/cancel, access revocation, and removal of a relevant send/receive right stop affected request-body reads and response writes, including operations waiting on a directional payload limit. Checkpoints remain authoritative after interruption; a client-side cancel signal alone does not count as confirmed transferred data.
 
@@ -117,7 +121,21 @@ Compact share/clipboard sheets remain, with new history/statistics and relay ove
 
 Shortcut settings persist Carbon key codes/modifier bits (default key code 37, modifiers 768). The Settings recorder receives local key events only while explicitly focused; no global keystroke monitor is installed. Command or Control is required, with optional Shift/Option. The current hotkey is suspended during capture and restored afterward. A replacement is registered before the old registration is removed; failure keeps the working registration, shows the actual registration state, and rolls back the conflicting preference. Quitting unregisters the hotkey and event handler. These paths compile and have pure model tests; actual OS registration/conflicts, Finder interaction, and login startup have not been exercised through a native GUI session.
 
-The app icon consists of written SVG layers and `AppIcon.icon/icon.json`. Icon Composer renders appearance variants headlessly; `actool` produces compiled icon assets and an older-system `.icns` fallback. No image generator is part of this process.
+The macOS app icon consists of written SVG layers and `AppIcon.icon/icon.json`. Icon Composer renders appearance variants headlessly; `actool` produces compiled icon assets and an older-system `.icns` fallback. No image generator is part of this process.
+
+## Native Windows interface
+
+The code-only WPF application in `windows/AirLink.Windows` uses .NET 10. Self-contained x64 and ARM64 publishes bundle the runtime and the architecture-matching Go helper in a GUI executable. The app starts that helper with `CreateNoWindow` and redirected private pipes; it does not embed a browser or open a terminal for normal transfers.
+
+`AirLink.Core` separates typed protocol data, helper extraction and subprocess transport from presentation. Extraction computes the embedded helper's SHA-256 and verifies the versioned, architecture-specific Local AppData cache before reuse; a corrupt cached helper is replaced atomically. The helper keeps persistent state in the same `%APPDATA%\AirLink` directory used by older console packages. A directory lock prevents concurrent ownership, so a running legacy console needs one explicit stop before the native app starts. Neither migration nor retry resets identity, trust or received files.
+
+The transport serializes writes, correlates replies by request/session ID, bounds redacted diagnostic output, and uses bounded owned-process shutdown. A helper session's EOF, invalid protocol output, or unexpected exit invalidates that session; a recoverable ordinary command error does not pretend that the process has exited. The UI retains in-flight file-selection identities so a Send acknowledgment removes only the submitted selection, preserving files added while the offer was being created.
+
+The first Windows interface covers discovery, pairing, explicit directional trust, device permissions, file/folder pickers and drag-and-drop, queue/progress controls, duplicate decisions, direct result access, basic settings and a tray presence. Closing its window leaves the helper available; explicit Quit stops it. Completion notifications obey the saved notification preference. The native window does not yet provide the existing macOS editors for Quick Share, clipboard, browser-relay administration, detailed statistics or sorting rules. Typed settings preserve unrelated/unknown fields when updating a subset.
+
+Both desktop interfaces request `transfer.received` only for explicit completed-receive reveal actions. The engine resolves published paths against that transfer's original receive root and destination mappings, rejecting traversal/symlink paths and omitting missing/skipped entries. An explicit transferred folder covers its children in the top-level result. An empty transferred folder is a result; an all-skipped regular-file offer is not. Explorer/Finder opens only after a user action. Empty owned `.airlink-partials` directories are removed after newly committed completion with a nonrecursive removal; nonempty, unknown, symlink or historical folders are never recursively cleaned by a reveal query.
+
+Pairing acknowledgment leaves the native interface waiting for remote approval. An unchecked auto-receive choice controls receipt on the current computer only. A discovered address/fingerprint is a draft; direct comparison at the other computer remains required. Compilation, PE GUI/icon inspection and background core/helper tests do not prove actual Windows dialogs, tray, Explorer or notifications; those require manual Windows acceptance.
 
 ## Browser interface
 
@@ -137,6 +155,6 @@ Paired browsers use the connected host for direct uploads/downloads or for autho
 
 Host settings, identity, and device records live in a private OS-specific AirLink configuration directory; SQLite stores transfer/relay metadata, the independent managed verified-file duplicate index, and durable share/session data, while traffic counters persist separately. Authorized share owners can recover links after restart, so link secrets remain private local application data. Relay payload blocks and clipboard messages are deliberately excluded from persistence. Received files live separately in the selected destination. A data-directory lock prevents two services from operating on the same local state concurrently.
 
-The build pipeline compiles the web interface, embeds it, and cross-compiles portable Go services. On macOS it creates a universal native app with a universal helper and the compiled icon. Packaging creates platform archives, a DMG, and checksums. App replacement must preserve the separate state and receive directories.
+The build pipeline compiles the web interface, embeds it, and cross-compiles portable Go services. On macOS it creates a universal native app with a universal helper and the compiled icon. The Windows publish embeds each matching helper in a self-contained WPF GUI executable; its written icon follows the same linked-arcs motif. Packaging creates native Windows ZIPs, Linux service archives, a macOS DMG, and checksums. App replacement must preserve the separate state and receive directories.
 
-Version 0.5 is a private stabilization preview; final verification and artifact evidence belong in [TESTING.md](TESTING.md). Historical verification remains version-specific. The private macOS signing policy remains ad hoc. Developer ID signing, notarization, physical cross-device acceptance, and public distribution remain separate delivery gates, defined in [RELEASE-READINESS.md](RELEASE-READINESS.md).
+Version 0.6 is a private desktop-interface preview; final verification and artifact evidence belong in [TESTING.md](TESTING.md). Historical verification remains version-specific. The private macOS signing policy remains ad hoc. Developer ID signing, notarization, physical cross-device acceptance, and public distribution remain separate delivery gates, defined in [RELEASE-READINESS.md](RELEASE-READINESS.md).

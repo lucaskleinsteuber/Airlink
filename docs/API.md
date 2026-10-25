@@ -1,6 +1,6 @@
-# AirLink protocol 1 — 0.4.0
+# AirLink protocol 1 — 0.6.0
 
-The baseline transfer routes introduced in 0.1 remain compatible with the current 0.4 implementation. Additive share/clipboard interfaces are specified in [API-0.2.md](API-0.2.md), relay/rate/history/statistics in [API-0.3.md](API-0.3.md), and optional incoming-file organization in [API-0.4.md](API-0.4.md). Wire protocol version remains 1.
+The baseline transfer routes introduced in 0.1 remain compatible with the current 0.6 implementation. Additive share/clipboard interfaces are specified in [API-0.2.md](API-0.2.md), relay/rate/history/statistics in [API-0.3.md](API-0.3.md), and optional incoming-file organization in [API-0.4.md](API-0.4.md). The 0.6 local-only additions below do not change the LAN protocol. Wire protocol version remains 1.
 
 The Go definitions in `internal/model` define JSON names. All byte counts and offsets are signed 64-bit integers. State and transfer updates are persisted. Empty lists are JSON arrays.
 
@@ -26,20 +26,26 @@ JSON errors `{error:"human readable"}` with appropriate 4xx/5xx. 401 means pair 
 
 ## Local control via stdin/stdout
 
-Daemon `--stdio` accepts one JSON object per line `{id,method,params}` and replies `{id,result}` or `{id,error}`. Correlate responses by ID: bounded asynchronous `duplicate.resolve` checks may finish out of order, without blocking status/pause/cancel. Candidate hashes have no fixed client timeout. Stdout is reserved for protocol; logs go to stderr. Methods:
+Daemon `--stdio` accepts one JSON object per line `{id,method,params}` and replies `{id,result}` or `{id,error}`. Correlate responses by ID: bounded asynchronous `duplicate.resolve` checks may finish out of order, without blocking status/pause/cancel. Candidate hashes have no fixed client timeout. Long source-manifest offers and share creation also require a transport policy that does not impose a short ordinary-command deadline. Stdout is reserved for protocol; logs go to stderr. Methods:
 
 - `status` → complete Status (polled by native app once/second).
-- `pair.approve` `{id}`; `pair.deny` `{id}`.
+- `pair.approve` `{id}`; `pair.deny` `{id}`. Ordinary approval does not enable auto-receive.
+- `pair.approveTrusted` `{id}` → success: explicitly approve this request and enable automatic receipt from that device on this host. The device and local receipt flag must be saved before credentials are issued; expired, denied or failed approvals grant neither.
 - `device.update` Device; `device.revoke` `{id}`.
 - `transfer.accept|pause|resume|cancel` `{id}`.
+- `transfer.acceptTrusted` `{id}` → Transfer: accept an offered incoming transfer from a still-paired device with send permission, then save auto-receive for that sender on this host. If acceptance fails, the receipt policy stays unchanged. If acceptance succeeds but saving the policy fails, return an explicit error that the transfer was accepted while automatic receipt was not saved.
+- `transfer.received` `{id}` → `{directory,items:[{fileId,path,directory}]}`: resolve actual published local destinations for a completed incoming transfer. Paths use saved destination mappings and the historical receive root, not the current default folder. Validate confined paths and reject symlink traversal; omit missing/skipped entries and child items covered by an explicitly transferred parent directory. An all-skipped regular-file transfer or one with no remaining result returns an error. This lookup performs no cleanup and never returns source paths or duplicate-candidate paths.
 - `offer` `{deviceId,paths:[absolute filesystem paths]}` → Transfer. Native paired engines receive direct TLS transfers; browser peers download offered host files.
-- `peer.connect` `{url,fingerprint}` → `{requestId}`; user must compare fingerprint displayed by target, then approve request at target. Polling completes reciprocal credentials automatically.
+- `peer.connect` `{url,fingerprint}` → `{requestId}`; user must compare the fingerprint displayed directly by the target, then approve the request at the target. Request acknowledgment is still pending, not a completed pairing. Polling completes reciprocal credentials after approval.
+- `peer.connectTrusted` `{url,fingerprint}` → `{requestId}`: the same pairing flow, with an explicit local choice to receive automatically from the target after successful approval. It does not enable the target's independent auto-receive policy. A denied/expired/failed request does not save this receipt grant.
 - `settings.update` full Settings → normalized Settings. Preserve unrelated shortcut/rate fields. Organization defaults to `{detectDuplicates:false,sortEnabled:false,rules:[]}`; explicit rules affect only new incoming offers.
 - `duplicate.resolve` `{transferId,fileId,action:"keep"|"skip",candidateId?}` → Transfer. Private host only; Skip streams and revalidates the selected matching candidate.
 - `duplicate.path` `{candidateId}` → `{path}`. Private host only, for explicit Show/Copy actions. Neither duplicate command is a guest API.
 - `shutdown` → clean exit after checkpointing.
 
-CLI starts same daemon without stdio. A loopback-only administrative setup console uses a per-run unguessable URL token printed to terminal; it exposes these same local methods, never on LAN. Peer transfer tokens use Authorization headers, never URL query strings.
+The macOS and Windows apps own their bundled daemon through these private pipes. No local paths or trusted-approval methods are added to authenticated guest status or the LAN API. Device trust and permissions are local to each host; reciprocal credentials do not imply reciprocal auto-receive.
+
+CLI starts the same daemon without stdio. A loopback-only administrative setup console uses a per-run unguessable URL token printed to terminal; it exposes these same local methods, never on LAN. Peer transfer tokens use Authorization headers, never URL query strings.
 
 ## Web expectations
 

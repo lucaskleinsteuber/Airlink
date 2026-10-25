@@ -1,6 +1,6 @@
 # AirLink roadmap
 
-This roadmap separates the established 0.1/0.2 baseline, implemented 0.3/0.4 preview capabilities, the 0.5 stabilization work, and future acceptance. Milestones are capability boundaries, not release dates. Version numbers use MAJOR.MINOR.PATCH; patch releases fix the current minor release without claiming a later milestone is complete. Source implementation, final automated verification, private release packaging, and physical acceptance are separate states.
+This roadmap separates the established 0.1/0.2 baseline, implemented 0.3/0.4 preview capabilities, the 0.5 stabilization work, the 0.6 native Windows workflow, and future acceptance. Milestones are capability boundaries, not release dates. Version numbers use MAJOR.MINOR.PATCH; patch releases fix the current minor release without claiming a later milestone is complete. Source implementation, final automated verification, private release packaging, and physical acceptance are separate states.
 
 ## 0.1 — Local transfer foundation
 
@@ -50,10 +50,20 @@ Implementation is present in the private 0.4 preview. Final automated verificati
 
 Historical hosted CI jobs did not execute; local test and build results are recorded separately.
 
+## 0.6 — Native Windows and clearer desktop transfers (private preview)
+
+- A self-contained WPF Windows app for x64 and ARM64, with its own window/tray, embedded Go helper, local discovery, pairing and permissions, file/folder selection and drop, queue/progress, pause/resume/cancel, duplicate decisions and direct received-file access. Normal transfer use no longer depends on copying a console link into a browser.
+- Existing Windows state remains in `%APPDATA%\AirLink`. A legacy console service must be stopped once if it still holds that directory. Runtime extraction uses a versioned, architecture-specific, SHA-256-verified cache under Local AppData; it does not move received files into the executable directory.
+- Explicit local auto-receive choices during pairing and acceptance, without enabling the other computer's independent receipt policy. Existing pairings and user opt-ins remain intact.
+- Honest pending pairing on macOS and Windows, plus actual-destination reveal actions on both platforms. Skipped duplicate payloads have no new result to show. Empty staging directories are removed only after a new successful receive.
+- Windows native controls initially focus on core transfers. Native editors for Quick Share, clipboard, browser relays, detailed statistics and sorting rules are further interface work; the existing shared service/web features remain.
+
+Final background tests, cross-published package checks and physical Windows runtime acceptance are separate evidence in [TESTING.md](TESTING.md). The user's first 0.5 Mac-to-Windows transfer succeeded and felt fast, but its console/approval/result-location workflow was unsatisfactory. No exact size, independently compared hashes, interruption result or complete acceptance matrix was recorded for that manual report.
+
 ## 1.0 — Accepted and maintainable (physical acceptance pending)
 
-Still pending: reach the full agreed platform, reliability, integrity, security, usability, and distribution acceptance bar. Stable release claims require completed evidence, including real cross-device transfers, large single files, interrupted transfers, platform-specific file handling, and macOS distribution checks.
+Still pending: reach the full agreed platform, reliability, integrity, security, usability, and distribution acceptance bar. Stable release claims require completed evidence, including real cross-device transfers, large single files, interrupted transfers, platform-specific file handling, usable native Windows interaction, and macOS distribution checks. A native Windows client is now a required part of the 1.0 product, following the first real transfer feedback.
 
 The concrete platform roles, failure cases, evidence records, and signing/notarization gates are listed in [RELEASE-READINESS.md](RELEASE-READINESS.md). Completed background checks do not close manual physical-device or native-runtime gates. No completion percentage or fixed 1.0 date is assigned.
 
-Native Windows, Linux, Android, or iOS UI clients beyond the portable desktop service and browser interface remain possible future work; no delivery date is assigned.
+Native Linux, Android, and iOS interfaces remain possible later extensions. Native Windows is included in the current product scope; its physical acceptance remains open until recorded. No delivery date is assigned.

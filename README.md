@@ -4,9 +4,9 @@
 
 **Large files, shared locally.**
 
-AirLink transfers files and folders between computers and browsers on the same local network. It combines a native macOS app with a portable Windows/Linux service and a web interface for macOS, Windows, Linux, Android, and iOS.
+AirLink transfers files and folders between computers and browsers on the same local network. It combines native macOS and Windows apps, a portable Linux service, and a web interface for macOS, Windows, Linux, Android, and iOS.
 
-**Current version: 0.5.0. Repository status: private development preview.** Source and release downloads are available only to people with access to this repository. The source is MIT licensed; repository visibility remains private. Version 0.5 focuses on failure recovery and transfer stability while retaining the 0.4 organization features. Automated verification, private packaging, physical acceptance, and historical results remain separate delivery states recorded in [TESTING.md](docs/TESTING.md). The [release readiness gates](docs/RELEASE-READINESS.md) define the evidence still needed before 1.0; no release date is assigned.
+**Current version: 0.6.0. Repository status: private development preview.** Source and release downloads are available only to people with access to this repository. The source is MIT licensed; repository visibility remains private. Version 0.6 adds a native Windows transfer interface and improves pairing and received-file access on both desktop apps. Automated verification, private packaging, physical acceptance, and historical results remain separate delivery states recorded in [TESTING.md](docs/TESTING.md). The [release readiness gates](docs/RELEASE-READINESS.md) define the evidence still needed before 1.0; no release date is assigned.
 
 ## The local transfer foundation
 
@@ -17,6 +17,7 @@ AirLink transfers files and folders between computers and browsers on the same l
 - Pair devices with local approval, remember trusted devices, control send/receive permissions, and revoke access.
 - Encrypt transfers with TLS 1.3, verify SHA-256 checksums for chunks and completed incoming files, and persist transfer state locally.
 - Use German or English and system, light, or dark appearance.
+- On Windows, use a native window, file/folder pickers, drag-and-drop, a tray icon, and direct Explorer actions for completed receives. The bundled runtime needs no separate .NET installation.
 - On macOS, use a native window and menu bar, Finder **Services → Send with AirLink**, a configurable shortcut with **⇧⌘L** as the migrated default, optional notifications, and optional launch at login.
 
 **Quick Share** provides links with optional passwords, expiry, download limits, and revocation. **Clipboard** exchanges text only after explicit actions between authorized devices. Version 0.3 adds browser-to-browser relay through one local desktop host, global speed limits, richer history/statistics, and configurable native shortcuts.
@@ -24,6 +25,16 @@ AirLink transfers files and folders between computers and browsers on the same l
 The complete web interface is embedded in the desktop service. Normal use needs no account, cloud relay, external website, CDN, or internet connection. Downloading dependencies and building from source requires internet access initially.
 
 Version 0.4 adds **optional duplicate decisions and extension-based sorting for new desktop receives**. Both are off by default, including upgrades. They do not organize browser-managed downloads or relay payloads. See the [organization workflow](#optional-incoming-file-organization) and [roadmap](docs/ROADMAP.md).
+
+## Desktop workflow in 0.6
+
+The Windows app owns its bundled transfer service and presents discovery, pairing, file selection, progress, receive approval, duplicate decisions, and settings in its own window. Normal desktop transfer use needs no console URL or browser. Closing the window keeps transfers running in the system tray; choose **Quit** to stop the app and checkpoint its work.
+
+On both desktop apps, pairing remains pending until the other device actually approves it. **Automatically receive from this device** is an explicit choice for the computer where it is enabled. Pairing alone does not enable it on either side. You can choose it during pairing, when accepting an incoming transfer, or later in device permissions; the other computer controls its own separate choice. Existing pairings retain their saved permissions.
+
+Completed incoming transfers provide **Show file** / **Open folder** actions for their actual published destinations, including sorting rules and older transfer locations. AirLink still isolates each transfer in its own folder to prevent overwrites. A skipped duplicate has no newly received file and cannot redirect this action to an existing candidate. Empty internal partial directories are removed after a new successful completion; historical folders are not reorganized.
+
+The initial Windows native interface covers the transfer workflow. Quick Share creation, clipboard messages, browser-relay management, detailed statistics, and a sorting-rule editor do not yet have native Windows controls. Their existing service/web capabilities remain available; the macOS and Windows interfaces do not yet have full feature parity. Windows runtime acceptance on a physical laptop remains a separate check in [TESTING.md](docs/TESTING.md).
 
 ## Recovery in 0.5
 
@@ -39,7 +50,7 @@ These are implementation boundaries, not evidence that every physical device or 
 | Device | AirLink role |
 | --- | --- |
 | macOS 14 or later | Native app with a bundled local transfer service; universal Apple Silicon/Intel build |
-| Windows | Portable service with a private local administration page; amd64 and arm64 builds |
+| Windows 10/11 | Native app with bundled local transfer service and runtime; x64 and ARM64 packages |
 | Linux | Portable service with a private local administration page; amd64 and arm64 builds |
 | Android / iPhone / iPad | Browser client connecting to a running desktop service |
 
@@ -51,7 +62,7 @@ For a manual check with a Mac, Windows laptop, iPhone and iPad, follow the [Germ
 
 ### macOS
 
-1. Download `AirLink-0.5.0-macos-universal.dmg` from the repository's [Releases](https://github.com/lucasfd3/Airlink/releases) when that version's asset is available.
+1. Download `AirLink-0.6.0-macos-universal.dmg` from the repository's [Releases](https://github.com/lucasfd3/Airlink/releases) when that version's asset is available.
 2. Open the disk image and drag **AirLink.app** to **Applications**, replacing the previous AirLink app if present.
 3. Open AirLink. Keep only the intended current app in `/Applications`; app updates preserve the separate AirLink data directory and received files.
 4. Open the QR button to connect a browser, or **Connect device** to pair another computer.
@@ -62,13 +73,13 @@ Closing the window leaves AirLink running in the menu bar. **Quit** checkpoints 
 
 ### Windows
 
-Extract the ZIP for your computer's architecture and run the service from PowerShell:
+1. Download `AirLink-0.6.0-windows-x64.zip` for an Intel/AMD Windows laptop, or `AirLink-0.6.0-windows-arm64.zip` for Windows on ARM, from the private [Releases](https://github.com/lucasfd3/Airlink/releases).
+2. Extract the ZIP completely into a folder you want to keep, then open **AirLink.exe**. A separate .NET installation and an open terminal are not needed. The private preview is not a Windows Authenticode-signed release; approve only the package obtained from this repository.
+3. If the previous console-based AirLink service is still running, stop that console once with **Ctrl+C**, then choose **Retry** in the app. Both versions use `%APPDATA%\AirLink`; the app does not delete your identity, pairings, settings, history, or received files. Two services cannot open that directory together.
+4. Choose a discovered device or **Connect device**, compare its fingerprint directly on the other computer, and approve the pairing there. An existing paired Mac should already appear without pairing again.
+5. Choose the recipient, drag files or folders into the window, and select **Send**. For a completed receive, use **Show file** / **Open folder** to go straight to the saved result.
 
-```powershell
-.\airlink.exe
-```
-
-Keep that terminal open. AirLink prints its HTTPS addresses, certificate fingerprint, and a **private local console** URL. Open the complete private console URL on the same computer to manage pairing, incoming transfers, and local settings. Stop the service with **Ctrl+C**.
+Enable **Automatically receive from this device** only for a device you want to send to this Windows computer without approving every new transfer. The sender's permission and the receiver's auto-receive choice are separate. Closing the window keeps AirLink in the system tray; use the tray menu to reopen it, open the receive folder, or quit.
 
 ### Linux
 
@@ -84,7 +95,7 @@ Keep the terminal open and use the printed private local console URL on that com
 ### Connect a browser or phone
 
 1. Connect both devices to a local network that permits communication between them.
-2. Open the host's certificate setup address, using the native app's **Setup** QR code or the setup link in the local console.
+2. Open the host's certificate setup address, using the macOS app's **Setup** QR code, the Windows app's connection information, or the setup link in the Linux local console.
 3. **Compare the certificate's SHA-256 fingerprint with the value displayed directly on the host before trusting it.** The HTTP setup page serves public certificate material and instructions only. Pairing and file transfers use HTTPS.
 4. Install and trust that host certificate on the client device, then open the host's HTTPS address. On iPhone/iPad, install the profile in **Settings → General → VPN & Device Management**, then enable its trust under **General → About → Certificate Trust Settings**. Other operating systems use their certificate or browser trust settings; the setup page provides guidance.
 5. Request pairing in the browser and approve the request on the host. Incoming file offers also require approval unless that device has auto-accept enabled.
@@ -95,7 +106,7 @@ Some guest Wi-Fi networks isolate devices or block multicast discovery. Use the 
 
 ## Quick Share
 
-Create a link from files or folders in the native app's **Quick Share** panel, or use **Share link** for the current selection. The portable Windows/Linux host console provides local path selection and share controls. Local shares reference the original files in place and do not copy an entire source file into a staging area.
+Create a link from files or folders in the macOS app's **Quick Share** panel, or use **Share link** for the current selection. The Linux host console provides local path selection and share controls. The initial Windows native window does not include a Quick Share editor. Local shares reference the original files in place and do not copy an entire source file into a staging area.
 
 The default policy is **24-hour expiry, no password, and unlimited downloads**. Set a different expiry, choose no expiry, add an optional password, or set a download limit. Passwords are protected with Argon2id; plaintext passwords are not stored or returned in status. Keep originals available and unchanged while sharing them. The host checks source identity, size, and modification time and rejects mismatches or unavailable sources; it does not create a frozen content snapshot of a mutable original.
 
@@ -109,7 +120,7 @@ A paired browser may create a share only from its own completed upload and may r
 
 ## Explicit clipboard text
 
-Open **Clipboard**, choose a paired device, explicitly **Paste** or type editable text, and select **Send**. At the receiving device, inspect the message and choose **Copy** to write it to the operating system clipboard. Receiving a message never automatically reads, monitors, synchronizes, or replaces the system clipboard. A selectable-text/manual-paste fallback is available when a browser's clipboard API is unavailable.
+On macOS or in the web interface, open **Clipboard**, choose a paired device, explicitly **Paste** or type editable text, and select **Send**. At the receiving device, inspect the message and choose **Copy** to write it to the operating system clipboard. Receiving a message never automatically reads, monitors, synchronizes, or replaces the system clipboard. A selectable-text/manual-paste fallback is available when a browser's clipboard API is unavailable.
 
 Clipboard permission is **off by default**, including devices paired before 0.2. Enable it in the device's permissions. Desktop-to-desktop clipboard exchange requires permission on both hosts. File send/receive permissions and clipboard permission remain separate.
 
@@ -146,7 +157,7 @@ SHA-256 protects each block, and a normal full stream checks its full digest bef
 
 ## Speed limits, history, and native controls
 
-Set independent **send** and **receive** limits on the host. Each limit is shared across normal transfers, Quick Share payloads, and browser relay payloads in that direction, rather than being a separate allowance for each transfer. The default is unlimited (`0`); enabled limits range from **1 KiB/s to 1 TiB/s**. Native settings offer KiB/s and MiB/s input. Payload counters exclude control/error response bodies.
+Set independent **send** and **receive** limits on the host. Each limit is shared across normal transfers, Quick Share payloads, and browser relay payloads in that direction, rather than being a separate allowance for each transfer. The default is unlimited (`0`); enabled limits range from **1 KiB/s to 1 TiB/s**. macOS settings offer KiB/s and MiB/s input; Windows settings label their configured byte-rate units. Payload counters exclude control/error response bodies.
 
 **History** filters file and relay records by case-insensitive filename/device search, state, direction, and device. Results are newest first, with up to 500 combined records. Clearing history removes terminal metadata only: completed, failed, cancelled, or relay-delivered entries. It preserves originals, received files, shares, clipboard messages, and active work. A paired browser clears only its own history association; another relay participant's history remains visible to that participant.
 
@@ -194,6 +205,7 @@ Development dependencies:
 - Go **1.27** or later; local verification used **1.27.3**.
 - Node.js **24** and npm; dependencies are locked in `web/package-lock.json`.
 - Python 3 for embedding the built web assets.
+- .NET **10 SDK** for building the native Windows packages; published packages include the runtime. The Windows UI uses WPF and targets Windows. Cross-publishing checks do not replace a real Windows run.
 - On macOS, Xcode with Swift 6 and Icon Composer. The verified local toolchain is **Xcode 27 / Swift 6.4**. The Swift package targets macOS 14; icon packaging needs the bundled Icon Composer tools.
 
 Build from the repository root:
@@ -204,14 +216,14 @@ bash scripts/test.sh
 bash scripts/package.sh
 ```
 
-`build.sh` installs web dependencies, builds and embeds the web UI, and compiles amd64/arm64 services for macOS, Windows, and Linux. On macOS it also builds the native universal app. `package.sh` creates Windows ZIPs, Linux archives, a macOS DMG when run on macOS, and SHA-256 checksums under `dist/`. Packaging does not publish a GitHub release or notarize the app.
+`build.sh` installs web dependencies, builds and embeds the web UI, and compiles amd64/arm64 services for macOS, Windows, and Linux. It also publishes self-contained native Windows apps with the corresponding Go helper embedded. On macOS it builds the native universal app. `package.sh` creates native Windows ZIPs, Linux archives, a macOS DMG when run on macOS, and SHA-256 checksums under `dist/`. Packaging does not publish a GitHub release or notarize the app.
 
-Set `AIRLINK_GO=/absolute/path/to/go` when Go is not on your PATH. To rebuild only the macOS app after both macOS helpers exist, use `bash scripts/build-macos.sh`.
+Set `AIRLINK_GO=/absolute/path/to/go` when Go is not on your PATH and `AIRLINK_DOTNET=/absolute/path/to/dotnet` for a nonstandard .NET SDK location. Windows builds disable .NET CLI telemetry. To publish the Windows apps after their Go helpers exist, use `bash scripts/build-windows.sh`. To rebuild only the macOS app after both macOS helpers exist, use `bash scripts/build-macos.sh`.
 
 All automated tests run in the background. There are no UI automation tests that take over the desktop. See [testing instructions and verification limits](docs/TESTING.md), the [release readiness gates](docs/RELEASE-READINESS.md), the [architecture](docs/ARCHITECTURE.md), the [base protocol](docs/API.md), the [0.2 additions](docs/API-0.2.md), the [0.3 additions](docs/API-0.3.md), and the [0.4 organization contract](docs/API-0.4.md).
 
 ## Versions and license
 
-AirLink uses **MAJOR.MINOR.PATCH** versions. Pre-1.0 milestones advance the minor version; fixes within a milestone advance the patch version. Release tags use `v0.5.0` form. A compiled binary, local package, GitHub release, and public release are separate delivery states.
+AirLink uses **MAJOR.MINOR.PATCH** versions. Pre-1.0 milestones advance the minor version; fixes within a milestone advance the patch version. Release tags use `v0.6.0` form. A compiled binary, local package, GitHub release, and public release are separate delivery states.
 
 Copyright © 2026 lucasfd3. Licensed under the [MIT License](LICENSE).

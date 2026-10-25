@@ -1,6 +1,6 @@
 # Release readiness
 
-AirLink 0.5.0 is a private development preview. This document defines the acceptance gates for a maintainable 1.0 release; it does not declare those gates complete or assign a release date. Source implementation, completed background tests, package creation, physical device acceptance, and distribution are separate states.
+AirLink 0.6.0 is a private development preview. This document defines the acceptance gates for a maintainable 1.0 release; it does not declare those gates complete or assign a release date. Source implementation, completed background tests, package creation, physical device acceptance, and distribution are separate states.
 
 Historical hosted CI jobs did not execute; local test and build results are recorded separately.
 
@@ -20,9 +20,9 @@ The following checks remain open until their records are linked from TESTING.md.
 
 | Required role / connection | Physical acceptance evidence |
 | --- | --- |
-| macOS native host ↔ Windows portable service | Discovery and manual address pairing, fingerprint comparison, approval, bidirectional files/folders, restart with preserved trust and history; include available supported CPU architectures in the support record. |
+| macOS native host ↔ Windows native app | Native discovery and manual address pairing, direct fingerprint comparison, honest pending approval, bidirectional files/folders, explicit directional auto-receive, direct Finder/Explorer result actions and restart with preserved trust/history; include supported CPU architectures in the support record. |
 | macOS native host ↔ Linux portable service | The same direct service roles in both directions, including filesystem permissions and case-sensitive source names. |
-| Windows portable service ↔ Linux portable service | Private local console setup and bidirectional direct transfer without depending on a Mac. |
+| Windows native app ↔ Linux portable service | Native Windows setup, Linux private console setup and bidirectional direct transfer without depending on a Mac. |
 | Desktop browser on macOS, Windows, and Linux | Each OS acts as a browser source and recipient: approved host upload, individual Range download, folder ZIP, reload/reselection and correct download-manager guidance. Record the actual browser versions; compiling the web bundle is insufficient. |
 | Android browser ↔ desktop host | Certificate installation/trust, pairing, source file/folder capabilities, upload, download, share link, foreground/background transition, and practical recovery with the browser's real permissions. |
 | iPhone/iPad browser ↔ desktop host | Profile installation and explicit full trust, pairing, Files picker behavior, upload/download/share, lock/background/return and source reselection as actually supported by that browser. |
@@ -49,7 +49,7 @@ The following checks remain open until their records are linked from TESTING.md.
 ## Storage and source failures
 
 - [ ] Fill the receive filesystem during an active transfer. Confirm a useful error, no incomplete published destination, no overwritten existing file, and a defined retry/recovery after space is available.
-- [ ] Make the saved receive folder unavailable or unwritable before startup. On Mac, recover through the explicit folder-selection-and-retry action using the same application state; no automatic default-directory fallback or relocation of existing transfer destinations.
+- [ ] Make the saved receive folder unavailable or unwritable before startup. On the native desktop apps, recover through the explicit folder-selection-and-retry action using the same application state; no automatic default-directory fallback or relocation of existing transfer destinations.
 - [ ] Remove or change a destination during active work and retry after restoring access. Record what happens to existing checkpoints and partial files.
 - [ ] Replace a selected source with a different filesystem object while preserving its name/size/time. Test a new source record and a historical record with a cached hash. Confirm rejection before stale cached integrity evidence is trusted.
 - [ ] Change/remove a shared source or indexed duplicate candidate. Confirm no whole-file source copy, automatic deletion, placeholder, overwrite, or wrong-file export. Explicit Skip must revalidate its candidate; an all-skipped transfer must not expose the indexed original through a share.
@@ -67,6 +67,19 @@ The following checks remain open until their records are linked from TESTING.md.
 - [ ] Allow/deny notifications and observe actual delivery for the intended completed/failed events. No repeated permission requests during ordinary status refresh.
 - [ ] Review German/English, system/light/dark, long filenames, pending/error states and keyboard access in the real app. Model tests and a successful build do not establish native interaction quality.
 
+## Windows manual acceptance
+
+Native Windows is required for the agreed 1.0 product. A successful cross-publish or a test of the old console service does not close these native workflow gates.
+
+- [ ] Start the correct x64/ARM64 package on a real supported Windows computer without a separate .NET install, terminal or browser. Record launch/security prompts and any Windows Firewall permission needed for reachable local transfers.
+- [ ] Upgrade from an existing console installation with saved identity, pairings, history and receipt settings. A still-running console reports the data-directory conflict clearly; stop it once and retry without deleting state or pairing again.
+- [ ] Discover/pair the Mac, compare the fingerprint directly, and keep the connection pending until actual approval. Exercise denial, expiry, retry and already-paired devices without a false connected state.
+- [ ] Choose auto-receive explicitly on one computer and confirm it affects that receipt direction only. Check saved settings after restart; ordinary pairing/acceptance must not opt in silently.
+- [ ] Send files/folders in both directions with native selection and drag-and-drop, including adding files while an offer is being created. Verify pause/resume/cancel, speed/progress and offline recovery against the real received file.
+- [ ] Use Show file/Open folder for a completed receive, sorted files, transferred folders, an empty folder and an older destination. Missing files and all-skipped duplicates must not open an unrelated file. Review the visible saved-location guidance.
+- [ ] Close/reopen the window during work and confirm tray continuity, completion notifications when enabled, explicit Quit checkpointing and no orphaned owned helper. Test a helper failure, retry and unavailable receive-directory recovery without resetting data.
+- [ ] Review German/English, system/light/dark, long names, keyboard access, file/folder dialogs, tray menus and notification clicks manually. Record x64 and ARM64 runtime support separately where tested.
+
 ## Shares, clipboard, and organization
 
 - [ ] Complete phone certificate onboarding from the unencrypted public-material setup page, compare the fingerprint on the host, and open the trusted HTTPS page. Test removing trust and an untrusted/mismatched host without bypassing identity comparison.
@@ -78,13 +91,17 @@ The following checks remain open until their records are linked from TESTING.md.
 
 ## Final candidate and distribution
 
-- [ ] Run the required background Go/race, web and Swift/helper checks on the final source and record their actual scope/results in TESTING.md. Regressions for discovered failures must remain in the background suites.
+- [ ] Run the required background Go/race, web, Swift/helper and .NET core/helper checks on the final source and record their actual scope/results in TESTING.md. Regressions for discovered failures must remain in the background suites.
 - [ ] Validate migration from the last private release with preserved identity, pairing, receive folder, transfer history, share policies/counters, explicit user opt-ins, and the documented defaults for any newly introduced setting.
 - [ ] Build intended platform/architecture artifacts; verify embedded offline assets, helper/app version consistency, archive/DMG integrity, signatures and published checksums. Cross-compiled binaries still require their platform runtime evidence above.
-- [ ] For a broad macOS release, produce a Developer ID signed and notarized app/DMG, validate stapling and first launch under ordinary Gatekeeper settings. The private ad hoc preview does not satisfy this gate.
+- [ ] For a broad macOS release, produce a Developer ID signed and notarized app/DMG, validate stapling and first launch under ordinary Gatekeeper settings. Establish and validate the Windows signing/distribution policy before broader Windows delivery. The private ad hoc preview does not satisfy this gate.
 - [ ] Manually install/update from the intended DMG. Keep only the current intended app bundle in `/Applications`; preserve separate data, libraries and received files. Recovery uses Git tags/releases rather than old app bundles stored there.
 - [ ] Verify the hosted workflow's real result. If account settings still prevent runners from starting, record the blocker and keep private-preview local evidence distinct from hosted success; do not represent the run as green. A stable release needs completed platform verification.
 - [ ] Verify release notes, README, version labels, artifact names/checksums, repository access and license match the actual candidate. Keep private preview visibility unless a separate public-release decision authorizes changing it.
 - [ ] Resolve known data-loss, corruption, authorization and unrecoverable-state failures in the acceptance cases. Record any remaining supported-browser/platform limitation clearly before deciding whether the 1.0 bar has been met.
 
 Completion requires reviewing the linked evidence, not a calculated percentage. There is no fixed 1.0 date and no substitution of a tag, green build, or local benchmark for the remaining physical and distribution gates.
+
+## Native status scaling
+
+The current native transports bound each helper reply to 16 MiB (Windows counts decoded characters). The private status response still includes retained history and manifests. A future summary/pagination contract is required before claiming unlimited history or arbitrary folder-entry counts; payload file size is independent of this metadata bound. The macOS ordinary request timeout also needs explicit large-folder preparation acceptance.

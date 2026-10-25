@@ -14,4 +14,5 @@ for PLATFORM in darwin windows linux; do
     CGO_ENABLED=0 GOOS="$PLATFORM" GOARCH="$ARCH" "$GO_BIN" build -trimpath -ldflags='-s -w' -o "$OUTPUT" ./cmd/airlink
   done
 done
+bash scripts/build-windows.sh
 if [[ "$(uname -s)" == Darwin ]]; then bash scripts/build-macos.sh; fi

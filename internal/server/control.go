@@ -49,6 +49,8 @@ func (s *Server) Control(method string, params json.RawMessage) (any, error) {
 		return s.Status(), nil
 	case "pair.approve":
 		return map[string]bool{"ok": true}, s.approvePair(id.ID, true)
+	case "pair.approveTrusted":
+		return map[string]bool{"ok": true}, s.approvePairWithAutoAccept(id.ID, true, true)
 	case "pair.deny":
 		return map[string]bool{"ok": true}, s.approvePair(id.ID, false)
 	case "device.update":
@@ -91,6 +93,10 @@ func (s *Server) Control(method string, params json.RawMessage) (any, error) {
 		return map[string]bool{"ok": true}, nil
 	case "transfer.accept":
 		return map[string]bool{"ok": true}, s.engine.Accept(id.ID)
+	case "transfer.acceptTrusted":
+		return s.acceptTrusted(id.ID)
+	case "transfer.received":
+		return s.engine.ReceivedItems(id.ID)
 	case "transfer.pause":
 		s.stopSender(id.ID)
 		err := s.engine.Pause(id.ID)
@@ -116,7 +122,7 @@ func (s *Server) Control(method string, params json.RawMessage) (any, error) {
 			return nil, errors.New("pair the receiving device first")
 		}
 		return s.engine.Offer(rec.Device, v.Paths)
-	case "peer.connect":
+	case "peer.connect", "peer.connectTrusted":
 		var v struct {
 			URL         string `json:"url"`
 			Fingerprint string `json:"fingerprint"`
@@ -124,7 +130,7 @@ func (s *Server) Control(method string, params json.RawMessage) (any, error) {
 		if e := json.Unmarshal(params, &v); e != nil {
 			return nil, e
 		}
-		rid, e := s.connectPeer(v.URL, v.Fingerprint)
+		rid, e := s.connectPeerWithTrust(v.URL, v.Fingerprint, method == "peer.connectTrusted")
 		return map[string]string{"requestId": rid}, e
 	case "settings.update":
 		v := s.store.snapshot().Settings

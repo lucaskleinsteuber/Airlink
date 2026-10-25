@@ -28,7 +28,8 @@ public actor DaemonClient {
     private var output: FileHandle?
     private var diagnostics: FileHandle?
     private var diagnosticTail: HelperDiagnosticTail?
-    private var reader: Task<Void, Never>?
+    private var reader: HelperReplyReader?
+    private var replyBuffer = Data()
     private var generation: UUID?
     private var channelClosed = false
     private var stopping = false
@@ -49,7 +50,10 @@ public actor DaemonClient {
         task.standardInput = stdin; task.standardOutput = stdout; task.standardError = stderr
         let diagnosticFD = stderr.fileHandleForReading.fileDescriptor
         let flags = fcntl(diagnosticFD, F_GETFL)
+        let outputFD = stdout.fileHandleForReading.fileDescriptor
+        let outputFlags = fcntl(outputFD, F_GETFL)
         guard flags != -1, fcntl(diagnosticFD, F_SETFL, flags | O_NONBLOCK) != -1,
+              outputFlags != -1, fcntl(outputFD, F_SETFL, outputFlags | O_NONBLOCK) != -1,
               fcntl(stdin.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1) != -1 else {
             throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
         }
@@ -63,19 +67,13 @@ public actor DaemonClient {
             task.terminationHandler = nil
             throw error
         }
-        generation = session; failure = nil; channelClosed = false
+        generation = session; failure = nil; channelClosed = false; replyBuffer = Data()
         process = task; input = stdin.fileHandleForWriting; output = stdout.fileHandleForReading
         diagnostics = stderr.fileHandleForReading; diagnosticTail = tail
-        let outputHandle = stdout.fileHandleForReading
-        reader = Task { [weak self] in
-            do {
-                for try await line in outputHandle.bytes.lines {
-                    guard !Task.isCancelled else { return }
-                    await self?.consume(Data(line.utf8), session: session)
-                }
-                await self?.streamEnded(session)
-            } catch { await self?.streamEnded(session) }
+        reader = HelperReplyReader(handle: stdout.fileHandleForReading) { [weak self] data, ended in
+            await self?.consumeChunk(data, ended: ended, session: session)
         }
+        reader?.start()
     }
 
     public func request(_ method: String, params: Data? = nil) async throws -> Data {
@@ -148,10 +146,43 @@ public actor DaemonClient {
         return !task.isRunning
     }
 
+    private func consumeChunk(_ data: Data, ended: Bool, session: UUID) {
+        guard generation == session, !channelClosed else { return }
+        var start = data.startIndex
+        for index in data.indices where data[index] == 10 {
+            guard appendReply(data[start..<index], session: session) else { return }
+            let line = replyBuffer; replyBuffer = Data()
+            consume(line, session: session)
+            guard !channelClosed else { return }
+            start = data.index(after: index)
+        }
+        guard appendReply(data[start..<data.endIndex], session: session) else { return }
+        if ended {
+            // JSON-lines requires a final newline; never silently parse a partial response.
+            if !replyBuffer.isEmpty { invalidReply(session, message: "AirLink helper returned an incomplete response.") }
+            else { streamEnded(session) }
+        }
+    }
+    private func appendReply(_ segment: Data.SubSequence, session: UUID) -> Bool {
+        guard replyBuffer.count + segment.count <= 16 * 1024 * 1024 else {
+            invalidReply(session, message: "AirLink helper response exceeded the safe size limit.")
+            return false
+        }
+        replyBuffer.append(segment)
+        return true
+    }
+    private func invalidReply(_ session: UUID, message: String) {
+        guard generation == session else { return }
+        failure = message; channelClosed = true; replyBuffer = Data()
+        failPending(message); reader?.stop()
+    }
     private func consume(_ line: Data, session: UUID) {
-        guard generation == session, !channelClosed,
-              let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
-              let id = object["id"] as? String, let continuation = pending.removeValue(forKey: id) else { return }
+        guard generation == session, !channelClosed else { return }
+        guard let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any], let id = object["id"] as? String else {
+            invalidReply(session, message: "AirLink helper returned an invalid response.")
+            return
+        }
+        guard let continuation = pending.removeValue(forKey: id) else { return }
         if let error = object["error"] as? String, !error.isEmpty {
             continuation.resume(throwing: NativeError.unavailable(error))
         } else if let error = object["error"] as? [String: Any] {
@@ -200,14 +231,65 @@ public actor DaemonClient {
     }
     private func clear(_ session: UUID, preserveFailure: Bool = false) {
         guard generation == session else { return }
-        reader?.cancel(); reader = nil
+        reader?.stop(); reader = nil; replyBuffer = Data()
         process?.terminationHandler = nil
         diagnostics?.readabilityHandler = nil
-        try? input?.close(); try? output?.close()
+        // The read source closes its own descriptor after queued callbacks finish.
+        try? input?.close()
         if let diagnostics { diagnosticTail?.close(diagnostics) }
         process = nil; input = nil; output = nil; diagnostics = nil; diagnosticTail = nil
         generation = nil; channelClosed = false
         if !preserveFailure { failure = nil }
+    }
+}
+
+/// One nonblocking stdout reader per helper. An idle pipe never occupies a Swift
+/// executor or Foundation's shared asynchronous-byte reader. A single in-flight
+/// batch provides bounded buffering and ordered delivery to the owning actor.
+private final class HelperReplyReader: @unchecked Sendable {
+    private let queue = DispatchQueue(label: "com.lucasfd3.airlink.helper-output", qos: .userInitiated)
+    private let source: DispatchSourceRead
+    private let descriptor: Int32
+    private let receive: @Sendable (Data, Bool) async -> Void
+    private var closed = false
+    private var suspended = false
+
+    init(handle: FileHandle, receive: @escaping @Sendable (Data, Bool) async -> Void) {
+        descriptor = handle.fileDescriptor
+        self.receive = receive
+        source = DispatchSource.makeReadSource(fileDescriptor: descriptor, queue: queue)
+        source.setEventHandler { [weak self] in self?.readAvailable() }
+        source.setCancelHandler { try? handle.close() }
+    }
+    func start() { source.resume() }
+    func stop() { queue.async { [self] in closeOnQueue() } }
+
+    private func closeOnQueue() {
+        guard !closed else { return }
+        closed = true
+        source.cancel()
+        if suspended { suspended = false; source.resume() }
+    }
+    private func readAvailable() {
+        guard !closed else { return }
+        var batch = Data(), bytes = [UInt8](repeating: 0, count: 4096)
+        var ended = false
+        for _ in 0..<16 {
+            let count = Darwin.read(descriptor, &bytes, bytes.count)
+            if count > 0 { batch.append(contentsOf: bytes.prefix(count)) }
+            else if count == 0 { ended = true; break }
+            else if errno == EINTR { continue }
+            else { ended = errno != EAGAIN && errno != EWOULDBLOCK; break }
+        }
+        guard !batch.isEmpty || ended else { return }
+        suspended = true; source.suspend()
+        Task { [self, batch, ended] in
+            await receive(batch, ended)
+            queue.async { [self] in
+                if ended { closeOnQueue() }
+                else if suspended && !closed { suspended = false; source.resume() }
+            }
+        }
     }
 }
 

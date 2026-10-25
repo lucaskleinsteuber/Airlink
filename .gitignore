@@ -14,3 +14,7 @@ __pycache__/
 web/*.tsbuildinfo
 internal/server/assets/*
 !internal/server/assets/README.txt
+
+# .NET build output
+windows/**/bin/
+windows/**/obj/

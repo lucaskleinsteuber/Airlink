@@ -4,17 +4,22 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 VERSION="$(cat VERSION)"
 mkdir -p dist
-for ARCH in arm64 amd64; do
-  STAGE="build/package-windows-$ARCH"
+for ARCH in x64 arm64; do
+  STAGE="build/package-windows-$ARCH-native"
   mkdir -p "$STAGE"
-  cp "build/airlink-windows-$ARCH.exe" "$STAGE/airlink.exe"
-  cp README.md LICENSE "$STAGE/"
-  (cd "$STAGE" && zip -q "$ROOT/dist/airlink-$VERSION-windows-$ARCH.zip" airlink.exe README.md LICENSE)
+  cp "build/windows-$ARCH/AirLink.exe" "$STAGE/AirLink.exe"
+  cp windows/QUICKSTART.md "$STAGE/README.md"
+  cp "build/windows-$ARCH/THIRD-PARTY-NOTICES.txt" LICENSE "$STAGE/"
+  # Replacing the archive prevents leftover entries from earlier packaging runs.
+  rm -f "dist/AirLink-$VERSION-windows-$ARCH.zip"
+  (cd "$STAGE" && zip -q "$ROOT/dist/AirLink-$VERSION-windows-$ARCH.zip" AirLink.exe README.md LICENSE THIRD-PARTY-NOTICES.txt)
+done
+for ARCH in arm64 amd64; do
   STAGE="build/package-linux-$ARCH"
   mkdir -p "$STAGE"
   cp "build/airlink-linux-$ARCH" "$STAGE/airlink"
   cp README.md LICENSE "$STAGE/"
-  tar -czf "dist/airlink-$VERSION-linux-$ARCH.tar.gz" -C "$STAGE" airlink README.md LICENSE
+  COPYFILE_DISABLE=1 tar -czf "dist/airlink-$VERSION-linux-$ARCH.tar.gz" -C "$STAGE" airlink README.md LICENSE
 done
 if [[ "$(uname -s)" == Darwin ]]; then
  STAGE="build/dmg-stage"

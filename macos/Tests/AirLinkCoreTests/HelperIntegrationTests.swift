@@ -13,7 +13,7 @@ func actualHelperStatusAndSettingsUseNativeContract() async throws {
     do {
         let data = try await client.request("status")
         let status = try JSONDecoder().decode(HostStatus.self, from: data)
-        #expect(status.version == "0.5.0")
+        #expect(status.version == "0.6.0")
         #expect(status.chunkSize == 8 * 1024 * 1024)
         #expect(status.fingerprint.count == 64)
         #expect(!status.urls.isEmpty)
@@ -52,6 +52,65 @@ func actualHelperStatusAndSettingsUseNativeContract() async throws {
         await client.stop()
     } catch {
         await client.stop()
+        throw error
+    }
+}
+
+@Test(.enabled(if: ProcessInfo.processInfo.environment["AIRLINK_TEST_HELPER"] != nil, "Set AIRLINK_TEST_HELPER to run the real helper integration test"))
+func actualNativeTrustedPairAndReceivedResultUsePrivateContract() async throws {
+    let path = try #require(ProcessInfo.processInfo.environment["AIRLINK_TEST_HELPER"])
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("AirLink-native-receive-" + UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let source = DaemonClient(), receiver = DaemonClient()
+    do {
+        try await source.start(executable: URL(fileURLWithPath: path), dataDirectory: directory.appendingPathComponent("source-state"), receiveDirectory: directory.appendingPathComponent("source-files"), disableDiscovery: true)
+        try await receiver.start(executable: URL(fileURLWithPath: path), dataDirectory: directory.appendingPathComponent("receiver-state"), receiveDirectory: directory.appendingPathComponent("receiver-files"), disableDiscovery: true)
+        let first = try JSONDecoder().decode(HostStatus.self, from: await source.request("status"))
+        let second = try JSONDecoder().decode(HostStatus.self, from: await receiver.request("status"))
+        #expect(first.version == "0.6.0" && second.version == "0.6.0")
+        let address = try #require(second.urls.last(where: { $0.contains("localhost:") }))
+        struct Requested: Decodable { var requestId: String }
+        let requested = try JSONDecoder().decode(Requested.self, from: await source.request("peer.connectTrusted", params: JSONEncoder().encode(["url": address, "fingerprint": second.fingerprint])))
+        _ = try await receiver.request("pair.approveTrusted", params: JSONEncoder().encode(["id": requested.requestId]))
+        let deadline = Date().addingTimeInterval(15)
+        var paired = false
+        while Date() < deadline {
+            let current = try JSONDecoder().decode(HostStatus.self, from: await source.request("status"))
+            if let peer = current.devices.first(where: { $0.id == second.id && $0.paired }) {
+                #expect(peer.autoAccept)
+                #expect(!peer.canClipboard && !peer.canRelay)
+                paired = true; break
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        #expect(paired)
+        let original = directory.appendingPathComponent("visible-received-file.txt")
+        let contents = Data("Native private receive result contract\n".utf8)
+        try contents.write(to: original)
+        struct Offered: Encodable { var deviceId: String; var paths: [String] }
+        let offered = try JSONDecoder().decode(Transfer.self, from: await source.request("offer", params: JSONEncoder().encode(Offered(deviceId: second.id, paths: [original.path]))))
+        var completed: Transfer?
+        while Date() < deadline {
+            let current = try JSONDecoder().decode(HostStatus.self, from: await receiver.request("status"))
+            if let owner = current.devices.first(where: { $0.id == first.id }) { #expect(owner.autoAccept) }
+            if let received = current.transfers.first(where: { $0.deviceId == first.id && $0.files.contains(where: { $0.id == offered.files.first?.id }) && $0.state == "completed" }) {
+                completed = received; break
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        let received = try #require(completed)
+        let result = try JSONDecoder().decode(ReceivedTransfer.self, from: await receiver.request("transfer.received", params: JSONEncoder().encode(["id": received.id])))
+        let item = try #require(result.singleItem)
+        #expect(item.fileId == offered.files.first?.id)
+        #expect(!item.directory)
+        #expect(URL(fileURLWithPath: item.path).lastPathComponent == original.lastPathComponent)
+        #expect(try Data(contentsOf: URL(fileURLWithPath: item.path)) == contents)
+        #expect(try Data(contentsOf: original) == contents)
+        #expect(received.receivedResultEntries.map(\.id) == [item.fileId])
+        _ = await source.stop(); _ = await receiver.stop()
+    } catch {
+        _ = await source.stop(); _ = await receiver.stop()
         throw error
     }
 }

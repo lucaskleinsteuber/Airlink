@@ -11,13 +11,22 @@ npm --prefix web ci
 bash scripts/test.sh
 ```
 
-The script runs Go tests with the race detector, web tests, and the production web build. On macOS it also compiles the native target and runs Swift Testing. An ordinary native test run skips the actual-helper integration case until a helper path is supplied.
+The script runs Go tests with the race detector, .NET Core logic/process tests, web tests, and the production web build. On macOS it also compiles the native target and runs Swift Testing. Actual-helper integration cases are gated until a helper path is supplied. The Windows GUI is compiled by the build script and is never launched by these tests.
 
 To build the complete embedded application and portable binaries:
 
 ```sh
 bash scripts/build.sh
 ```
+
+Run the Windows Core background tests against the built helper (use the matching helper path on each OS):
+
+```sh
+AIRLINK_TEST_HELPER="$PWD/build/airlink-darwin-arm64" \
+  dotnet run --project windows/AirLink.Core.Tests/AirLink.Core.Tests.csproj -c Release
+```
+
+The Mac-only HTTPS fixture uses Node with the helper CA, normal hostname verification and TLS 1.3 because the .NET macOS TLS backend does not provide the protocol needed by the service. Windows/Linux retain the .NET HTTP test path. This fixture is test-only; the production Windows app controls its own Go helper through private pipes. No certificate is installed into the system trust store.
 
 On macOS, run the native tests against the built Go helper:
 
@@ -30,7 +39,25 @@ Choose the matching architecture on an Intel Mac. The integration case starts on
 
 Set `AIRLINK_GO=/absolute/path/to/go` for the shell scripts if needed. For a direct Go command, invoke that Go binary explicitly.
 
-## 0.5 evidence — 2026-10-24
+## 0.6 evidence — 2026-10-25
+
+| Area | Completed observation | Scope and limits |
+| --- | --- | --- |
+| Go | Final race run passed **121 top-level tests, 209 cases including subtests**; `go vet ./...` passed | Includes real released 0.3, 0.4 and 0.5 helper upgrades. Historical 0.1/0.2 and large-transfer stress remain gated. |
+| Local receipt and consent | New receipt-resolution, staging-cleanup and directional trust regression suites passed | Actual published/sorted locations, empty folders, skipped payload exclusion, missing/symlink results, private API scope, revoked permissions, explicit pairing/acceptance and persistence failure boundaries. No Explorer/Finder automation. |
+| Released 0.5 upgrade | An unchanged tagged 0.5 helper created state, a pairing with explicit auto-receive, a verified receive and a protected share session, then the current service reopened it | Identity, certificate, existing trust, source/received bytes, result action, settings/rules, share session/quota and history survived. Temporary fixture only; user application data was not modified. |
+| Windows Core | **19 background tests passed, none skipped**, including the actual final helper | Private request correlation, timeout/retry, bounded diagnostics/shutdown, old sessions, helper extraction/repair/concurrency, certificate identity and trust/display policies, real TLS receive and persistence. This runs the cross-platform Core on macOS and does not execute WPF or Windows system integration. |
+| macOS Core and helper | **49 Swift tests / 51 executed cases passed**, both real-helper cases enabled; final arm64/x86_64 production builds passed | Includes two independent live helper readers, malformed/oversized replies, old-session/shutdown regressions and an actual two-service trusted TLS transfer. Per-session nonblocking stdout reads fix the observed shared async-byte-reader starvation. No native GUI was launched. |
+| Windows builds | Self-contained x64 and ARM64 native WPF executables published; PE architecture, GUI subsystem 2 and native icon/version/manifest resources checked | Go helper and runtime are bundled. No Windows executable was run. Window/tray, dialogs, firewall behavior and Explorer actions require the physical laptop check. |
+| Web | All **68 Node tests** across seven files and production build passed | Existing browser functionality retained; no browser UI automation. |
+| Final helper smoke | Portable Apple Silicon helper and universal bundled helper passed `scripts/smoke-binary.py` | Embedded offline resources, verified TLS 1.3, private control boundaries, shares/ranges/quotas, clipboard, relay and organization. No physical LAN or browser UI claim. |
+| Distribution | Universal macOS DMG, two native Windows ZIPs and two Linux archives created; all five SHA-256 values, exact ZIP/TAR entries, native PE resources, universal architectures, bundle signature/metadata and DMG integrity checked | Private ad hoc macOS and unsigned Windows previews. Package integrity is distinct from installed interaction or physical runtime. |
+| Large-file evidence | The separate 0.5 single-file 100 GiB run below remains historical | It was not repeated for 0.6 and is not a physical-device or current-package 100 GiB claim. |
+| Physical devices | User reports the first Mac → Windows transfer in 0.5 worked and felt fast, with poor setup/receipt UX | File size, end-to-end hashes, interruption behavior and exact Windows runtime are not recorded. The new 0.6 Windows app has not completed physical acceptance. |
+
+Local evidence is ignored under `build/go-tests-0.6.jsonl`, `build/go-vet-0.6.log`, `build/dotnet-tests-0.6.log`, `build/web-tests-0.6.log`, `build/swift-tests-0.6.log`, `build/platform-build-0.6.log`, `build/macos-final-build-0.6.log`, `build/windows-publish-0.6.log` and the two `build/smoke-*-0.6.log` files. Package integrity and hosted CI observations are recorded after their completed checks.
+
+## Historical 0.5 evidence — 2026-10-24
 
 | Area | Completed observation | Scope and limits |
 | --- | --- | --- |
@@ -48,7 +75,7 @@ Set `AIRLINK_GO=/absolute/path/to/go` for the shell scripts if needed. For a dir
 | Packaged service | Portable arm64 service and bundled universal helper passed the expanded final smoke suite | Verified TLS/embedded offline assets, existing protected shares/ranges/quotas, clipboard, relay, organization and explicit duplicate decisions. All six service binaries and both native architectures compile. Package/hash/DMG checks passed. Windows/Linux cross-compilation remains distinct from runtime acceptance. |
 | Dependency scan | Zero affected symbols/imported packages reported | Module-only GO-2026-5932 in unused x/crypto/openpgp remains. AirLink imports Argon2. |
 | Hosted CI | Hosted jobs did not execute | Local background evidence is recorded separately. |
-| User's first physical test | Current 0.5 bundle installed as the sole `/Applications/AirLink.app` and launched for the user's requested manual Mac -> Windows test; its running service reports 0.5 over verified TLS | App data/received files were preserved. This is a real user-use preparation, not automated GUI acceptance. Windows has not yet run the package or completed a transfer in this record; iPhone/iPad, Linux and Android physical acceptance remain open. No GUI automation was used. |
+| User's first physical test | Current 0.5 bundle installed as the sole `/Applications/AirLink.app` and launched for the user's requested manual Mac -> Windows test; its running service reports 0.5 over verified TLS | App data/received files were preserved. This is a real user-use preparation, not automated GUI acceptance. The user subsequently reported a successful Mac → Windows transfer and poor setup/receipt UX; no file size, hash or interruption record is available. The new native Windows client and iPhone/iPad, Linux and Android physical acceptance remain open. No GUI automation was used. |
 
 The opt-in runner is `python3 scripts/acceptance-single-file.py build/airlink-darwin-arm64 --gib 100 --expect-version 0.5.0 --report build/acceptance-single-100gib-0.5.json`. A preceding 64 MiB run validated the interruption harness. Final-source evidence is ignored under `build/go-tests-0.5.jsonl`, `build/web-tests-0.5.log`, `build/swift-tests-0.5.log`, `build/platform-build-0.5.log`, `build/acceptance-single-100gib-0.5.log`, `build/acceptance-single-100gib-0.5.json`, the two `build/smoke-*-0.5.log` files, `build/package-0.5.log` and `build/govuln-0.5.log`.
 

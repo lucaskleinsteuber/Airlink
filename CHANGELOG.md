@@ -2,6 +2,18 @@
 
 AirLink uses MAJOR.MINOR.PATCH versions. Entries describe implemented changes; distribution and verification status are recorded separately.
 
+## 0.6.0 — 2026-10-25
+
+- Added a native Windows WPF interface with an embedded Go helper and self-contained .NET runtime for x64 and ARM64. The normal transfer flow uses its own window and tray icon, with discovery, pairing, drag-and-drop, native file/folder selection, progress, pause/resume/cancel, duplicate decisions, receive-folder access, and basic settings. No terminal or browser is required for that workflow.
+- Preserved the existing `%APPDATA%\AirLink` identity, pairings, settings and history. A still-running older console service must be stopped once before the app can acquire the same private data directory. The app owns only its helper process and provides explicit startup retry; it does not silently terminate another service or reset user data.
+- Made automatic receipt an explicit, directional local choice during pairing or incoming-offer acceptance, as well as in device settings. Ordinary approval retains per-transfer confirmation. Failed or expired pairing does not grant automatic receipt; transfer acceptance and permission persistence report their actual outcomes.
+- Kept desktop pairing visibly pending after request acknowledgment until the remote device approves. macOS uses the discovered address/fingerprint as a draft and selects the verified paired device after approval, rather than treating the request itself as a completed connection.
+- Added direct received-file/folder actions using a private, validated result lookup. Actions follow actual published destinations, exclude skipped and missing payloads, and reject symlink traversal. They do not reveal source paths or redirect to an indexed duplicate. New successful receives remove only their empty internal partial directory; old receive folders are left in place.
+- Replaced the macOS shared asynchronous-byte stdout reader with independent nonblocking readers per helper. Idle connections no longer starve another helper’s replies; malformed, incomplete and oversized messages fail with bounded buffers.
+- Added background service, transport, extraction/cache, protocol-model and native state regressions. Windows packages use the existing code-authored linked-arcs icon motif. No desktop-controlling tests are introduced.
+
+This remains a private development preview. Native Windows covers the core transfer workflow; advanced Quick Share, clipboard, relay-management, statistics and sorting-rule controls are not yet at native macOS parity. Completed final-source checks and package evidence belong in [TESTING.md](docs/TESTING.md). Cross-publishing a Windows GUI executable does not establish actual Windows interaction, Explorer/tray/notification behavior, or physical-network acceptance. The user's successful 0.5 Mac-to-Windows transfer remains a limited manual report, not a final 0.6 acceptance or independently hashed large-file result.
+
 ## 0.5.0 — 2026-10-24
 
 - Added explicit native helper retry using the same bundled service and application data directory, plus user-selected receive-directory recovery. An unavailable saved directory no longer requires discarding application state or silently choosing a different destination. Existing transfer destinations remain unchanged.

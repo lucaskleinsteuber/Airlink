@@ -157,6 +157,9 @@ func TestUpgradeFromReleased030PreservesOrganizationMigration(t *testing.T) {
 func TestUpgradeFromReleased040PreservesOrganizationAndSessions(t *testing.T) {
 	testReleasedUpgrade(t, "AIRLINK_PREVIOUS_HELPER_040", "0.4.0")
 }
+func TestUpgradeFromReleased050PreservesTrustAndResults(t *testing.T) {
+	testReleasedUpgrade(t, "AIRLINK_PREVIOUS_HELPER_050", "0.5.0")
+}
 func testReleasedUpgrade(t *testing.T, variable, expected string) {
 	previous := os.Getenv(variable)
 	if previous == "" {
@@ -216,19 +219,19 @@ func testReleasedUpgrade(t *testing.T, variable, expected string) {
 		t.Fatal("old helper status/version mismatch", old.Version, expected)
 	}
 	expectedOrganization := model.Organization{Rules: []model.SortRule{}}
-	if expected == "0.4.0" {
+	if expected == "0.4.0" || expected == "0.5.0" {
 		expectedOrganization = model.Organization{DetectDuplicates: true, SortEnabled: false, Rules: []model.SortRule{{ID: "preserved-editable-rule", Extensions: []string{"pdf", "txt"}, Folder: "Incoming Documents"}}}
 	}
-	if expected == "0.3.0" || expected == "0.4.0" {
+	if expected == "0.3.0" || expected == "0.4.0" || expected == "0.5.0" {
 		settings := map[string]any{"sendLimitBytesPerSecond": int64(123456), "receiveLimitBytesPerSecond": int64(234567), "shortcut": model.Shortcut{Enabled: false, KeyCode: 40, Modifiers: 256}}
-		if expected == "0.4.0" {
+		if expected == "0.4.0" || expected == "0.5.0" {
 			settings["organization"] = model.Organization{DetectDuplicates: true, SortEnabled: false, Rules: []model.SortRule{{ID: "preserved-editable-rule", Extensions: []string{".PDF", "txt"}, Folder: "Incoming Documents"}}}
 		}
 		rpc("settings.update", settings, nil)
 		rpc("status", nil, &old)
 	}
-	if expected == "0.4.0" && !reflect.DeepEqual(old.Settings.Organization, expectedOrganization) {
-		t.Fatal("0.4 fixture did not retain the enabled detection and normalized editable rule", old.Settings.Organization)
+	if (expected == "0.4.0" || expected == "0.5.0") && !reflect.DeepEqual(old.Settings.Organization, expectedOrganization) {
+		t.Fatal("fixture did not retain the enabled detection and normalized editable rule", old.Settings.Organization)
 	}
 	expectedShortcut := old.Settings.Shortcut
 	if expected == "0.2.0" {
@@ -283,11 +286,23 @@ func testReleasedUpgrade(t *testing.T, variable, expected string) {
 		t.Fatal("no browser session")
 	}
 	browserToken := browserCookies[0].Value
+	if expected == "0.5.0" {
+		var snapshot model.Status
+		rpc("status", nil, &snapshot)
+		if len(snapshot.Devices) != 1 {
+			t.Fatal("expected one fixture pairing")
+		}
+		trusted := snapshot.Devices[0]
+		trusted.AutoAccept = true
+		rpc("device.update", trusted, nil)
+	}
 	var received model.Transfer
 	if err = requestJSON(context.Background(), client, "POST", baseURL+"/api/v1/transfers", browserToken, model.Offer{Files: []model.File{{ID: "old-received", Path: "old.txt", Size: int64(len(payload))}}}, &received); err != nil {
 		t.Fatal(err)
 	}
-	rpc("transfer.accept", map[string]string{"id": received.ID}, nil)
+	if expected != "0.5.0" {
+		rpc("transfer.accept", map[string]string{"id": received.ID}, nil)
+	}
 	chunk, _ := http.NewRequest("PUT", baseURL+"/api/v1/transfers/"+received.ID+"/files/old-received/chunks/0", bytes.NewReader(payload))
 	chunk.Header.Set("Authorization", "Bearer "+browserToken)
 	chunk.Header.Set("X-Chunk-SHA256", digest(payload))
@@ -332,12 +347,20 @@ func testReleasedUpgrade(t *testing.T, variable, expected string) {
 	if !ok || device.CanRelay || device.CanClipboard {
 		t.Fatal("migration lost trust or enabled rights")
 	}
+	if device.AutoAccept != (expected == "0.5.0") {
+		t.Fatal("migration changed explicit automatic receipt permission")
+	}
 	historical, err := next.engine.Get(received.ID)
 	if err != nil || historical.State != "completed" {
 		t.Fatal("received history lost", err)
 	}
 	if data, err := os.ReadFile(filepath.Join(historical.Destination, "old.txt")); err != nil || !bytes.Equal(data, payload) {
 		t.Fatal("received file changed", err)
+	}
+	result, err := next.engine.ReceivedItems(received.ID)
+	expectedPath, pathErr := filepath.EvalSymlinks(filepath.Join(historical.Destination, "old.txt"))
+	if err != nil || pathErr != nil || len(result.Items) != 1 || result.Items[0].Path != expectedPath {
+		t.Fatal("new result action cannot locate migrated received file", result, err)
 	}
 	organizationSettings(t, next, model.Organization{DetectDuplicates: true})
 	device.AutoAccept = true

@@ -158,6 +158,56 @@ func helperIgnoringShutdownAndTerminateCannotHangQuit(acknowledges: Bool) async 
     #expect(await client.stop())
 }
 
+@Test func independentIdleHelpersCannotStarveEachOthersReplies() async throws {
+    let firstDirectory = try lifecycleDirectory(), secondDirectory = try lifecycleDirectory()
+    defer {
+        try? FileManager.default.removeItem(at: firstDirectory)
+        try? FileManager.default.removeItem(at: secondDirectory)
+    }
+    let firstExecutable = try lifecycleHelper(firstDirectory, lifecycleReplies)
+    let secondExecutable = try lifecycleHelper(secondDirectory, lifecycleReplies)
+    let first = DaemonClient(), second = DaemonClient()
+    do {
+        try await first.start(executable: firstExecutable, dataDirectory: firstDirectory)
+        _ = try await first.request("status")
+        // Leave the first pipe open and idle before starting the second reader.
+        try await Task.sleep(for: .milliseconds(30))
+        try await second.start(executable: secondExecutable, dataDirectory: secondDirectory)
+        for _ in 0..<10 {
+            async let one = first.request("status")
+            async let two = second.request("status")
+            for response in try await [one, two] {
+                #expect((try JSONSerialization.jsonObject(with: response) as? [String: Bool])?["ok"] == true)
+            }
+        }
+    } catch {
+        _ = await first.stop(); _ = await second.stop()
+        throw error
+    }
+    #expect(await first.stop()); #expect(await second.stop())
+}
+
+@Test(arguments: [false, true])
+func malformedOrOversizedHelperRepliesFailWithoutWaitingForRequestTimeout(oversized: Bool) async throws {
+    let directory = try lifecycleDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let response = oversized
+        ? #"/usr/bin/head -c 16777217 /dev/zero | /usr/bin/tr '\000' x"#
+        : #"printf 'not-json\n'"#
+    let executable = try lifecycleHelper(directory, "IFS= read -r line\n" + response + "\n" + lifecycleReplies)
+    let client = DaemonClient()
+    try await client.start(executable: executable, dataDirectory: directory)
+    let started = ContinuousClock.now
+    do {
+        _ = try await client.request("status")
+        Issue.record("Invalid helper output should fail its pending request.")
+    } catch {
+        #expect(error.localizedDescription.contains(oversized ? "safe size limit" : "invalid response"))
+        #expect(started.duration(to: .now) < .seconds(5))
+    }
+    #expect(await client.stop())
+}
+
 @Test func finalReplyIsDrainedBeforeCleanHelperExit() async throws {
     let directory = try lifecycleDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }

@@ -42,7 +42,7 @@ struct MainView: View {
                 if !nearby.isEmpty {
                     Section(model.text("In der Nähe", "Nearby")) {
                         ForEach(nearby) { device in
-                            Button { model.showConnection = true } label: { Label(device.name, systemImage: "antenna.radiowaves.left.and.right") }.disabled(!model.isReady)
+                            Button { model.showConnection(to: device) } label: { Label(device.name, systemImage: "antenna.radiowaves.left.and.right") }.disabled(!model.isReady)
                                 .contextMenu { Text(device.address ?? "").textSelection(.enabled) }
                         }
                     }
@@ -65,6 +65,7 @@ struct MainView: View {
             }
             .background(Color(nsColor: .windowBackgroundColor))
             .toolbar {
+                ToolbarItem { Button { model.openReceiveDirectory() } label: { Label(model.text("Empfangsordner", "Receive folder"), systemImage: "tray.and.arrow.down") }.labelStyle(.titleAndIcon).disabled(!model.isReady) }
                 ToolbarItem { Button { showHistory = true } label: { Label(model.text("Verlauf", "History"), systemImage: "clock") }.disabled(!model.isReady) }
                 ToolbarItem { Button { showRelays = true } label: { Label(model.text("Browser-Relays", "Browser relays"), systemImage: "arrow.triangle.branch") }.disabled(!model.isReady) }
                 ToolbarItem { Button { showShares = true } label: { Label("Quick Share", systemImage: "link") }.disabled(!model.isReady) }
@@ -100,14 +101,7 @@ struct MainView: View {
     }
     @ViewBuilder private var pairingRequests: some View {
         ForEach(model.status?.pairRequests ?? []) { request in
-            VStack(alignment: .leading, spacing: 12) {
-                Label(model.text("\(request.name) möchte sich verbinden", "\(request.name) wants to connect"), systemImage: "person.badge.key.fill").font(.headline)
-                Text(model.text("Nur bestätigen, wenn du die Verbindung auf diesem Gerät gerade gestartet hast. Neue Übertragungen müssen zunächst einzeln angenommen werden.", "Approve only if you just initiated pairing on that device. Incoming transfers require approval by default.")).font(.callout).foregroundStyle(.secondary)
-                HStack {
-                    Button(model.text("Ablehnen", "Deny")) { model.command("pair.deny", params: ["id": request.id]) }
-                    Button(model.text("Verbinden", "Approve")) { model.command("pair.approve", params: ["id": request.id]) }.buttonStyle(.borderedProminent)
-                }.disabled(!model.isReady)
-            }.padding(18).frame(maxWidth: .infinity, alignment: .leading).background(.blue.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
+            PairingApprovalView(request: request).environmentObject(model)
         }
     }
     private var dropArea: some View {
@@ -194,9 +188,6 @@ struct TransferRow: View {
                     Text(transfer.deviceName + " · " + stateLabel).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                if transfer.state == "offered" && transfer.direction == "receive" {
-                    Button(model.text("Annehmen", "Accept")) { model.command("transfer.accept", params: ["id": transfer.id]) }.buttonStyle(.borderedProminent)
-                }
                 if ["running", "queued", "reconnecting", "checkingDuplicate", "waitingDuplicate"].contains(transfer.state) {
                     Button { model.command("transfer.pause", params: ["id": transfer.id]) } label: { Image(systemName: "pause.fill") }.help(model.text("Pausieren", "Pause"))
                 }
@@ -206,10 +197,9 @@ struct TransferRow: View {
                 if transfer.isActive {
                     Button { model.command("transfer.cancel", params: ["id": transfer.id]) } label: { Image(systemName: "xmark") }.help(model.text("Abbrechen", "Cancel"))
                 }
-                if transfer.state == "completed", transfer.destination != nil, transfer.hasReceivedContent {
-                    Button { model.revealDestination(transfer) } label: { Image(systemName: "folder") }.help(model.text("Im Finder öffnen", "Open in Finder"))
-                }
             }.disabled(!model.isReady)
+            if transfer.canAcceptIncoming { IncomingApprovalView(transfer: transfer).environmentObject(model) }
+            if !transfer.receivedResultEntries.isEmpty { ReceivedResultView(transfer: transfer).environmentObject(model) }
             ProgressView(value: transfer.fractionCompleted).tint(transfer.state == "completed" ? .green : .accentColor)
             HStack {
                 Text("\(TransferFormatting.bytes(transfer.accountedBytes)) / \(TransferFormatting.bytes(transfer.totalBytes))")
@@ -260,29 +250,65 @@ struct TransferRow: View {
 struct ConnectView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
-    @State private var url = ""
-    @State private var fingerprint = ""
+    @State private var requesting = false
+    @State private var issue: String?
+    @State private var sentRequest = false
+    private var pending: PeerConnectionAttempt? {
+        guard let pending = model.pendingConnection, pending.matches(model.connectionDraft) else { return nil }
+        return pending
+    }
+    private var pairedDeviceID: String? { model.connectionDraft.pairedDevice(in: model.status?.devices ?? [])?.id }
+    private var waiting: Bool { pending != nil && pending?.isExpired() == false }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text(model.text("Gerät verbinden", "Connect a device")).font(.title2.weight(.semibold))
             Text(model.text("Öffne auf dem anderen Computer AirLink. Übernimm dessen Adresse und vergleiche den Zertifikat-Fingerabdruck direkt auf beiden Geräten.", "Open AirLink on the other computer. Enter its address and compare the certificate fingerprint directly on both devices.")).foregroundStyle(.secondary)
-            TextField("https://192.168.1.10:…", text: $url)
-            TextField("SHA-256", text: $fingerprint).font(.system(.body, design: .monospaced))
+            TextField("https://192.168.1.10:…", text: $model.connectionDraft.address).disabled(requesting || waiting)
+            TextField("SHA-256", text: $model.connectionDraft.fingerprint).font(.system(.body, design: .monospaced)).disabled(requesting || waiting)
+            if !model.connectionDraft.fingerprint.isEmpty { Text(model.connectionDraft.comparisonFingerprint).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled).fixedSize(horizontal: false, vertical: true) }
             if let devices = model.status?.devices.filter({ !$0.paired && $0.address != nil }), !devices.isEmpty {
                 Text(model.text("Entdeckte Geräte", "Discovered devices")).font(.headline)
                 ForEach(devices) { device in
-                    Button(device.name) { url = device.address ?? ""; fingerprint = device.fingerprint ?? "" }.buttonStyle(.link)
+                    Button(device.name) { model.connectionDraft = PeerConnectionDraft(device: device); issue = nil }.buttonStyle(.link).disabled(requesting || waiting)
                 }
                 Text(model.text("Auch bei automatisch erkannten Geräten den Fingerabdruck vergleichen.", "Compare the fingerprint even for discovered devices.")).font(.caption).foregroundStyle(.secondary)
             }
-            Text(model.text("Danach die Anfrage am anderen Computer bestätigen. Ein Browser verbindet sich über den QR-Code dieser App.", "Then approve the request on the other computer. A browser connects using this app’s QR code.")).font(.caption).foregroundStyle(.secondary)
-            HStack { Spacer(); Button(model.text("Abbrechen", "Cancel")) { dismiss() }; Button(model.text("Anfrage senden", "Request pairing")) { model.connect(url: url, fingerprint: fingerprint); dismiss() }.buttonStyle(.borderedProminent).disabled(!valid || !model.isReady) }
+            Toggle(model.text("Dateien von diesem Gerät automatisch empfangen", "Automatically receive files from this device"), isOn: $model.connectionDraft.automaticReceive).disabled(requesting || waiting)
+            Text(model.text("Optional: Nach der Kopplung werden Dateien dieses Geräts auf diesem Mac ohne weitere Annahme empfangen. Für andere Geräte bleibt die Bestätigung erforderlich.", "Optional: after pairing, files from this device arrive on this Mac without another acceptance prompt. Other devices still need approval.")).font(.caption).foregroundStyle(.secondary)
+            if let pending {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    if pending.isExpired(at: context.date) {
+                        Label(model.text("Noch keine Kopplung bestätigt. Prüfe das andere Gerät und versuche es erneut.", "Pairing has not been confirmed. Check the other device and try again."), systemImage: "clock.badge.exclamationmark").font(.callout).foregroundStyle(.secondary)
+                    } else {
+                        HStack(spacing: 10) { ProgressView().controlSize(.small); Text(model.text("Anfrage gesendet · jetzt auf dem anderen Gerät bestätigen.", "Request sent · approve it on the other device.")) }.font(.callout)
+                    }
+                }
+            } else if pairedDeviceID != nil {
+                Label(model.text("Gerät verbunden", "Device connected"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+            } else {
+                Text(model.text("Einmal auf dem anderen Computer bestätigen. Danach bleibt das Gerät gespeichert. Browsergeräte verbinden sich über den QR-Code.", "Approve once on the other computer. The device remains saved afterward. Browser clients connect through the QR code.")).font(.caption).foregroundStyle(.secondary)
+            }
+            if let issue { Text(issue).font(.callout).foregroundStyle(.red).textSelection(.enabled) }
+            HStack {
+                Spacer()
+                Button(pending != nil ? model.text("Im Hintergrund warten", "Wait in background") : model.text("Fertig", "Done")) { dismiss() }.disabled(requesting)
+                if pairedDeviceID == nil {
+                    Button(requesting ? model.text("Wird angefragt …", "Requesting …") : pending != nil ? model.text("Erneut versuchen", "Try again") : model.text("Anfrage senden", "Request pairing")) { request() }.buttonStyle(.borderedProminent).disabled(!model.connectionDraft.isValid || !model.isReady || requesting || (pending != nil && pending?.isExpired() == false))
+                }
+            }
         }.textFieldStyle(.roundedBorder).padding(28).frame(width: 510)
+            .onAppear { if pending != nil { sentRequest = true } }
+            .onChange(of: pairedDeviceID) { _, id in if let id, sentRequest { model.selectedDeviceID = id; dismiss() } }
+            .interactiveDismissDisabled(requesting)
     }
-    private var valid: Bool {
-        guard let parsed = URL(string: url), parsed.scheme == "https", parsed.host != nil else { return false }
-        let normalized = fingerprint.filter { !$0.isWhitespace && $0 != ":" }
-        return normalized.count == 64 && normalized.allSatisfy(\.isHexDigit)
+    private func request() {
+        guard !requesting else { return }
+        requesting = true; issue = nil
+        Task {
+            do { try await model.connect(model.connectionDraft); sentRequest = true; if let id = pairedDeviceID { model.selectedDeviceID = id; dismiss() } }
+            catch { issue = error.localizedDescription }
+            requesting = false
+        }
     }
 }
 

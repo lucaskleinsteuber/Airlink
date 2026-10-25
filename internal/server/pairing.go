@@ -115,6 +115,9 @@ func (s *Server) pairPoll(w http.ResponseWriter, r *http.Request) {
 	respond(w, 200, out)
 }
 func (s *Server) approvePair(id string, approve bool) error {
+	return s.approvePairWithAutoAccept(id, approve, false)
+}
+func (s *Server) approvePairWithAutoAccept(id string, approve, autoAccept bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p, ok := s.pending[id]
@@ -128,14 +131,21 @@ func (s *Server) approvePair(id string, approve bool) error {
 		p.State = "denied"
 		return nil
 	}
-	if _, exists := s.store.snapshot().Devices[p.Device.ID]; exists {
+	s.store.Lock()
+	defer s.store.Unlock()
+	if _, exists := s.store.data.Devices[p.Device.ID]; exists {
 		return errors.New("device is already paired; revoke it before pairing again")
 	}
 	token := randomID()
-	record := deviceRecord{Device: p.Device, TokenHash: digest([]byte(token))}
-	if err := s.store.put(record); err != nil {
+	device := p.Device
+	device.AutoAccept = autoAccept
+	record := deviceRecord{Device: device, TokenHash: digest([]byte(token))}
+	s.store.data.Devices[device.ID] = record
+	if err := s.store.save(); err != nil {
+		delete(s.store.data.Devices, device.ID)
 		return err
 	}
+	p.Device = device
 	p.Token = token
 	p.State = "approved"
 	return nil
@@ -196,6 +206,9 @@ func requestJSON(ctx context.Context, client *http.Client, method, raw, token st
 	return nil
 }
 func (s *Server) connectPeer(raw, fp string) (string, error) {
+	return s.connectPeerWithTrust(raw, fp, false)
+}
+func (s *Server) connectPeerWithTrust(raw, fp string, autoAccept bool) (string, error) {
 	raw = strings.TrimRight(raw, "/")
 	fp = strings.ToLower(strings.ReplaceAll(strings.TrimSpace(fp), ":", ""))
 	if !validPeerURL(raw) || len(fp) != 64 {
@@ -249,9 +262,20 @@ func (s *Server) connectPeer(raw, fp string) (string, error) {
 				continue
 			}
 			incoming := randomID()
-			d := model.Device{ID: info.ID, Name: info.Name, Kind: "engine", Address: raw, Fingerprint: fp, Paired: true, Online: true, CanSend: true, CanReceive: true, LastSeen: time.Now().UTC().Format(time.RFC3339)}
+			d := model.Device{ID: info.ID, Name: info.Name, Kind: "engine", Address: raw, Fingerprint: fp, Paired: true, Online: true, CanSend: true, CanReceive: true, AutoAccept: autoAccept, LastSeen: time.Now().UTC().Format(time.RFC3339)}
 			record := deviceRecord{Device: d, TokenHash: digest([]byte(incoming)), OutboundToken: result.Token, PendingReturnToken: incoming}
-			if err := s.store.put(record); err != nil {
+			s.store.Lock()
+			if _, exists := s.store.data.Devices[d.ID]; exists {
+				s.store.Unlock()
+				return
+			}
+			s.store.data.Devices[d.ID] = record
+			err := s.store.save()
+			if err != nil {
+				delete(s.store.data.Devices, d.ID)
+			}
+			s.store.Unlock()
+			if err != nil {
 				return
 			}
 			return

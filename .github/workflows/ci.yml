@@ -20,7 +20,12 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    timeout-minutes: 35
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+      DOTNET_NOLOGO: '1'
     defaults:
       run:
         shell: bash
@@ -37,6 +42,9 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.402'
       - name: Build and test the web interface
         run: |
           npm --prefix web ci
@@ -45,6 +53,13 @@ jobs:
           bash scripts/embed-web.sh
       - name: Go unit, security, HTTPS, and race tests
         run: go test -race ./...
+      - name: Windows core tests with the actual helper
+        run: |
+          mkdir -p build
+          HELPER="$PWD/build/airlink-dotnet-helper"
+          if [[ "$RUNNER_OS" == Windows ]]; then HELPER="$(cygpath -w "$HELPER.exe")"; fi
+          CGO_ENABLED=0 go build -trimpath -o "$HELPER" ./cmd/airlink
+          AIRLINK_TEST_HELPER="$HELPER" dotnet run --project windows/AirLink.Core.Tests/AirLink.Core.Tests.csproj --configuration Release
       - name: Compile portable platform binaries
         if: runner.os == 'Linux'
         run: bash scripts/build.sh

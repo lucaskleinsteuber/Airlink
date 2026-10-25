@@ -468,6 +468,7 @@ func (e *Engine) acceptLocked(r *record) error {
 	if err := e.saveLocked(r); err != nil {
 		return err
 	}
+	cleanupCompletedReceive(r)
 	return e.scheduleLocked()
 }
 func allComplete(files []model.File) bool {
@@ -904,6 +905,7 @@ func (e *Engine) CompleteFile(ctx context.Context, id, fileID, hash string) erro
 	if err = e.saveLocked(r); err != nil {
 		return err
 	}
+	cleanupCompletedReceive(r)
 	if err = e.indexFileLocked(r, r.Transfer.Files[i]); err != nil {
 		return err
 	}

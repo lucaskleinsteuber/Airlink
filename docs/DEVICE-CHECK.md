@@ -1,8 +1,8 @@
 # Manueller Gerätetest: Mac, Windows, iPhone und iPad
 
-Dieser Leitfaden ist für deinen Mac, den Windows-Laptop, dein iPhone und dein iPad. Die Schritte sind **noch nicht als durchgeführt dokumentiert**. Du bedienst die Geräte selbst; es gibt keine UI-Automation. Verwende zunächst kleine, eigens angelegte Testdateien. Große Dateien im echten WLAN/LAN folgen danach.
+Dieser Leitfaden ist für deinen Mac, den Windows-Laptop, dein iPhone und dein iPad. Der erste Mac→Windows-Transfer mit 0.5 wurde von dir als erfolgreich und schnell gemeldet. Die Bedienung mit Konsole, Link, Bestätigungen und schwer auffindbarem Empfangsordner war dabei unzureichend. Größe, exakte Prüfsummen und Wiederaufnahme wurden für diesen Lauf nicht dokumentiert. Die folgenden Fälle, besonders der neue native Windows-Ablauf von 0.6, sind **noch nicht als abgeschlossen dokumentiert**. Du bedienst die Geräte selbst; es gibt keine UI-Automation. Verwende zunächst kleine, eigens angelegte Testdateien. Große Dateien im echten WLAN/LAN folgen danach.
 
-Nutze auf Mac und Windows dieselbe zu prüfende AirLink-Version. Notiere Version, Betriebssystem und Browser. Alle Geräte müssen im selben erreichbaren lokalen Netzwerk sein; ein Gäste-WLAN kann Verbindungen zwischen Geräten sperren. Lass AirLink auf dem Mac und den Windows-Dienst während der jeweiligen Tests laufen. Installation und Start sind in der [README](../README.md#choose-how-to-run-it) beschrieben.
+Nutze auf Mac und Windows dieselbe zu prüfende AirLink-Version. Notiere Version, Betriebssystem und Browser. Alle Geräte müssen im selben erreichbaren lokalen Netzwerk sein; ein Gäste-WLAN kann Verbindungen zwischen Geräten sperren. Lass AirLink auf dem Mac und die Windows-App während der jeweiligen Tests laufen. Installation und Start sind in der [README](../README.md#choose-how-to-run-it) beschrieben.
 
 ## 1. Mac ↔ Windows: Dateien, Ordner und Wiederaufnahme
 
@@ -16,8 +16,12 @@ shasum -a256 "$HOME/Desktop/AirLink-Test/Grüße.txt"
 shasum -a256 "$HOME/Desktop/AirLink-Test/Test-16MiB.bin"
 ```
 
-- [ ] Starte den Windows-Dienst und öffne seine vollständige private Konsolenadresse auf dem Windows-Laptop. Kopple Mac und Windows über die Geräteverbindung. Vergleiche den Zertifikatsfingerabdruck direkt auf beiden Computern und bestätige die Anfrage.
-- [ ] Sende zuerst die Textdatei, dann den ganzen Ordner vom Mac an Windows. Bestätige das Angebot auf dem Empfänger. Prüfe Inhalt, Namen, Unterordner und den leeren Ordner `Leer`.
+- [ ] Entpacke `AirLink-0.6.0-windows-x64.zip` für einen Intel-/AMD-Laptop beziehungsweise die ARM64-Ausgabe für Windows auf ARM vollständig und öffne **AirLink.exe**. Eine separate .NET-Installation ist nicht erforderlich. Für den normalen Transfer öffnest du weder Konsole noch Browser.
+- [ ] Wenn die alte AirLink-Konsole noch läuft, beende sie einmal mit **Strg+C** und wähle in der App **Erneut starten**. Die vorhandenen Daten unter `%APPDATA%\AirLink` bleiben erhalten. Prüfe, ob der schon gekoppelte Mac vorhanden ist; kopple ihn nicht vorsorglich erneut.
+- [ ] Falls noch keine Kopplung besteht, wähle den entdeckten Computer oder **Gerät verbinden**. Vergleiche den Zertifikatsfingerabdruck direkt auf beiden Computern und bestätige die Anfrage am anderen Gerät. Nach „Kopplung angefragt“ muss die App noch auf diese Bestätigung warten; die Anfrage allein ist kein Erfolg.
+- [ ] Sende zuerst die Textdatei, dann den ganzen Ordner vom Mac an Windows. Bestätige das Angebot auf dem Empfänger. Klicke nach Abschluss direkt auf **Datei zeigen** beziehungsweise **Ordner öffnen**, statt im Empfangsordner zu suchen. Prüfe Inhalt, Namen, Unterordner und den leeren Ordner `Leer`.
+- [ ] Aktiviere auf Windows für den Mac ausdrücklich **Von diesem Gerät automatisch empfangen**. Sende eine zweite kleine Datei: In dieser Richtung soll keine neue Annahme nötig sein. Windows→Mac bleibt weiter bestätigungspflichtig, bis du die unabhängige Einstellung auch auf dem Mac aktivierst. Prüfe den gespeicherten Zustand nach einem Neustart und schalte die Option wieder aus, wenn du Bestätigungen behalten möchtest.
+- [ ] Schließe das Windows-Hauptfenster während eines ausreichend langen Transfers. Öffne es über das Tray-Symbol wieder; die Übertragung soll weiterlaufen. Prüfe separat eine aktivierte Abschlussbenachrichtigung und deren Zugriff auf das echte Ergebnis. Beende AirLink abschließend ausdrücklich über **Beenden** und prüfe den nächsten normalen Start.
 - [ ] Berechne auf Windows für jede empfangene Datei die SHA-256-Prüfsumme. Ersetze den Beispielpfad durch den tatsächlichen Empfangspfad:
 
 ```powershell
@@ -25,7 +29,7 @@ Get-FileHash -Algorithm SHA256 -LiteralPath "C:\tatsaechlicher\Empfangspfad\Test
 Get-FileHash -Algorithm SHA256 -LiteralPath "C:\tatsaechlicher\Empfangspfad\Grüße.txt"
 ```
 
-- [ ] Vergleiche jeweils alle 64 Zeichen mit dem Mac-Ergebnis. Groß-/Kleinschreibung der Hex-Zeichen spielt keine Rolle. Sende anschließend den empfangenen Ordner von Windows zurück an den Mac und prüfe dort erneut mit `shasum -a256` und dem tatsächlichen Rückempfangspfad.
+- [ ] Vergleiche jeweils alle 64 Zeichen mit dem Mac-Ergebnis. Groß-/Kleinschreibung der Hex-Zeichen spielt keine Rolle. Wähle auf Windows den Mac, ziehe den empfangenen Ordner in die App oder verwende die Ordnerauswahl, und sende ihn zurück an den Mac und prüfe dort erneut mit `shasum -a256` und dem tatsächlichen Rückempfangspfad.
 - [ ] Teste bei einem ausreichend langen Transfer **Pause → Fortsetzen**. Unterbrich danach kurz die Netzwerkverbindung eines Laptops und stelle sie wieder her. AirLink soll vom bestätigten Stand weiterarbeiten; vergleiche die fertige Datei erneut per SHA-256. Kleine Dateien können dafür zu schnell sein: Bei Bedarf vorübergehend ein niedriges Geschwindigkeitslimit einstellen und anschließend den vorherigen Wert wiederherstellen.
 
 ## 2. Mac ↔ iPhone: Safari, Zertifikat und Datei-Rundweg
@@ -48,7 +52,7 @@ Für einen empfangenen Ordner kannst du anschließend den ZIP-Download ausprobie
 
 ## Ergebnisse und nächster Schritt
 
-Notiere pro Fall Geräte/Versionen, Richtung, Dateigröße, beobachtete Meldung, Verhalten nach Rückkehr und beide Prüfsummen. Ein fehlgeschlagener oder noch nicht ausgeführter Schritt bleibt offen. Melde die konkrete Stelle und den angezeigten Fehler; wiederholtes Koppeln oder Löschen der Anwendungsdaten ist kein allgemeiner Reparaturschritt.
+Notiere pro Fall Geräte/Versionen und CPU-Architektur, Richtung, Dateigröße, beobachtete Meldung, Verhalten nach Rückkehr, tatsächlichen Speicherort und beide Prüfsummen. Ein x64-Laptop bestätigt keine ARM64-Laufzeit. Ein fehlgeschlagener oder noch nicht ausgeführter Schritt bleibt offen. Melde die konkrete Stelle und den angezeigten Fehler; wiederholtes Koppeln oder Löschen der Anwendungsdaten ist kein allgemeiner Reparaturschritt.
 
 Wenn die kleinen Rundwege funktionieren, folgt eine große einzelne Testdatei über das **echte lokale Netzwerk**, mit ausreichend freiem Speicher und Prüfsummenvergleich. Für die große Desktop-Abnahme ist eine einzelne Datei von mindestens **100 GB** erforderlich. Ein **lokaler, kopfloser 100-GiB-Lauf mit zwei Helferprozessen** prüft andere Bedingungen und schließt diese physische Abnahme nicht ab. Auf den Mobilgeräten notierst du zusätzlich die tatsächlich getestete Größe und Grenzen des Browsers und freien Speichers.
 

@@ -630,6 +630,7 @@ func (e *Engine) ResolveDuplicate(ctx context.Context, id, fileID, action, candi
 	}
 	r.Transfer.BytesPerSecond = 0
 	if err = e.saveLocked(r); err == nil {
+		cleanupCompletedReceive(r)
 		err = e.scheduleLocked()
 	}
 	return clone(r.Transfer), err

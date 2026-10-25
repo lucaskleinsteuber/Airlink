@@ -16,6 +16,8 @@ enum HelperLifecycle { case stopped, starting, ready, failed, stopping }
     @Published private(set) var recoveredReceiveFolder: URL?
     @Published private var sendSelection = FileSendSelection()
     @Published var showConnection = false
+    @Published var connectionDraft = PeerConnectionDraft()
+    @Published private(set) var pendingConnection: PeerConnectionAttempt?
     @Published var registeredShortcut = Shortcut(enabled: false)
     @Published var shortcutError: String?
     @Published var shortcutRecording = false
@@ -105,6 +107,10 @@ enum HelperLifecycle { case stopped, starting, ready, failed, stopping }
             guard lifecycleGeneration == generation, lifecycle != .stopping else { return }
             let previous = status
             status = next; engineError = nil; lifecycle = .ready
+            if let pending = pendingConnection, let connected = pending.draft.pairedDevice(in: next.devices) {
+                if selectedDeviceID == nil || selectedDevice?.fingerprint == connected.fingerprint { selectedDeviceID = connected.id }
+                pendingConnection = nil
+            }
             if lastShortcutAttempt != next.settings.shortcut, let controller = shortcutController {
                 lastShortcutAttempt = next.settings.shortcut
                 do { try controller.apply(next.settings.shortcut); registeredShortcut = controller.actual; if next.settings.shortcut.enabled { shortcutError = nil } }
@@ -232,8 +238,37 @@ enum HelperLifecycle { case stopped, starting, ready, failed, stopping }
         _ = try await client.request("clipboard.send", params: JSONEncoder().encode(request))
         await refresh()
     }
-    func connect(url: String, fingerprint: String) {
-        command("peer.connect", params: ["url": url.trimmingCharacters(in: .whitespacesAndNewlines), "fingerprint": fingerprint.replacingOccurrences(of: " ", with: "").replacingOccurrences(of: ":", with: "").lowercased()])
+    func showConnection(to device: Device? = nil) {
+        if let device { connectionDraft = PeerConnectionDraft(device: device) }
+        showConnection = true
+    }
+    func connect(_ draft: PeerConnectionDraft) async throws {
+        try requireReady()
+        guard draft.isValid else { throw NativeError.unavailable(text("Bitte eine gültige AirLink-Adresse und den vollständigen Fingerabdruck verwenden.", "Use a valid AirLink address and its complete fingerprint.")) }
+        if let pending = pendingConnection, pending.matches(draft), !pending.isExpired() { return }
+        struct Response: Decodable { var requestId: String }
+        let response = try JSONDecoder().decode(Response.self, from: await client.request(draft.automaticReceive ? "peer.connectTrusted" : "peer.connect", params: JSONEncoder().encode(["url": draft.normalizedAddress, "fingerprint": draft.normalizedFingerprint])))
+        connectionDraft = draft
+        pendingConnection = PeerConnectionAttempt(requestID: response.requestId, draft: draft)
+        await refresh()
+    }
+    func approvePair(_ id: String, automatic: Bool = false, deny: Bool = false) async throws {
+        try requireReady()
+        guard status?.pairRequests.contains(where: { $0.id == id }) == true else { throw NativeError.unavailable(text("Die Verbindungsanfrage ist nicht mehr verfügbar.", "This pairing request is no longer available.")) }
+        let method = deny ? "pair.deny" : automatic ? "pair.approveTrusted" : "pair.approve"
+        do { _ = try await client.request(method, params: JSONEncoder().encode(["id": id])); await refresh() }
+        catch { await refresh(); throw error }
+    }
+    func acceptIncoming(_ transferID: String, automatic: Bool) async throws {
+        try requireReady()
+        guard let transfer = status?.transfers.first(where: { $0.id == transferID }), transfer.canAcceptIncoming else {
+            throw NativeError.unavailable(text("Diese Übertragung wartet nicht mehr auf Annahme.", "This transfer is no longer waiting for acceptance."))
+        }
+        if automatic, !transfer.canAcceptAndTrust(device: status?.devices.first(where: { $0.id == transfer.deviceId })) {
+            throw NativeError.unavailable(text("Automatischer Empfang ist nur für ein gekoppeltes Gerät mit Senderecht möglich.", "Automatic receipt requires a paired device with permission to send."))
+        }
+        do { _ = try await client.request(automatic ? "transfer.acceptTrusted" : "transfer.accept", params: JSONEncoder().encode(["id": transferID])); await refresh() }
+        catch { await refresh(); throw error }
     }
     func add(_ urls: [URL]) {
         sendSelection.append(urls)
@@ -279,9 +314,40 @@ enum HelperLifecycle { case stopped, starting, ready, failed, stopping }
         let content = UNMutableNotificationContent(); content.title = title; content.body = body; content.sound = .default
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
     }
-    func revealDestination(_ transfer: Transfer) {
-        if transfer.hasReceivedContent, let destination = transfer.destination, FileManager.default.fileExists(atPath: destination) {
-            NSWorkspace.shared.open(URL(fileURLWithPath: destination))
+    func revealReceived(_ transfer: Transfer, fileID: String? = nil) async throws {
+        try requireReady()
+        guard transfer.direction == "receive", transfer.state == "completed", !transfer.receivedResultEntries.isEmpty else {
+            throw NativeError.unavailable(text("Für diese Übertragung ist keine empfangene Datei verfügbar.", "No received file is available for this transfer."))
         }
+        let response = try JSONDecoder().decode(ReceivedTransfer.self, from: await client.request("transfer.received", params: JSONEncoder().encode(["id": transfer.id])))
+        let item: ReceivedItem?
+        if let fileID {
+            guard let selected = response.item(fileID: fileID) else { throw NativeError.unavailable(text("Diese empfangene Datei ist nicht mehr verfügbar.", "This received file is no longer available.")) }
+            item = selected
+        } else if transfer.receivedResultEntries.count == 1 {
+            guard let selected = response.item(fileID: transfer.receivedResultEntries[0].id) else {
+                throw NativeError.unavailable(text("Diese empfangene Datei ist nicht mehr verfügbar.", "This received file is no longer available."))
+            }
+            item = selected
+        } else { item = nil }
+        if let item {
+            guard item.path.hasPrefix("/") else { throw NativeError.unavailable(text("Ungültiger Empfangspfad.", "Invalid receive path.")) }
+            if item.directory { try openFolder(item.path) }
+            else { guard FileManager.default.fileExists(atPath: item.path) else { throw NativeError.unavailable(text("Die Datei ist nicht mehr vorhanden.", "The file is no longer present.")) }; NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: item.path)]) }
+        } else {
+            guard !response.items.isEmpty else { throw NativeError.unavailable(text("Keine empfangenen Dateien mehr vorhanden.", "No received files remain available.")) }
+            try openFolder(response.directory)
+        }
+    }
+    func openReceiveDirectory() {
+        do { try requireReady(); guard let directory = status?.settings.receiveDirectory else { return }; try openFolder(directory) }
+        catch { self.error = error.localizedDescription }
+    }
+    private func openFolder(_ path: String) throws {
+        var isDirectory = ObjCBool(false)
+        guard path.hasPrefix("/"), FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw NativeError.unavailable(text("Der Empfangsordner ist nicht mehr verfügbar. Wähle in den Einstellungen einen erreichbaren Ordner.", "The receive folder is no longer available. Choose an available folder in Settings."))
+        }
+        NSWorkspace.shared.open(URL(fileURLWithPath: path, isDirectory: true))
     }
 }
