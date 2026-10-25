@@ -2,6 +2,8 @@
 
 AirLink 0.9 has explicit native **Check for Updates…** actions. The macOS action is in the AirLink application menu and menu-bar panel; Windows exposes it in Settings and the tray menu. An app predating the updater needs one manual installation first.
 
+The active repository is private during development. The owner downloads and installs new versions manually from [GitHub Releases](https://github.com/lucasfd3/Airlink/releases) while signed in with repository access. The existing updater has no private-repository authentication and cannot retrieve these private feeds or downloads. A later public release requires a new owner decision.
+
 Checks initialize lazily after that action. No scheduled check, automatic download or system profiling is enabled. LAN file transfers remain usable without internet. Token-free GitHub delivery requires the active repository, feeds and download assets to be publicly accessible. A private/missing feed is unavailable; it must not be reported as evidence that the installed version is current. No GitHub PAT is bundled.
 
 ## Trust and lifecycle
@@ -23,8 +25,8 @@ These update signatures are separate from Developer ID, notarization or Windows 
    ```
 
 3. Verify the actual feeds/packages with the official Sparkle CLI and the Windows Core `--verify-update-release` entry point. Review/stage only the intended source, public configuration and generated XML/signature files.
-4. Publish the matching Git tag, the three native packages, `UPDATE-SIGNATURES.json` and `SHA256SUMS.txt`. Verify remote sizes/digests. Feed URLs point to the versioned GitHub assets, so do not overwrite a different binary under an existing signed version.
-5. Verify anonymous HTTPS feed/download access. The active repository is public with owner approval; the earlier archive remains private. Publishing source to a private repository would not make its raw feed public.
+4. Publish the matching Git tag, the three native packages, `UPDATE-SIGNATURES.json` and `SHA256SUMS.txt` in the private repository for manual installation. Verify remote sizes/digests using authorized access. Feed URLs point to the versioned GitHub assets, so do not overwrite a different binary under an existing signed version.
+5. Preserve private visibility for the active repository and the earlier archive. Anonymous GitHub update delivery is unavailable in this configuration. If a later public release is separately authorized, verify anonymous HTTPS feed/download access at that time; earlier public-access checks are historical evidence only.
 
 The generator writes one signed macOS appcast, two Windows architecture appcasts and their detached signatures. Its manifest records SHA-256, length and Ed25519 signatures for the three native packages and exact feeds. Public-only verification needs no private material. The checksum file includes the three packages and signature manifest; the manifest records feed verification data separately.
 

@@ -39,9 +39,13 @@ Choose the matching architecture on an Intel Mac. The integration case starts on
 
 Set `AIRLINK_GO=/absolute/path/to/go` for the shell scripts if needed. For a direct Go command, invoke that Go binary explicitly.
 
-## Public delivery and Linux download withdrawal — 2026-10-25
+## Current private development distribution — 2026-10-25
 
-The owner approved public visibility for the active repository and withdrew untested Linux binaries. Linux remains an experimental source-only target; its cross-builds do not establish runtime acceptance. The observations below supplement the original private publication evidence without rebuilding or relabeling the native apps.
+After the public-delivery checks below, the owner returned the active repository to private visibility and chose manual download/installation of development versions from GitHub Releases. Current API checks confirm active repository ID 1433237767 is private and unarchived; the earlier repository ID 1431646266 remains private and archived. The existing unauthenticated updater cannot access private GitHub feeds/downloads. A later public release requires a new owner decision. Linux binaries remain withdrawn. This documentation update does not rebuild or replace packages, alter signed feeds, install an app or rerun product acceptance tests.
+
+## Historical public delivery and Linux download withdrawal — 2026-10-25
+
+During the earlier approved public interval, the owner withdrew untested Linux binaries. Linux remains an experimental source-only target; its cross-builds do not establish runtime acceptance. The observations below supplement the original private publication evidence without rebuilding or relabeling the native apps; anonymous access was available at that check and is no longer the current distribution configuration.
 
 | Area | Completed observation | Scope and limits |
 | --- | --- | --- |

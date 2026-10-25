@@ -9,9 +9,9 @@ AirLink uses MAJOR.MINOR.PATCH versions. Entries describe implemented changes; d
 - Add manual **Check for Updates…** to the macOS AirLink menu and menu-bar panel, and to Windows Settings and the tray menu. macOS uses Sparkle 2.10; Windows uses NetSparkle 3.1 and the new Setup package.
 - Pin an Ed25519 public key and require signed feeds and signed update archives/installers. Checks are user initiated; scheduled checks, automatic downloads and system profiling are disabled. An unavailable private feed is reported as unavailable, not as an up-to-date result.
 - Add an offline release-signing/public-verification tool and background installer/privacy/signature checks. The private signing seed stays outside Git; reviewed upstream licenses are preserved.
-- Publish the active repository with owner approval while keeping the earlier archive private. Withdraw untested Linux binary downloads from 0.8.1 and 0.9.0 and from future release packaging; Linux remains experimental and available from source. Curate package manifests/checksums without changing native packages or signed update feeds.
+- Withdraw untested Linux binary downloads from 0.8.1 and 0.9.0 and from future release packaging; Linux remains experimental and available from source. Curate package manifests/checksums without changing native packages or signed update feeds.
 
-GitHub feeds and native downloads are publicly reachable and verified without credentials. Background, build, delivery and cryptographic verification are recorded in [TESTING.md](docs/TESTING.md); this entry does not claim a physical Windows installer or interactive native updater acceptance run.
+The active repository is private during development. The owner chose manual download/installation from GitHub Releases after the earlier approved public interval. Anonymous update delivery was verified during that interval, but the existing updater cannot access the current private feeds/downloads. The earlier archive remains private and archived; a later public release requires a new owner decision. Background, build, delivery and cryptographic verification are recorded in [TESTING.md](docs/TESTING.md); this entry does not claim a physical Windows installer or interactive native updater acceptance run.
 
 ## 0.8.1 — 2026-10-25
 
