@@ -53,10 +53,11 @@ Set `AIRLINK_GO=/absolute/path/to/go` for the shell scripts if needed. For a dir
 | Final app/packages | Universal macOS app/helper and both Windows native builds compile; final helper smoke checks passed | Verified embedded offline assets and TLS/private boundaries; both Windows PE machines use GUI subsystem 2 with icon/version/manifest resources. No Windows executable was run. |
 | Distribution integrity | Five versioned archives/DMG plus SHA256SUMS created and verified | Exact ZIP/TAR entry sets and executable payload equality passed; universal architectures, bundle version/build 0.7.0/7, deep/strict ad hoc signature, staged app equality and DMG checksum passed. |
 | Local Mac update | Final 0.7.0 bundle installed and registered as the sole `/Applications/AirLink.app`; signature verified | The old app was not running, and app-data file sizes/timestamps were unchanged. No old bundle was stored in Applications, and no GUI was launched. This is installation, not interactive acceptance. |
+| Hosted CI | Hosted jobs did not execute | Local background evidence is recorded separately. |
 | Large-file evidence | No new 100 GiB run performed for 0.7 | The 0.5 single-file run below remains historical. New offer metadata and native/discovery work do not establish a new physical or current-package stress result. |
 | Physical acceptance | No new native 0.7 Windows or cross-device interaction performed | User-reported 0.5 Mac → Windows success remains limited evidence; native 0.7 UX, real discovery, interruption, mobile and platform filesystem checks are still open in DEVICE-CHECK / RELEASE-READINESS. |
 
-Final local logs are ignored under `build/go-tests-0.7.jsonl`, `build/go-vet-0.7.log`, `build/dotnet-tests-0.7.log`, `build/web-tests-0.7.log`, `build/web-build-0.7.log`, `build/windows-publish-0.7.log`, `build/swift-tests-0.7.log`, `build/macos-final-build-0.7.log` and `build/smoke-*-0.7.log`. Hosted CI is recorded after its run is inspected; successful local checks do not imply hosted success.
+Final local logs are ignored under `build/go-tests-0.7.jsonl`, `build/go-vet-0.7.log`, `build/dotnet-tests-0.7.log`, `build/web-tests-0.7.log`, `build/web-build-0.7.log`, `build/windows-publish-0.7.log`, `build/swift-tests-0.7.log`, `build/macos-final-build-0.7.log` and `build/smoke-*-0.7.log`. The hosted run above is blocked; successful local checks do not imply hosted success.
 
 ## Historical 0.6 evidence — 2026-10-25
 
