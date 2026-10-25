@@ -30,6 +30,6 @@ The generator writes one signed macOS appcast, two Windows architecture appcasts
 
 ## Publishing key
 
-The persistent raw 32-byte seed is in `~/Library/Application Support/AirLink Publishing/ed25519.seed`, with directory mode `0700` and file mode `0600`. The tool refuses private storage in Git checkouts, including symlink-routed paths, and does not silently rotate a missing/mismatched established key. Source/application builds use only the public configuration.
+The persistent 32-byte Ed25519 seed is stored as base64 in `~/Library/Application Support/AirLink Publishing/ed25519.seed`, with directory mode `0700` and file mode `0600`. The tool refuses private storage in Git checkouts, including symlink-routed paths, and does not silently rotate a missing/mismatched established key. Source/application builds use only the public configuration.
 
 Keep a secure backup outside Git and distribution artifacts. Public configuration, Git history and package signatures cannot recreate a lost private seed. Do not print the seed, pass its contents in command arguments, upload it as an asset, or substitute a fresh key for clients that already trust the established one. Moving signing to CI requires a separate decision about encrypted secret storage.
