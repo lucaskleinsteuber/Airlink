@@ -35,6 +35,7 @@ internal sealed class MainWindow : Window
     private string? savingTrustDevice;
     private bool savingTrustValue;
     private Button send = null!, connect = null!, manage = null!, retry = null!, recover = null!, dismiss = null!, pickFiles = null!, pickFolder = null!, setup = null!, transferNav = null!, settingsNav = null!, clear = null!, attention = null!, browserShare = null!;
+    private readonly SettingsPageState settingsState = new();
     private Page page;
     private bool rendering, quitting, setupOpen;
     private string? appearance, language;
@@ -78,7 +79,7 @@ internal sealed class MainWindow : Window
         }
         return false;
     }
-    public void ShowMain() { Show(); if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal; Activate(); }
+    public void ShowMain() { Show(); if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal; Render(); Activate(); }
     public void ReportError(string message) => c.ReportError(message);
     public Task CheckForUpdatesAsync() => updater.CheckAsync();
     internal bool UpdatePrepared { get; private set; }
@@ -149,8 +150,9 @@ internal sealed class MainWindow : Window
     }
     private void Navigate(Page next)
     {
+        var entering = next == Page.Settings && page != Page.Settings;
         page = next;
-        if (next == Page.Settings) { pages.Children.Remove(settingsPage); settingsPage = BuildSettings(); pages.Children.Add(settingsPage); }
+        if (entering && settingsPage is SettingsPage editor) editor.Enter();
         Render();
     }
     private void Build()
@@ -271,54 +273,7 @@ internal sealed class MainWindow : Window
             c.T("Liste aufräumen", "Clean up list"), MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
             _ = c.RunAsync(() => c.RemoveHistoryAsync(captured));
     }
-    private FrameworkElement BuildSettings()
-    {
-        var body = new StackPanel { Margin = new Thickness(34, 28, 34, 30) }; body.Children.Add(Theme.Text(c.T("Einstellungen", "Settings"), 28, true));
-        var description = Theme.Text(c.T("Dein Computer und der Ort für empfangene Dateien.", "Your computer and where received files are saved."), 14, secondary: true); description.Margin = new Thickness(0, 6, 0, 24); body.Children.Add(description);
-        var updates = new StackPanel(); updates.Children.Add(Theme.Text("AirLink " + c.Version, 17, true));
-        var check = Theme.Button(c.T("Nach Updates suchen …", "Check for updates …"), () => _ = CheckForUpdatesAsync()); check.HorizontalAlignment = HorizontalAlignment.Left; check.Margin = new Thickness(0, 12, 0, 8); updates.Children.Add(check);
-        updates.Children.Add(Theme.Text(c.T("Prüft nur auf deine Anfrage. In der privaten Testphase ist der Update-Feed möglicherweise nicht öffentlich erreichbar.", "Checks only when requested. During private testing, the update feed may not be publicly accessible."), 12, secondary: true));
-        var updateCard = Theme.Card(updates); updateCard.Margin = new Thickness(0, 0, 0, 20); body.Children.Add(updateCard);
-        if (c.Status is null) { body.Children.Add(Theme.Text(c.T("AirLink wird gestartet …", "Starting AirLink …"), secondary: true)); return new ScrollViewer { Content = body }; }
-        var edited = ProtocolJson.Clone(c.Status.Settings);
-        static TextBox Input(StackPanel panel, string label, string value)
-        {
-            var caption = Theme.Text(label, 13, true); caption.Margin = new Thickness(0, 15, 0, 6); panel.Children.Add(caption); var input = new TextBox { Text = value }; panel.Children.Add(input); return input;
-        }
-        var general = new StackPanel(); general.Children.Add(Theme.Text(c.T("Dieser Computer", "This computer"), 17, true));
-        var name = Input(general, c.T("Gerätename", "Device name"), edited.Name); name.MaxLength = 120;
-        general.Children.Add(Theme.Text(c.T("So sehen andere Geräte diesen Computer, zum Beispiel „Laptop Windows“.", "Other devices see this name, for example “Windows laptop”."), 12, secondary: true)); body.Children.Add(Theme.Card(general));
-        var receiving = new StackPanel(); receiving.Children.Add(Theme.Text(c.T("Empfang", "Receiving"), 17, true));
-        var folder = Input(receiving, c.T("Zielordner", "Save received files to"), edited.ReceiveDirectory);
-        var choose = Theme.Button(c.T("Ordner ändern …", "Change folder …"), () => { var picker = new OpenFolderDialog { Title = c.T("Zielordner wählen", "Choose receive folder") }; if (System.IO.Directory.Exists(folder.Text)) picker.InitialDirectory = folder.Text; if (picker.ShowDialog(this) == true) folder.Text = picker.FolderName; }); choose.Margin = new Thickness(0, 10, 0, 8); choose.HorizontalAlignment = HorizontalAlignment.Left; receiving.Children.Add(choose);
-        receiving.Children.Add(Theme.Text(c.T("Dateien landen direkt in diesem Ordner. Bestehende Dateien werden nicht überschrieben.", "Files are saved directly in this folder. Existing files are preserved."), 12, secondary: true));
-        var receiveCard = Theme.Card(receiving); receiveCard.Margin = new Thickness(0, 16, 0, 0); body.Children.Add(receiveCard);
-        var personal = new StackPanel(); personal.Children.Add(Theme.Text(c.T("Allgemein", "General"), 17, true));
-        var appearanceField = new ComboBox { ItemsSource = new[] { c.T("Systemdarstellung", "System appearance"), c.T("Hell", "Light"), c.T("Dunkel", "Dark") }, SelectedIndex = Math.Max(0, Array.IndexOf(new[] { "system", "light", "dark" }, edited.Appearance)), Margin = new Thickness(0, 14, 0, 8) }; personal.Children.Add(appearanceField);
-        var languageField = new ComboBox { ItemsSource = new[] { c.T("Systemsprache", "System language"), "Deutsch", "English" }, SelectedIndex = Math.Max(0, Array.IndexOf(new[] { "system", "de", "en" }, edited.Language)) }; personal.Children.Add(languageField);
-        var notifications = new CheckBox { Content = c.T("Bei Empfang und Anfragen benachrichtigen", "Notify about received files and requests"), IsChecked = edited.Notifications, Margin = new Thickness(0, 14, 0, 0) }; personal.Children.Add(notifications);
-        var personalCard = Theme.Card(personal); personalCard.Margin = new Thickness(0, 16, 0, 0); body.Children.Add(personalCard);
-        var errorLabel = Theme.Text("", 13); errorLabel.Foreground = Theme.Color(Theme.Dark ? "#FFB5AE" : "#B1372A"); errorLabel.Margin = new Thickness(0, 14, 0, 10); body.Children.Add(errorLabel);
-        var saving = false; var save = Theme.Button(c.T("Änderungen speichern", "Save changes"), () => { }, true); save.HorizontalAlignment = HorizontalAlignment.Left;
-        save.Click += async (_, _) =>
-        {
-            if (saving) return; saving = true; save.IsEnabled = false; save.Content = c.T("Wird gespeichert …", "Saving …"); general.IsEnabled = receiving.IsEnabled = personal.IsEnabled = false; errorLabel.Text = "";
-            try
-            {
-                SetupWindow.ValidateName(name.Text, c);
-                if (!System.IO.Path.IsPathFullyQualified(folder.Text.Trim())) throw new ArgumentException(c.T("Bitte einen vollständigen Zielordner wählen.", "Choose an absolute receive folder."));
-                edited.Name = name.Text.Trim(); edited.ReceiveDirectory = folder.Text.Trim(); edited.Appearance = new[] { "system", "light", "dark" }[appearanceField.SelectedIndex]; edited.Language = new[] { "system", "de", "en" }[languageField.SelectedIndex]; edited.Notifications = notifications.IsChecked == true;
-                await c.SaveSettingsAsync(edited); errorLabel.Foreground = Theme.Accent; errorLabel.Text = c.T("Gespeichert", "Saved");
-            }
-            catch (Exception e) { errorLabel.Foreground = Theme.Color(Theme.Dark ? "#FFB5AE" : "#B1372A"); errorLabel.Text = e.Message; }
-            finally { saving = false; save.IsEnabled = true; save.Content = c.T("Änderungen speichern", "Save changes"); general.IsEnabled = receiving.IsEnabled = personal.IsEnabled = true; }
-        };
-        body.Children.Add(save);
-        var advanced = Theme.Button(c.T("Erweiterte Einstellungen …", "Advanced settings …"), () => { if (!saving) Dialogs.Settings(this, c); }); advanced.HorizontalAlignment = HorizontalAlignment.Left; advanced.Margin = new Thickness(0, 20, 0, 0); body.Children.Add(advanced);
-        var about = new WrapPanel { Margin = new Thickness(0, 28, 0, 0) }; about.Children.Add(Theme.Text("AirLink " + c.Version, 12, secondary: true));
-        var license = Theme.Button(c.T("Lizenzen", "Licenses"), () => NativeLicenses.Show(this, c)); license.Margin = new Thickness(18, -8, 0, 0); about.Children.Add(license); body.Children.Add(about);
-        return new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-    }
+    private FrameworkElement BuildSettings() => new SettingsPage(this, c, settingsState, Render, OpenSetup);
     private void PickFiles()
     {
         if (!c.Ready || !c.SetupComplete || c.Sending) return; var recipient = c.SelectedDeviceId;
@@ -333,10 +288,14 @@ internal sealed class MainWindow : Window
     }
     private void Render()
     {
+        // Polling and tray notices continue in Controller while the window is
+        // hidden; defer the visual tree work until ShowMain refreshes it.
+        if (IsLoaded && !IsVisible) return;
         if (rendering) return; rendering = true;
         try
         {
-            if (appearance != (c.Status?.Settings.Appearance ?? "system") || language != (c.English ? "en" : "de")) Build();
+            if (!settingsState.Saving && (appearance != (c.Status?.Settings.Appearance ?? "system") || language != (c.English ? "en" : "de"))) Build();
+            (settingsPage as SettingsPage)?.UpdateAvailability();
             host.Text = c.Status?.Name ?? Environment.MachineName; host.ToolTip = host.Text;
             devicePage.Visibility = page == Page.Devices ? Visibility.Visible : Visibility.Collapsed; transferPage.Visibility = page == Page.Transfers ? Visibility.Visible : Visibility.Collapsed; settingsPage.Visibility = page == Page.Settings ? Visibility.Visible : Visibility.Collapsed;
             transferNav.Background = page == Page.Transfers ? Theme.SoftAccent : Brushes.Transparent; settingsNav.Background = page == Page.Settings ? Theme.SoftAccent : Brushes.Transparent;

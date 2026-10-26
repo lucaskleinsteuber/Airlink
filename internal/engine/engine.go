@@ -670,12 +670,15 @@ func (e *Engine) WriteChunk(ctx context.Context, id, fileID string, index int64,
 	}
 	e.mu.Unlock()
 	start := time.Now()
-	b, err := io.ReadAll(io.LimitReader(contextReader{ctx, reader}, expected+1))
+	b, err := readChunkBytes(ctx, reader, expected)
+	if err == io.EOF || err == io.ErrUnexpectedEOF {
+		return f.Received, fmt.Errorf("%w: block length", ErrInvalid)
+	}
 	if err != nil {
 		return f.Received, err
 	}
-	if int64(len(b)) != expected {
-		return f.Received, fmt.Errorf("%w: block length", ErrInvalid)
+	if err = requireChunkEOF(ctx, reader); err != nil {
+		return f.Received, err
 	}
 	sum := sha256.Sum256(b)
 	if hex.EncodeToString(sum[:]) != hash {
@@ -1197,7 +1200,10 @@ func (e *Engine) ReadSourceChunk(ctx context.Context, id, fileID string, index i
 	if _, err = in.Seek(offset, io.SeekStart); err != nil {
 		return nil, "", err
 	}
-	b, err := io.ReadAll(io.LimitReader(contextReader{ctx, in}, size))
+	b, err := readChunkBytes(ctx, in, size)
+	if err == io.EOF || err == io.ErrUnexpectedEOF {
+		return nil, "", ErrSourceChanged
+	}
 	if err != nil {
 		return nil, "", err
 	}
@@ -1239,6 +1245,13 @@ func (e *Engine) MarkOutgoingProgress(id, fileID string, received int64, hash st
 			return nil
 		}
 		return ErrConflict
+	}
+	if received == f.Received && (hash == "" || hash == f.SHA256) {
+		// Source hashing and earlier acknowledgements already persisted this
+		// exact offset/hash. Rewriting the same document adds a durable SQLite
+		// transaction before every file without confirming any new bytes.
+		e.progress[id] = progressSample{at: time.Now(), bytes: r.Transfer.CompletedBytes}
+		return nil
 	}
 	r.Transfer.CompletedBytes += received - f.Received
 	f.Received = received

@@ -6,7 +6,7 @@
 
 AirLink transfers files and folders between computers and browsers on the same local network. It combines native macOS and Windows apps with a web interface for desktop and mobile browsers. The Linux service is experimental, available from source and untested at runtime; no Linux binary download is published.
 
-**Current version: 0.10.0. Repository status: private development preview.** Source and release downloads require a GitHub account with access to this private repository. Download development builds manually from [Releases](https://github.com/lucasfd3/Airlink/releases). The source is MIT licensed. Version 0.8 adds guided device naming and receive-folder setup, a clearer desktop interface and direct receive destinations; 0.9.0 adds a per-user Windows Setup installer. Windows runtime and physical-network acceptance remain open. Automated verification, package creation, physical acceptance, and historical results remain separate delivery states recorded in [TESTING.md](docs/TESTING.md). The [release readiness gates](docs/RELEASE-READINESS.md) define the evidence still needed before 1.0; no release date is assigned.
+**Current version: 0.11.0. Repository status: private development preview.** Source and release downloads require a GitHub account with access to this private repository. Download development builds manually from [Releases](https://github.com/lucasfd3/Airlink/releases). The source is MIT licensed. Version 0.8 adds guided device naming and receive-folder setup, a clearer desktop interface and direct receive destinations; 0.9.0 adds a per-user Windows Setup installer. Windows runtime and physical-network acceptance remain open. Automated verification, package creation, physical acceptance, and historical results remain separate delivery states recorded in [TESTING.md](docs/TESTING.md). The [release readiness gates](docs/RELEASE-READINESS.md) define the evidence still needed before 1.0; no release date is assigned.
 
 The active repository containing the sanitized branch/tag history is **private** under the owner's current decision. Independent object/history and known old-object route checks passed for this new repository, and the six published 0.8.1 files matched the reviewed local checksums at the migration check. The earlier repository remains a separate **private, archived** repository. Making the active repository public later requires a new owner decision. The completed historical checks and their limits are recorded in [PRIVACY-REVIEW.md](docs/PRIVACY-REVIEW.md).
 
@@ -27,6 +27,14 @@ The active repository containing the sanitized branch/tag history is **private**
 The complete web interface is embedded in the desktop service. Normal use needs no account, cloud relay, external website, CDN, or internet connection. Downloading dependencies and building from source requires internet access initially.
 
 Version 0.4 adds **optional duplicate decisions and extension-based sorting for new desktop receives**. Both are off by default, including upgrades. They do not organize browser-managed downloads or relay payloads. See the [organization workflow](#optional-incoming-file-organization) and [roadmap](docs/ROADMAP.md).
+
+## Setup, settings and transfer work in 0.11
+
+Setup now has three steps: choose a recognizable name, choose the receive folder, then review both together with notification preferences. The last step can lead directly to adding the next device. Existing pairings, custom receive locations and completed setup remain saved.
+
+Settings have persistent categories instead of a mixed long page: **General**, **Receiving**, **Transfers** and **About**, plus **Shortcuts** on macOS. **Save** and **Discard** stay visible. Switching categories does not throw away a draft. Updates from setup or another settings surface refresh untouched fields; saving applies only deliberate edits to the newest host snapshot. Windows keeps the draft through main navigation and appearance/language rebuilds, and skips visual work while its main window is hidden.
+
+Transfers use exact-sized bounded block readers rather than repeatedly growing temporary buffers. Identical already-persisted sender progress no longer causes a second SQLite write. TLS, per-block and full SHA-256 checks, source identity checks and durable checkpoints remain enabled. Isolated block benchmarks allocate about 50.8% fewer bytes; the complete same-Mac transfers remain around one second for 300 MiB, with only a small timing difference in three-run samples. These measurements do not explain or establish a fix for physical WLAN/Windows throughput. Details are in [TESTING.md](docs/TESTING.md).
 
 ## Everyday use in 0.10
 
@@ -90,7 +98,7 @@ For a manual check with a Mac, Windows laptop, iPhone and iPad, follow the [Germ
 
 ### macOS
 
-1. Download `AirLink-0.10.0-macos-universal.dmg` manually from the private [Releases](https://github.com/lucasfd3/Airlink/releases), signed in with a GitHub account that has repository access, when that version's asset is available.
+1. Download `AirLink-0.11.0-macos-universal.dmg` manually from the private [Releases](https://github.com/lucasfd3/Airlink/releases), signed in with a GitHub account that has repository access, when that version's asset is available.
 2. Quit the existing AirLink app from its menu-bar menu before updating. Open the disk image and drag **AirLink.app** to **Applications**, replacing the previous AirLink app if present.
 3. Open AirLink. Keep only the intended current app in `/Applications`; app updates preserve the separate AirLink data directory and received files.
 4. Complete the device-name and receive-folder setup. Choose **Connect device** to pair another computer; use connection information/QR to connect a browser.
@@ -101,9 +109,9 @@ Closing the window leaves AirLink running in the menu bar. **Quit** checkpoints 
 
 ### Windows
 
-1. Download **`AirLink-0.10.0-windows-x64-setup.exe`** for an Intel/AMD laptop, or **`AirLink-0.10.0-windows-arm64-setup.exe`** for Windows on ARM, manually from the private [Releases](https://github.com/lucasfd3/Airlink/releases), signed in with a GitHub account that has repository access. The development preview is not Authenticode signed; approve only the file obtained from this repository.
+1. Download **`AirLink-0.11.0-windows-x64-setup.exe`** for an Intel/AMD laptop, or **`AirLink-0.11.0-windows-arm64-setup.exe`** for Windows on ARM, manually from the private [Releases](https://github.com/lucasfd3/Airlink/releases), signed in with a GitHub account that has repository access. The development preview is not Authenticode signed; approve only the file obtained from this repository.
 2. Run Setup. It installs for your account in **`%LOCALAPPDATA%\Programs\AirLink`**, adds **AirLink** to the Start menu and Windows **Installed apps**, and needs no administrator account, ZIP extraction, separate .NET installation or terminal. If Setup asks you to close AirLink, choose **Quit** in the old app's system-tray menu, then retry; closing its window alone keeps it running. Stop a legacy console service with **Ctrl+C** if needed. Open AirLink from the finish page or Start menu.
-3. Complete the two-step setup: a recognizable **device name** and the **receive folder**. Downloads is the usual choice. Licenses for AirLink and the bundled runtime are available under **Settings → Licenses**.
+3. Complete the three-step setup: a recognizable **device name**, the **receive folder**, and the review/notification choices. Downloads is the usual choice. Licenses for AirLink and the bundled runtime are available under **Settings → About → Licenses**.
 4. Select the other computer in the sidebar. If it is new, use **Connect device**, compare the fingerprint shown directly on the other computer, and approve the request there. Existing pairings remain saved.
 5. Drop a file on the paired computer or its named drop area. New received files appear directly in the chosen folder; use **Show file** / **Open folder** to reach the actual result.
 
@@ -186,7 +194,7 @@ Set independent **send** and **receive** limits on the host. Each limit is share
 
 Statistics separate confirmed file bytes, skipped files/avoided bytes, and unique relay transport bytes/deliveries. Avoided bytes do not inflate confirmed or lifetime payload traffic. Host-only lifetime payload counters remain after history clearing, while totals derived from the remaining history can decrease. **Daily history groups use the record's last activity date in UTC**; they are not a time series of bytes transferred during each calendar day. A transfer resumed on a later day can move its full accumulated history total to that day. Guests see only their own/participant statistics, not host-wide traffic totals.
 
-On macOS, change or disable the global shortcut in **Settings → Quick send**. Recording captures a key only while that Settings control has focus; it does not install a global keystroke monitor. Command or Control is required, with optional Shift/Option. Existing settings migrate to ⇧⌘L unless a shortcut was explicitly disabled. A conflicting replacement preserves the previous registration and displays an error; the UI distinguishes the registered shortcut from a pending draft.
+On macOS, change or disable the global shortcut in **Settings → Shortcuts**. Recording captures a key only while that Settings control has focus; it does not install a global keystroke monitor. Command or Control is required, with optional Shift/Option. Existing settings migrate to ⇧⌘L unless a shortcut was explicitly disabled. A conflicting replacement preserves the previous registration and displays an error; the UI distinguishes the registered shortcut from a pending draft.
 
 Finder Services accepts modern file URLs and the legacy selected-filename format only when the service is invoked. Login-item status refreshes when Settings opens or the app becomes active; reading that status does not register/unregister the login item. Native shortcut registration, Finder interaction, and login startup still require manual runtime acceptance; compiled code and background model tests do not establish that UI behavior.
 

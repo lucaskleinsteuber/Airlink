@@ -1,5 +1,4 @@
 using System;
-using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
@@ -15,31 +14,6 @@ internal static class Dialogs
     public static void Pair(Window owner, Controller c, RemoteDevice? seed)
     {
         new PairingWindow(owner, c, seed).ShowDialog();
-    }
-
-    public static void Settings(Window owner, Controller c)
-    {
-        if (c.Status is null) return;
-        var settings = ProtocolJson.Clone(c.Status.Settings);
-        var form = new Form(owner, c.T("Erweiterte Einstellungen", "Advanced settings"), 600);
-        form.Help(c.T("Begrenze die Übertragungsgeschwindigkeit oder prüfe empfangene Dateien auf vorhandene identische Inhalte.",
-            "Limit transfer speed or check received files for existing identical content."));
-        var sendLimit = form.Input(c.T("Sendelimit in MB/s (0 = unbegrenzt)", "Upload limit in MB/s (0 = unlimited)"), Limit(settings.SendLimitBytesPerSecond));
-        var receiveLimit = form.Input(c.T("Empfangslimit in MB/s (0 = unbegrenzt)", "Download limit in MB/s (0 = unlimited)"), Limit(settings.ReceiveLimitBytesPerSecond));
-        var duplicates = form.Check(c.T("Identische Dateien beim Empfang erkennen", "Detect identical files when receiving"), settings.Organization.DetectDuplicates);
-        form.Help(c.T("AirLink fragt vor dem Überspringen einer identischen Datei. Bereits vorhandene Dateien werden nicht gelöscht.",
-            "AirLink asks before skipping an identical file. Existing files are preserved."));
-        if (settings.Organization.SortEnabled)
-            form.Help(c.T("Deine bestehenden Sortierregeln sind aktiv und bleiben erhalten. Der Regeleditor ist derzeit in der Weboberfläche verfügbar.",
-                "Your existing sorting rules are active and will be preserved. The rule editor is currently available in the web interface."));
-        form.Commit(c.T("Speichern", "Save"), async () =>
-        {
-            settings.SendLimitBytesPerSecond = ParseLimit(sendLimit.Text, c);
-            settings.ReceiveLimitBytesPerSecond = ParseLimit(receiveLimit.Text, c);
-            settings.Organization.DetectDuplicates = duplicates.IsChecked == true;
-            await c.SaveSettingsAsync(settings);
-        });
-        form.Show();
     }
 
     public static void Device(Window owner, Controller c, RemoteDevice device)
@@ -137,14 +111,6 @@ internal static class Dialogs
     {
         form.ReadOnly(label, value);
         form.Action(c.T("Kopieren", "Copy"), () => { Clipboard.SetText(value); return Task.FromResult(false); });
-    }
-
-    private static string Limit(long bytes) => (bytes / 1_000_000m).ToString("0.######", CultureInfo.CurrentCulture);
-    private static long ParseLimit(string input, Controller c)
-    {
-        if (!decimal.TryParse(input.Trim(), NumberStyles.Number, CultureInfo.CurrentCulture, out var amount) || amount < 0 || amount > long.MaxValue / 1_000_000m)
-            throw new ArgumentException(c.T("Geschwindigkeitslimits müssen eine positive Zahl oder 0 sein.", "Speed limits must be a positive number or 0."));
-        return checked((long)(amount * 1_000_000m));
     }
 
     private sealed class Form

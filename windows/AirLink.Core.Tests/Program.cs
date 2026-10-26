@@ -20,6 +20,10 @@ internal static class Program
         (string Name, Func<Task> Run)[] cases = [
             ("settings preserve existing permissions and unknown additive fields", SettingsRoundTrip),
             ("setup is explicit and preserves custom destinations", SetupTests.ExplicitDefaults),
+            ("settings edits merge only changed fields into the newest snapshot", SettingsDraftTests.MergeOnlyEditedFields),
+            ("settings drafts reset safely and limits preserve exact localized byte values", SettingsDraftTests.DraftResetAndLimitBoundaries),
+            ("setup review commits explicit choices without resetting saved preferences", SettingsDraftTests.SetupReviewPreservesOtherPreferences),
+            ("settings rebase follows unedited fields without replacing in-progress input", SettingsDraftTests.RebaseDisplayedFieldsWithoutLosingTyping),
             ("updater uses native channels and rejects downgrades or other architectures", UpdateTests.NativeChannels),
             ("actual NetSparkle Ed25519 checks reject tampered unsigned or truncated updates", UpdateTests.SignatureIntegrity),
             ("signed feeds fail closed and private feed requests send no credentials", UpdateTests.SignedFeed),
@@ -471,7 +475,7 @@ internal static class Program
         await using var fixture = new Fixture(); await using var client = new DaemonClient(new DaemonClientOptions { DisableDiscovery = true });
         await client.StartAsync(Path.GetFullPath(helper), fixture.Data, fixture.Received);
         var before = await client.RequestAsync<HostStatus>("status");
-        var expectedVersion = Environment.GetEnvironmentVariable("AIRLINK_TEST_VERSION") ?? "0.10.0";
+        var expectedVersion = Environment.GetEnvironmentVariable("AIRLINK_TEST_VERSION") ?? "0.11.0";
         Require(before.Version == expectedVersion && before.Fingerprint.Length == 64 && before.ChunkSize == 8 * 1024 * 1024, "Unexpected service contract/version");
         var settings = ProtocolJson.Clone(before.Settings);
         settings.Appearance = "dark"; settings.Language = "en"; settings.Notifications = false;

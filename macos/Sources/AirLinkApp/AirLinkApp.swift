@@ -25,7 +25,7 @@ import SwiftUI
             }
         }
         Settings {
-            SettingsView().environmentObject(model).frame(width: 560, height: 680)
+            SettingsView().environmentObject(model).frame(width: 820, height: 680)
                 .preferredColorScheme(model.colorSchemeName == "dark" ? .dark : model.colorSchemeName == "light" ? .light : nil)
         }
         MenuBarExtra("AirLink", systemImage: model.activeTransfers.isEmpty && model.activeRelays.isEmpty ? "arrow.left.arrow.right" : "arrow.up.arrow.down.circle.fill") {

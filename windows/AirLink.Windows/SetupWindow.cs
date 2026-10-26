@@ -14,9 +14,11 @@ namespace AirLink.Windows;
 internal sealed class SetupWindow : Window
 {
     private readonly Controller c;
-    private readonly StackPanel nameStep = new(), folderStep = new();
+    private readonly StackPanel nameStep = new(), folderStep = new(), reviewStep = new();
     private readonly TextBox name, folder;
     private readonly TextBlock title, explanation, progress, error, summary;
+    private readonly TextBlock reviewName, reviewFolder;
+    private readonly CheckBox notifications;
     private readonly Button back, next;
     private bool busy;
     private int step;
@@ -45,22 +47,31 @@ internal sealed class SetupWindow : Window
         }); choose.HorizontalAlignment = HorizontalAlignment.Left; folderStep.Children.Add(choose);
         var help = Theme.Text(c.T("Empfangene Dateien liegen direkt hier, ohne zusätzliche AirLink-Ordner. Bereits vorhandene Dateien bleiben erhalten.", "Received files are saved directly here, without extra AirLink folders. Existing files are preserved."), 13, secondary: true); help.Margin = new Thickness(0, 16, 0, 16); folderStep.Children.Add(help);
         summary = Theme.Text("", 14, true); folderStep.Children.Add(summary); body.Children.Add(folderStep);
+        reviewName = Theme.Text("", 17, true); reviewFolder = Theme.Text("", 13, secondary: true);
+        var review = new StackPanel(); review.Children.Add(Theme.Text(c.T("Dieser Computer", "This computer"), 12, secondary: true)); review.Children.Add(reviewName);
+        var folderCaption = Theme.Text(c.T("Empfangsordner", "Receive folder"), 12, secondary: true); folderCaption.Margin = new Thickness(0, 16, 0, 4); review.Children.Add(folderCaption); review.Children.Add(reviewFolder);
+        reviewStep.Children.Add(Theme.Card(review));
+        notifications = new CheckBox { Content = Theme.Text(c.T("Bei Anfragen und empfangenen Dateien benachrichtigen", "Notify about requests and received files"), 13), IsChecked = c.SetupComplete && c.Status?.Settings.Notifications == true, Margin = new Thickness(0, 18, 0, 8) };
+        reviewStep.Children.Add(notifications);
+        reviewStep.Children.Add(Theme.Text(c.T("Optional. Du kannst diese Einstellung später unter Allgemein ändern.", "Optional. You can change this later under General."), 12, secondary: true));
+        var nextStep = Theme.Text(c.T("Als Nächstes: AirLink auf dem anderen Gerät öffnen und „Gerät hinzufügen“ wählen. Nach einmaligem Bestätigen bleibt die Verbindung gespeichert.", "Next: open AirLink on the other device and choose Add a device. After approving once, the connection stays saved."), 13, secondary: true); nextStep.Margin = new Thickness(0, 20, 0, 0); reviewStep.Children.Add(nextStep); body.Children.Add(reviewStep);
         error = Theme.Text("", 13); error.Foreground = Theme.Color(Theme.Dark ? "#FFB5AE" : "#B1372A"); error.Margin = new Thickness(0, 16, 0, 0); body.Children.Add(error);
         var actions = new Grid { Margin = new Thickness(0, 28, 0, 0) }; actions.ColumnDefinitions.Add(new ColumnDefinition()); actions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        back = Theme.Button(c.T("Zurück", "Back"), () => { step = 0; error.Text = ""; Render(); }); actions.Children.Add(back); back.HorizontalAlignment = HorizontalAlignment.Left;
+        back = Theme.Button(c.T("Zurück", "Back"), () => { step = Math.Max(0, step - 1); error.Text = ""; Render(); }); actions.Children.Add(back); back.HorizontalAlignment = HorizontalAlignment.Left;
         next = Theme.Button("", () => _ = ContinueAsync(), true); next.IsDefault = true; Grid.SetColumn(next, 1); next.Margin = new Thickness(0); actions.Children.Add(next); body.Children.Add(actions);
         Content = new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         Closing += (_, e) => { if (busy) e.Cancel = true; }; Render(); Loaded += (_, _) => { name.Focus(); name.SelectAll(); };
     }
     private void Render()
     {
-        nameStep.Visibility = step == 0 ? Visibility.Visible : Visibility.Collapsed; folderStep.Visibility = step == 1 ? Visibility.Visible : Visibility.Collapsed;
-        progress.Text = c.T("Einrichtung", "Setup") + " · " + (step + 1) + " / 2";
-        title.Text = step == 0 ? c.T("Willkommen bei AirLink", "Welcome to AirLink") : c.T("Alles an deinem Platz", "Everything in its place");
-        explanation.Text = step == 0 ? c.T("Gib diesem Computer einen Namen, den du auf deinen anderen Geräten sofort erkennst.", "Give this computer a name you will recognize on your other devices.") : c.T("Wähle, wo AirLink empfangene Dateien speichern soll.", "Choose where AirLink should save received files.");
+        nameStep.Visibility = step == 0 ? Visibility.Visible : Visibility.Collapsed; folderStep.Visibility = step == 1 ? Visibility.Visible : Visibility.Collapsed; reviewStep.Visibility = step == 2 ? Visibility.Visible : Visibility.Collapsed;
+        progress.Text = c.T("Einrichtung", "Setup") + " · " + (step + 1) + " / 3";
+        title.Text = step switch { 0 => c.T("Willkommen bei AirLink", "Welcome to AirLink"), 1 => c.T("Alles an deinem Platz", "Everything in its place"), _ => c.T("Bereit zum Verbinden", "Ready to connect") };
+        explanation.Text = step switch { 0 => c.T("Gib diesem Computer einen Namen, den du auf deinen anderen Geräten sofort erkennst.", "Give this computer a name you will recognize on your other devices."), 1 => c.T("Wähle, wo AirLink empfangene Dateien speichern soll.", "Choose where AirLink should save received files."), _ => c.T("Prüfe deine Auswahl. Erst beim Abschließen wird die Einrichtung gespeichert.", "Review your choices. Setup is saved only when you finish.") };
         summary.Text = name.Text.Trim();
-        back.Visibility = step == 0 ? Visibility.Hidden : Visibility.Visible; next.Content = busy ? c.T("Wird gespeichert …", "Saving …") : step == 0 ? c.T("Weiter", "Continue") : c.T("AirLink starten", "Start AirLink");
-        back.IsEnabled = next.IsEnabled = nameStep.IsEnabled = folderStep.IsEnabled = !busy;
+        reviewName.Text = name.Text.Trim(); reviewFolder.Text = folder.Text.Trim();
+        back.Visibility = step == 0 ? Visibility.Hidden : Visibility.Visible; next.Content = busy ? c.T("Wird gespeichert …", "Saving …") : step < 2 ? c.T("Weiter", "Continue") : c.T("Einrichtung abschließen", "Finish setup");
+        back.IsEnabled = next.IsEnabled = nameStep.IsEnabled = folderStep.IsEnabled = reviewStep.IsEnabled = !busy;
     }
     private async Task ContinueAsync()
     {
@@ -70,8 +81,9 @@ internal sealed class SetupWindow : Window
             ValidateName(name.Text, c);
             if (step == 0) { step = 1; Render(); folder.Focus(); return; }
             if (!Path.IsPathFullyQualified(folder.Text.Trim())) throw new ArgumentException(c.T("Wähle einen vollständigen Zielordner.", "Choose an absolute receive folder."));
+            if (step == 1) { step = 2; Render(); return; }
             busy = true; Render();
-            await c.CompleteSetupAsync(name.Text.Trim(), folder.Text.Trim());
+            await c.CompleteSetupAsync(name.Text.Trim(), folder.Text.Trim(), notifications.IsChecked == true);
             if (!c.SetupComplete) throw new InvalidOperationException(c.T("Die Einrichtung konnte noch nicht bestätigt werden. Bitte erneut versuchen.", "Setup has not been confirmed. Please try again."));
             busy = false; DialogResult = true;
         }

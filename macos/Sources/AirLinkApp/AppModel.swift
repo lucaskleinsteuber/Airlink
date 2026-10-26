@@ -30,6 +30,7 @@ struct FailedDirectSend: Identifiable {
     @Published private(set) var removingHistory = false
     @Published var showConnection = false
     @Published var showSetup = false
+    var connectAfterSetup = false
     private var setupOffered = false
     @Published var connectionDraft = PeerConnectionDraft()
     @Published private(set) var pendingConnection: PeerConnectionAttempt?
@@ -187,7 +188,7 @@ struct FailedDirectSend: Identifiable {
     }
     func update(_ device: Device) { perform("device.update", data: try? JSONEncoder().encode(device)) }
     func update(_ settings: HostSettings) { Task { do { try await saveSettings(settings) } catch { self.error = error.localizedDescription } } }
-    func saveSettings(_ settings: HostSettings) async throws {
+    @discardableResult func saveSettings(_ settings: HostSettings) async throws -> HostSettings {
         try requireReady()
         guard settings.shortcut.isValid, RateLimit.isValid(settings.sendLimitBytesPerSecond), RateLimit.isValid(settings.receiveLimitBytesPerSecond) else { throw NativeError.unavailable(text("Ungültige Tastenkombination oder Geschwindigkeitsgrenze.", "Invalid shortcut or speed limit.")) }
         guard settings.organization.isValid else { throw NativeError.unavailable(text("Bitte gültige Dateiendungen und sichere relative Ordner für die Sortierregeln verwenden.", "Use valid extensions and safe relative folders for sorting rules.")) }
@@ -196,9 +197,10 @@ struct FailedDirectSend: Identifiable {
         do {
             try controller.apply(settings.shortcut)
             registeredShortcut = controller.actual
-            _ = try await client.request("settings.update", params: JSONEncoder().encode(settings))
+            let confirmed = try JSONDecoder().decode(HostSettings.self, from: await client.request("settings.update", params: JSONEncoder().encode(settings)))
             shortcutError = nil; lastShortcutAttempt = settings.shortcut
-            await refresh()
+            await refresh(force: true)
+            return confirmed
         } catch {
             try? controller.apply(previous)
             registeredShortcut = controller.actual
@@ -206,13 +208,14 @@ struct FailedDirectSend: Identifiable {
             throw error
         }
     }
-    func completeSetup(_ draft: SetupDraft) async throws {
+    func completeSetup(_ draft: SetupDraft, connectNext: Bool = false) async throws {
         try requireReady()
         guard draft.validName, draft.validFolder else { throw NativeError.unavailable(text("Bitte einen gültigen Namen und Empfangsordner wählen.", "Choose a valid name and receive folder.")) }
         guard var settings = status?.settings else { throw NativeError.unavailable(text("AirLink ist noch nicht bereit.", "AirLink is not ready yet.")) }
-        settings.name = draft.normalizedName; settings.receiveDirectory = draft.receiveDirectory; settings.setupCompleted = true
+        settings.name = draft.normalizedName; settings.receiveDirectory = draft.receiveDirectory; settings.notifications = draft.notifications; settings.setupCompleted = true
         try await saveSettings(settings)
         guard setupComplete else { throw NativeError.unavailable(text("Die Einrichtung konnte noch nicht bestätigt werden. Bitte erneut versuchen.", "Setup has not been confirmed yet. Please retry.")) }
+        connectAfterSetup = connectNext
         showSetup = false
     }
     func captureShortcut(_ enabled: Bool) {

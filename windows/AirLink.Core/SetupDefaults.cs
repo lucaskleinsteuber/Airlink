@@ -20,4 +20,14 @@ public static class SetupDefaults
             throw new ArgumentException("Use a device name between 1 and 120 UTF-8 bytes, without control characters.");
         return name;
     }
+
+    public static HostSettings Complete(HostSettings current, string name, string folder, bool? notifications = null)
+    {
+        var result = ProtocolJson.Clone(current);
+        result.Name = NormalizeName(name);
+        if (!Path.IsPathFullyQualified(folder.Trim())) throw new ArgumentException("Choose an absolute receive folder.");
+        result.ReceiveDirectory = folder.Trim(); result.SetupCompleted = true;
+        if (notifications is not null) result.Notifications = notifications.Value;
+        return result;
+    }
 }

@@ -39,6 +39,30 @@ Choose the matching architecture on an Intel Mac. The integration case starts on
 
 Set `AIRLINK_GO=/absolute/path/to/go` for the shell scripts if needed. For a direct Go command, invoke that Go binary explicitly.
 
+## 0.11 bounded transfer reads and organized settings — 2026-10-26
+
+| Area | Completed observation | Scope and limits |
+| --- | --- | --- |
+| Go | **177 top-level race tests / 292 cases passed**; `go vet ./...` passed | Actual 0.5–0.7 helper upgrades enabled. Streaming stress and 0.1–0.4 helper fixtures were not enabled. New cases cover fragmented/exact/oversized/erroring readers, cancellation without acknowledgement, retry, durable no-op progress and restart. |
+| Swift | **67 tests passed**, with both actual final 0.11 helper integrations | Settings merge preserves newer unedited fields, nested sort rules and key chords, while explicit unlimited/disabled choices and notification drafts remain deliberate. Final native app compiles for both architectures; no GUI launched. |
+| Windows Core | **41 passed, zero skipped/failed**, against the final 0.11 helper | New draft merge/rebase cases preserve invalid input, newer folders/rules/additive fields and confirmed-save baselines. Final native x64 and ARM64 builds/resource inspections passed; physical Windows interaction remains manual. |
+| Web/helper smoke | **68 web tests** and production build passed; portable and bundled helpers pass the TLS/offline-resource smoke check | No browser automation. The Web transfer contract and durable verification rules are unchanged. |
+| Native settings/setup | Categorized settings preserve drafts through category changes and apply confirmed acknowledgements; setup adds review/notification/next-device choices | Source review resolved stale untouched values, nested-field clobbering and the missing explicit macOS notification-permission action. Windows hidden-window rendering is skipped; no UI latency or CPU reduction on physical Windows is claimed. |
+| Artifacts/signatures | Universal macOS 0.11.0/build 13, both Windows architecture builds/Setup files, nested ad hoc signatures and DMG integrity passed; three packages audited across 1,032 payloads, 919 bundled entries, 2,010 managed resources and four NSIS streams with zero findings | Six source-guard and 17 package-guard selftests pass. Public-only release verification accepts exact packages, three feeds, manifest and checksums. Actual Sparkle/NetSparkle validate final feeds/packages; wrong macOS key rejected. No private key or Keychain used in verifier checks. |
+
+The isolated Go 8-MiB source-read benchmark changed median 3.4966 to 3.1484 ms and allocated bytes 17,080,632 to 8,404,430. Confirmed receive-block replay changed 3.0485 to 2.7514 ms and allocated bytes 17,064,883 to 8,389,795. These are three-run operation benchmarks, not complete transfer measurements. Exact-sized buffers keep per-request ownership; no unsafe HTTP body pooling or sync/checksum removal was introduced. Identical already-durable sender offset/hash updates skip only a redundant SQL transaction; the volatile rate sample still refreshes after resume.
+
+Three-run actual two-helper TLS comparisons on the same Mac:
+
+| Fixture | 0.10 seconds | 0.11 seconds | Median 0.10 → 0.11 | Maximum sampled RSS source/receiver 0.10 → 0.11 |
+| --- | --- | --- | --- | --- |
+| One real 300-MiB file | 0.989708 / 0.951876 / 0.965743 | 0.940600 / 1.003892 / 0.932760 | 0.965743 → 0.940600 s | 56.31 / 45.70 → 48.75 / 43.55 MiB |
+| 128 files × 64 KiB, 8 MiB total | 2.021741 / 1.918185 / 1.989247 | 1.922739 / 2.032887 / 1.888477 | 1.989247 → 1.922739 s | 27.50 / 26.55 → 26.88 / 26.67 MiB |
+
+Every independent destination hash matches. These small total-time differences are within ordinary local variation and do not establish a meaningful WLAN/Windows speedup. The earlier physical 300-MB/minute observation was not reproduced. Fixtures are real, not sparse; services use isolated temporary state, no discovery, explicit test pairing and verified local TLS. Pairing, fixture generation and independent post-hash are outside timing; AirLink source hashing is included. Status polls every 20 ms and RSS samples every 100 ms can miss shorter events/peaks. The baseline helper was retained immutably; final helper identity matches its measurement reports. No 100-GB acceptance rerun.
+
+Ignored logs/reports include `build/go-tests-0.11.jsonl`, `swift-tests-0.11.log`, `windows-core-final-0.11.log`, `windows-publish-0.11.log`, `macos-build-0.11.log`, `chunk-buffer-baseline-0.11.log`, `chunk-buffer-optimized-0.11.log`, `performance-0.10-baseline-summary-for-0.11.json`, `performance-0.11-final.json`, `performance-0.11-small-final.json` and `performance-comparison-0.10-to-0.11.json`. Installed applications and user data were not changed; distribution remains private with manual downloads.
+
 ## 0.10 native device connection and history removal — 2026-10-26
 
 | Area | Completed observation | Scope and limits |

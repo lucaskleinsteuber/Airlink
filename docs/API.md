@@ -1,4 +1,4 @@
-# AirLink protocol 1 — 0.10.0
+# AirLink protocol 1 — 0.11.0
 
 The baseline transfer routes introduced in 0.1 remain compatible with the current 0.10 implementation. Additive share/clipboard interfaces are specified in [API-0.2.md](API-0.2.md), relay/rate/history/statistics in [API-0.3.md](API-0.3.md), and optional incoming-file organization in [API-0.4.md](API-0.4.md). The 0.6 local-only additions below remain available; native sending, shares and clipboard controls reuse these existing methods rather than adding recipient approval or filesystem powers to the LAN API. Version 0.10 adds explicitly removing individual terminal file-history entries. Wire protocol version remains 1.
 

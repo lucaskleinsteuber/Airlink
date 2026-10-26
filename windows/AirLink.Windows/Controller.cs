@@ -63,7 +63,7 @@ internal sealed class Controller : INotifyPropertyChanged
     public string DataDirectory => Path.Combine(Environment.GetEnvironmentVariable("APPDATA") ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AirLink");
     public Device? SelectedDevice => Status?.Devices.FirstOrDefault(d => d.Id == SelectedDeviceId);
     public int ActiveCount => (Status?.Transfers.Count(t => t.IsActive) ?? 0) + (Status?.Relays.Count(r => r.State is not ("delivered" or "cancelled" or "failed")) ?? 0);
-    public string Version => Status?.Version ?? "0.10.0";
+    public string Version => Status?.Version ?? "0.11.0";
 
     public Controller(Dispatcher dispatcher)
     {
@@ -99,7 +99,7 @@ internal sealed class Controller : INotifyPropertyChanged
     private static async Task<string> ExtractHelperAsync()
     {
         var assembly = Assembly.GetExecutingAssembly();
-        var version = assembly.GetName().Version?.ToString(3) ?? "0.10.0";
+        var version = assembly.GetName().Version?.ToString(3) ?? "0.11.0";
         var cache = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AirLink", "Runtime", version,
             RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant());
         Stream Open() => assembly.GetManifestResourceStream("AirLink.Windows.Helper") ?? throw new FileNotFoundException("The bundled AirLink service is missing. Download the complete app.");
@@ -308,20 +308,20 @@ internal sealed class Controller : INotifyPropertyChanged
         finally { Changed(); }
     }
 
-    public async Task SaveSettingsAsync(HostSettings settings)
+    public async Task<HostSettings> SaveSettingsAsync(HostSettings settings)
     {
         RequireReady();
-        await client.RequestAsync<HostSettings>("settings.update", settings, lifetime.Token);
+        var saved = await client.RequestAsync<HostSettings>("settings.update", settings, lifetime.Token);
         await RefreshAsync(force: true);
+        return saved;
     }
-    public async Task CompleteSetupAsync(string name, string folder)
+    public async Task CompleteSetupAsync(string name, string folder, bool? notifications = null)
     {
         RequireReady();
-        var settings = ProtocolJson.Clone(Status!.Settings);
-        try { settings.Name = SetupDefaults.NormalizeName(name); }
+        try { name = SetupDefaults.NormalizeName(name); }
         catch (ArgumentException) { throw new ArgumentException(T("Bitte einen Gerätenamen mit höchstens 120 UTF-8 Bytes ohne Steuerzeichen eingeben.", "Enter a device name of at most 120 UTF-8 bytes without control characters.")); }
         if (!Path.IsPathFullyQualified(folder.Trim())) throw new ArgumentException(T("Bitte einen vollständigen Empfangsordner wählen.", "Choose an absolute receive folder."));
-        settings.ReceiveDirectory = folder.Trim(); settings.SetupCompleted = true;
+        var settings = SetupDefaults.Complete(Status!.Settings, name, folder, notifications);
         await SaveSettingsAsync(settings);
     }
 

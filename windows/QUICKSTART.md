@@ -1,6 +1,6 @@
-# AirLink 0.10.0 for Windows
+# AirLink 0.11.0 for Windows
 
-Requires a supported 64-bit Windows 10 or Windows 11 installation. Download **`AirLink-0.10.0-windows-x64-setup.exe`** for an Intel/AMD computer or **`AirLink-0.10.0-windows-arm64-setup.exe`** for Windows on ARM manually from the private [AirLink releases](https://github.com/lucasfd3/Airlink/releases), signed in with a GitHub account that has repository access.
+Requires a supported 64-bit Windows 10 or Windows 11 installation. Download **`AirLink-0.11.0-windows-x64-setup.exe`** for an Intel/AMD computer or **`AirLink-0.11.0-windows-arm64-setup.exe`** for Windows on ARM manually from the private [AirLink releases](https://github.com/lucasfd3/Airlink/releases), signed in with a GitHub account that has repository access.
 
 ## Install
 
@@ -23,6 +23,12 @@ Automatic receiving is an explicit local choice for a trusted sender. Enabling i
 
 **Ctrl+O** chooses files while the send view has focus; **Ctrl+Enter** sends an already prepared selection. Direct drops pin their recipient and batch; unrelated prepared files are kept separate. An unchanged retry after a lost offer response recovers the existing retained transfer instead of creating another one.
 
+## Organized settings and setup
+
+Setup now reviews the computer name, receive folder and notification choice before saving. You can continue directly to adding another device. Existing configured devices keep their saved setup and folders.
+
+Settings are grouped into **General**, **Receiving**, **Transfers** and **About**. A common **Save / Discard** footer keeps the draft visible. Categories and main navigation preserve your edits; untouched fields follow newer settings and saving merges only deliberate changes. Speed limits are under Transfers, the receive destination and duplicate detection under Receiving, and licenses/manual update information under About. Sort-rule editing remains in the web interface.
+
 ## Trusted devices and a tidy list
 
 Choose **Add a device**, then select a nearby computer. Compare the complete fingerprint with **This device** on that computer, confirm the comparison, and send the request. Approve it on the other computer once. The wizard waits for the confirmed identity before showing the connection as successful. Manual address entry is available when discovery does not find the other computer.
@@ -39,11 +45,11 @@ Closing the window keeps AirLink running in the notification area so transfers c
 
 To uninstall, open **Windows Settings → Apps → Installed apps → AirLink → Uninstall**. Quit AirLink through its notification-area menu if asked. Uninstallation removes the installed app, Start menu shortcut and uninstall registration. It preserves the application data and caches listed above, received files and other files placed in the installation directory; that directory remains when it contains other files.
 
-This is an unsigned development preview in the private AirLink repository. Only run Setup obtained from that repository's releases. **Settings → Licenses** displays the bundled MIT license and runtime notices. Cross-building/resource checks do not prove installer execution, the new UI, tray, Explorer, clipboard or real network performance on a Windows laptop. The provided installer acceptance test runs silently in a disposable Windows user; completed-run evidence is recorded separately in [TESTING.md](../docs/TESTING.md), and it is not executed on macOS. Native relay administration, detailed statistics and sorting-rule editing remain further interface work.
+This is an unsigned development preview in the private AirLink repository. Only run Setup obtained from that repository's releases. **Settings → About → Licenses** displays the bundled MIT license and runtime notices. Cross-building/resource checks do not prove installer execution, the new UI, tray, Explorer, clipboard or real network performance on a Windows laptop. The provided installer acceptance test runs silently in a disposable Windows user; completed-run evidence is recorded separately in [TESTING.md](../docs/TESTING.md), and it is not executed on macOS. Native relay administration, detailed statistics and sorting-rule editing remain further interface work.
 
 ## Deutsch
 
-Lade **`AirLink-0.10.0-windows-x64-setup.exe`** für einen Intel-/AMD-Rechner oder **`AirLink-0.10.0-windows-arm64-setup.exe`** für Windows auf ARM manuell aus den privaten [AirLink-Releases](https://github.com/lucasfd3/Airlink/releases) herunter. Melde dich dafür bei GitHub mit einem Konto an, das Zugriff auf das Repository hat, und öffne danach **Setup**. Falls AirLink noch läuft, über **Beenden / Quit** im Infobereich beenden und im Setup erneut versuchen. Nur das Hauptfenster zu schließen beendet die App nicht. Ein altes Konsolenfenster bei Bedarf einmal mit **Strg+C** stoppen.
+Lade **`AirLink-0.11.0-windows-x64-setup.exe`** für einen Intel-/AMD-Rechner oder **`AirLink-0.11.0-windows-arm64-setup.exe`** für Windows auf ARM manuell aus den privaten [AirLink-Releases](https://github.com/lucasfd3/Airlink/releases) herunter. Melde dich dafür bei GitHub mit einem Konto an, das Zugriff auf das Repository hat, und öffne danach **Setup**. Falls AirLink noch läuft, über **Beenden / Quit** im Infobereich beenden und im Setup erneut versuchen. Nur das Hauptfenster zu schließen beendet die App nicht. Ein altes Konsolenfenster bei Bedarf einmal mit **Strg+C** stoppen.
 
 Setup installiert AirLink für dein Benutzerkonto unter **`%LOCALAPPDATA%\Programs\AirLink`** und legt Einträge im **Startmenü** und unter **Installierte Apps** an. Ein Administratorkonto, Entpacken, eine separate .NET-Installation und ein Terminal sind nicht erforderlich. Öffne AirLink nach der Installation über die Abschlussseite oder das Startmenü.
 
@@ -62,3 +68,5 @@ Dies ist eine private Vorabversion ohne Authenticode-Signatur. Verwende nur Setu
 Ab 0.10 führt **Gerät hinzufügen** zuerst zu den Computern im selben Netzwerk. Auf dem anderen Computer **Dieses Gerät** öffnen, den vollständigen Fingerabdruck vergleichen und die Anfrage einmal bestätigen. Das Gerät wird erst nach der tatsächlichen Bestätigung als verbunden angezeigt. **Automatisch empfangen** ist direkt beim gewählten vertrauten Gerät erreichbar und gilt nur für eingehende Dateien auf diesem Windows-PC.
 
 **Aus Liste entfernen** entfernt einen fertigen Verlaufseintrag. **Fertige Einträge entfernen…** fragt vor der gesammelten Bereinigung nach; laufende und später fertig werdende Übertragungen bleiben in der Liste. Die Dateien selbst bleiben erhalten.
+
+Ab 0.11 schließt die Einrichtung mit einer Übersicht aus Gerätename, Zielordner und Benachrichtigungen ab. Die Einstellungen sind nach **Allgemein**, **Empfangen**, **Übertragung** und **Info** geordnet. **Speichern / Verwerfen** ist durchgehend erreichbar. Eingaben bleiben beim Wechseln erhalten; unberührte Werte folgen späteren Änderungen aus anderen Ansichten.

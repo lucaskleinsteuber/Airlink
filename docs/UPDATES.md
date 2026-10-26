@@ -20,8 +20,8 @@ These update signatures are separate from Developer ID, notarization or Windows 
 2. Sign the exact packages and generate the feeds with the local Go tool, for example:
 
    ```sh
-   go run ./cmd/airlink-release sign --version 0.10.0 --build 12 --dist dist --updates updates
-   go run ./cmd/airlink-release verify --version 0.10.0 --build 12 --dist dist --updates updates
+   go run ./cmd/airlink-release sign --version 0.11.0 --build 13 --dist dist --updates updates
+   go run ./cmd/airlink-release verify --version 0.11.0 --build 13 --dist dist --updates updates
    ```
 
 3. Verify the actual feeds/packages with the official Sparkle CLI and the Windows Core `--verify-update-release` entry point. Review/stage only the intended source, public configuration and generated XML/signature files.

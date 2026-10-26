@@ -76,7 +76,9 @@ struct MainView: View {
             }
         }
         .sheet(isPresented: $model.showConnection) { ConnectView().environmentObject(model) }
-        .sheet(isPresented: $model.showSetup) { SetupView().environmentObject(model) }
+        .sheet(isPresented: $model.showSetup, onDismiss: {
+            if model.connectAfterSetup { model.connectAfterSetup = false; model.showConnection() }
+        }) { SetupView().environmentObject(model) }
         .sheet(isPresented: $showLocalConnection) { LocalConnectionView().environmentObject(model) }
         .sheet(item: $editingDevice) { device in DeviceSettingsView(device: device).environmentObject(model) }
         .sheet(isPresented: $showShares) { ShareListView().environmentObject(model) }

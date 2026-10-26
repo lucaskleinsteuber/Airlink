@@ -2,6 +2,15 @@
 
 AirLink uses MAJOR.MINOR.PATCH versions. Entries describe implemented changes; distribution and verification status are recorded separately.
 
+## 0.11.0 — 2026-10-26
+
+- Replace growing chunk buffers with exact-sized bounded reads and retain oversize/error/cancellation checks. Reuse no mutable sender buffer across HTTP requests. Skip redundant SQLite saves only for identical already-durable sender offset/hash values; keep fresh in-memory speed samples after resume.
+- Organize native settings by category with a persistent draft, visible Save/Discard actions, validation and confirmed-save feedback. Merge edited fields into the newest settings and refresh untouched fields without discarding in-progress input.
+- Add a third setup review step for name, receive folder and notification choices, with a direct next-device action. Keep existing setup, custom folders and permissions.
+- Avoid Windows visual-tree updates while the main window is hidden while transfers, controller state and tray notifications continue.
+
+Isolated 8-MiB operations allocate about 50.8% fewer bytes. Three-run same-host TLS medians were 0.966 to 0.941 seconds for 300 MiB and 1.989 to 1.923 seconds for 128 small files. These small timing differences are not a demonstrated physical WLAN improvement. Full scope, checks and limitations are in [TESTING.md](docs/TESTING.md). Distribution remains private through manual release downloads.
+
 ## 0.10.0 — 2026-10-26
 
 - Guide native device connection through nearby computer selection, complete fingerprint comparison and approval on the other computer. Keep manual entry as a fallback and browser/QR setup separate. Pairing is shown as complete only after the saved certificate identity is confirmed.
