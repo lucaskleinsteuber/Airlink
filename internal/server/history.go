@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lucasfd3/Airlink/internal/engine"
 	"github.com/lucasfd3/Airlink/internal/model"
 )
 
@@ -214,11 +215,44 @@ func (s *Server) historyControl(method string, params json.RawMessage) (any, err
 		return s.history("", f), nil
 	case "history.clear":
 		return map[string]bool{"ok": true}, s.clearHistory("")
+	case "history.remove":
+		var input struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(params, &input); err != nil {
+			return nil, engine.ErrInvalid
+		}
+		if err := s.engine.RemoveHistory("", input.ID); err != nil {
+			return nil, err
+		}
+		return map[string]bool{"ok": true}, nil
 	default:
 		return nil, errors.New("unknown history method")
 	}
 }
 func (s *Server) handleHistoryAPI(w http.ResponseWriter, r *http.Request, d model.Device) bool {
+	if strings.HasPrefix(r.URL.Path, "/api/v1/history/") {
+		if r.Method != http.MethodDelete {
+			w.Header().Set("Allow", http.MethodDelete)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return true
+		}
+		id := strings.TrimPrefix(r.URL.Path, "/api/v1/history/")
+		err := s.engine.RemoveHistory(d.ID, id)
+		switch {
+		case err == nil:
+			respond(w, http.StatusOK, map[string]bool{"ok": true})
+		case errors.Is(err, engine.ErrNotFound):
+			fail(w, http.StatusNotFound, errors.New("history entry not found"))
+		case errors.Is(err, engine.ErrConflict):
+			fail(w, http.StatusConflict, errors.New("only finished history entries can be removed"))
+		case errors.Is(err, engine.ErrInvalid):
+			fail(w, http.StatusBadRequest, errors.New("a history entry ID is required"))
+		default:
+			fail(w, http.StatusInternalServerError, errors.New("history entry could not be removed"))
+		}
+		return true
+	}
 	if r.URL.Path != "/api/v1/history" {
 		return false
 	}

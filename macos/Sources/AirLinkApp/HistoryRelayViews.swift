@@ -9,6 +9,7 @@ struct HistoryView: View {
     @State private var history = History()
     @State private var knownDevices: [String: String] = [:]
     @State private var loading = false
+    @State private var loadID = UUID()
     @State private var error: String?
     @State private var confirmClear = false
     var body: some View {
@@ -58,13 +59,14 @@ struct HistoryView: View {
                 HStack {
                     Text(model.text("Dateien bleiben erhalten.", "Files remain unchanged.")).font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    Button(model.text("Beendeten Verlauf löschen …", "Clear finished history …"), role: .destructive) { confirmClear = true }.disabled(!model.isReady)
+                    Button(model.text("Beendeten Verlauf löschen …", "Clear finished history …"), role: .destructive) { confirmClear = true }.disabled(!model.isReady || model.removingHistory)
                 }
             } else {
                 StatisticsView().environmentObject(model).frame(minHeight: 330, maxHeight: 490)
             }
         }.padding(26).frame(width: 740)
         .task(id: filter) { try? await Task.sleep(for: .milliseconds(200)); if !Task.isCancelled { await load() } }
+        .onChange(of: model.removingHistory) { _, removing in if !removing { Task { await load() } } }
         .confirmationDialog(model.text("Alle beendeten Einträge dieses Hosts löschen?", "Clear all finished entries on this host?"), isPresented: $confirmClear) {
             Button(model.text("Beendeten Verlauf löschen", "Clear finished history"), role: .destructive) {
                 Task {
@@ -83,16 +85,18 @@ struct HistoryView: View {
     }
     private func load() async {
         loading = true
+        let requestID = UUID()
+        loadID = requestID
         let requested = filter
         do {
             let result = try await model.history(requested)
-            guard !Task.isCancelled, filter == requested else { return }
+            guard !Task.isCancelled, loadID == requestID, filter == requested else { return }
             history = result; error = nil
             for device in model.status?.devices ?? [] { knownDevices[device.id] = device.name }
             for transfer in result.transfers { knownDevices[transfer.deviceId] = transfer.deviceName }
             for relay in result.relays { knownDevices[relay.senderId] = relay.senderName; knownDevices[relay.receiverId] = relay.receiverName }
-        } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
-        if filter == requested { loading = false }
+        } catch { if !Task.isCancelled, loadID == requestID { self.error = error.localizedDescription } }
+        if loadID == requestID, filter == requested { loading = false }
     }
 }
 

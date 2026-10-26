@@ -50,6 +50,44 @@ public struct PeerConnectionAttempt: Sendable {
     public func matches(_ other: PeerConnectionDraft) -> Bool { draft.normalizedFingerprint == other.normalizedFingerprint && draft.normalizedAddress == other.normalizedAddress }
 }
 
+/// A comparison belongs to the exact address and certificate that was shown.
+/// Editing either field or choosing another peer requires a new comparison.
+public struct PeerVerification: Sendable {
+    private var address: String?
+    private var fingerprint: String?
+    public init() {}
+    public mutating func confirm(_ draft: PeerConnectionDraft) {
+        address = draft.isValid ? draft.normalizedAddress : nil
+        fingerprint = draft.isValid ? draft.normalizedFingerprint : nil
+    }
+    public mutating func reset() { address = nil; fingerprint = nil }
+    public func matches(_ draft: PeerConnectionDraft) -> Bool {
+        draft.isValid && address == draft.normalizedAddress && fingerprint == draft.normalizedFingerprint
+    }
+}
+
+public enum TransferHistorySelection {
+    /// Capture the explicit selection before any asynchronous removal starts.
+    public static func removableIDs(in transfers: [Transfer]) -> [String] {
+        var seen = Set<String>()
+        return transfers.filter { $0.canRemoveFromHistory && seen.insert($0.id).inserted }.map(\.id)
+    }
+}
+
+/// A mutation can supersede an in-flight poll. Only the newest request may
+/// publish its result or error, and an older completion cannot unlock it.
+public struct StatusRefreshGate: Sendable {
+    private var current: UUID?
+    public init() {}
+    public mutating func begin(force: Bool = false) -> UUID? {
+        guard force || current == nil else { return nil }
+        let request = UUID(); current = request; return request
+    }
+    public func accepts(_ request: UUID) -> Bool { current == request }
+    public mutating func finish(_ request: UUID) { if current == request { current = nil } }
+    public mutating func invalidate() { current = nil }
+}
+
 /// Private host-only result paths returned after checking the received entries.
 public struct ReceivedTransfer: Decodable, Sendable {
     public var directory: String
@@ -66,6 +104,7 @@ public struct ReceivedItem: Decodable, Identifiable, Sendable {
 }
 
 public extension Transfer {
+    var canRemoveFromHistory: Bool { ["completed", "failed", "cancelled"].contains(state) }
     var canAcceptIncoming: Bool { direction == "receive" && state == "offered" }
     func canAcceptAndTrust(device: Device?) -> Bool {
         guard canAcceptIncoming, let device else { return false }

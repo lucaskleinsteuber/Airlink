@@ -65,6 +65,75 @@ private func experienceTransfer(files: String = #"[{"id":"f","path":"file.txt","
     #expect(PeerConnectionDraft().automaticReceive == false)
 }
 
+@Test func identityComparisonDoesNotCarryOverToAnotherAddressOrCertificate() {
+    var draft = PeerConnectionDraft(address: "https://peer.local:43871", fingerprint: peerFingerprint)
+    var verification = PeerVerification()
+    #expect(!verification.matches(draft))
+    verification.confirm(draft)
+    #expect(verification.matches(draft))
+    draft.automaticReceive = true
+    #expect(verification.matches(draft))
+    draft.address = "https://other.local:43871"
+    #expect(!verification.matches(draft))
+    draft.address = "https://peer.local:43871"
+    draft.fingerprint = String(repeating: "b", count: 64)
+    #expect(!verification.matches(draft))
+    verification.reset()
+    draft.fingerprint = peerFingerprint
+    #expect(!verification.matches(draft))
+}
+
+@Test func comparisonRequiresCompleteValidIdentityAndAllowsEquivalentFormatting() {
+    let draft = PeerConnectionDraft(address: "https://peer.local:43871/", fingerprint: peerFingerprint)
+    var verification = PeerVerification()
+    verification.confirm(draft)
+    let formatted = PeerConnectionDraft(address: " HTTPS://peer.local:43871\n", fingerprint: Array(repeating: "AA", count: 32).joined(separator: ":"))
+    #expect(verification.matches(formatted))
+    verification.confirm(PeerConnectionDraft(address: draft.address, fingerprint: "aa"))
+    #expect(!verification.matches(draft))
+}
+
+@Test func historyRemovalCapturesOnlyKnownFinishedStatesAndDistinctIDs() throws {
+    let base = try experienceTransfer()
+    var running = base; running.id = "active"; running.state = "running"
+    var failed = base; failed.id = "failed"; failed.state = "failed"
+    var cancelled = base; cancelled.id = "cancelled"; cancelled.state = "cancelled"
+    var unknown = base; unknown.id = "future"; unknown.state = "new-state"
+    let captured = TransferHistorySelection.removableIDs(in: [base, running, failed, base, cancelled, unknown])
+    #expect(captured == ["transfer", "failed", "cancelled"])
+    running.state = "completed"
+    #expect(captured == ["transfer", "failed", "cancelled"])
+    #expect(TransferHistorySelection.removableIDs(in: [running]) == ["active"])
+    for state in ["offered", "queued", "paused", "reconnecting", "verifying", "checkingDuplicate", "waitingDuplicate", "ready", "delivered", ""] {
+        var entry = base; entry.state = state
+        #expect(!entry.canRemoveFromHistory)
+    }
+}
+
+@Test func mutationRefreshDiscardsEarlierPollSuccessErrorAndCompletion() throws {
+    var gate = StatusRefreshGate()
+    let oldRequest = gate.begin()
+    let oldPoll = try #require(oldRequest)
+    let blocked = gate.begin()
+    #expect(blocked == nil)
+    let forcedRequest = gate.begin(force: true)
+    let afterRemoval = try #require(forcedRequest)
+    #expect(!gate.accepts(oldPoll))
+    gate.finish(oldPoll)
+    #expect(gate.accepts(afterRemoval))
+    let stillBlocked = gate.begin()
+    #expect(stillBlocked == nil)
+    gate.finish(afterRemoval)
+    let laterRequest = gate.begin()
+    let later = try #require(laterRequest)
+    #expect(!gate.accepts(afterRemoval))
+    #expect(gate.accepts(later))
+    gate.invalidate()
+    #expect(!gate.accepts(later))
+    let next = gate.begin()
+    #expect(next != nil)
+}
+
 @Test func receivedDisplayEntriesPreserveFolderRootsAndExcludeSkippedPayload() throws {
     let files = #"[{"id":"album","path":"Album","size":0,"directory":true,"received":0,"completed":true},{"id":"child","path":"Album/photo.png","size":3,"received":3,"completed":true},{"id":"loose","path":"notes.txt","destinationPath":"Documents/notes.txt","size":3,"received":3,"completed":true},{"id":"skipped","path":"duplicate.txt","size":3,"received":0,"completed":true,"skipped":true}]"#
     let transfer = try experienceTransfer(files: files)

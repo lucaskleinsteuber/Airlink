@@ -26,6 +26,10 @@ internal static class Program
             ("installer handoff uses an explicit hidden shell and literal user paths", UpdateTests.InstallerHandoff),
             ("old defaults and 100 GiB progress remain exact", DefaultsAndLargeProgress),
             ("pairing completion follows certificate identity and validates local connection origins", PairingIdentity),
+            ("fingerprint confirmation belongs to the exact displayed peer identity", ExperienceTests.ComparisonIdentity),
+            ("history removal keeps a captured terminal selection and rejects newly active entries", ExperienceTests.HistorySelection),
+            ("history removal stops at request failure or cancellation without widening the selection", ExperienceTests.HistoryFailureBoundaries),
+            ("a forced status refresh prevents older polls from restoring removed entries", ExperienceTests.StatusRefreshOrdering),
             ("automatic receive consent applies only to the offered sender", ReceiveConsent),
             ("received display entries follow published sorting and folder boundaries", ReceivedDisplayEntries),
             ("send recipient defaults never redirect a pending or explicit draft", SendRecipientDefaults),
@@ -467,7 +471,7 @@ internal static class Program
         await using var fixture = new Fixture(); await using var client = new DaemonClient(new DaemonClientOptions { DisableDiscovery = true });
         await client.StartAsync(Path.GetFullPath(helper), fixture.Data, fixture.Received);
         var before = await client.RequestAsync<HostStatus>("status");
-        var expectedVersion = Environment.GetEnvironmentVariable("AIRLINK_TEST_VERSION") ?? "0.9.0";
+        var expectedVersion = Environment.GetEnvironmentVariable("AIRLINK_TEST_VERSION") ?? "0.10.0";
         Require(before.Version == expectedVersion && before.Fingerprint.Length == 64 && before.ChunkSize == 8 * 1024 * 1024, "Unexpected service contract/version");
         var settings = ProtocolJson.Clone(before.Settings);
         settings.Appearance = "dark"; settings.Language = "en"; settings.Notifications = false;

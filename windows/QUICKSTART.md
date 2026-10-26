@@ -1,6 +1,6 @@
-# AirLink 0.9.0 for Windows
+# AirLink 0.10.0 for Windows
 
-Requires a supported 64-bit Windows 10 or Windows 11 installation. Download **`AirLink-0.9.0-windows-x64-setup.exe`** for an Intel/AMD computer or **`AirLink-0.9.0-windows-arm64-setup.exe`** for Windows on ARM manually from the private [AirLink releases](https://github.com/lucasfd3/Airlink/releases), signed in with a GitHub account that has repository access.
+Requires a supported 64-bit Windows 10 or Windows 11 installation. Download **`AirLink-0.10.0-windows-x64-setup.exe`** for an Intel/AMD computer or **`AirLink-0.10.0-windows-arm64-setup.exe`** for Windows on ARM manually from the private [AirLink releases](https://github.com/lucasfd3/Airlink/releases), signed in with a GitHub account that has repository access.
 
 ## Install
 
@@ -23,6 +23,12 @@ Automatic receiving is an explicit local choice for a trusted sender. Enabling i
 
 **Ctrl+O** chooses files while the send view has focus; **Ctrl+Enter** sends an already prepared selection. Direct drops pin their recipient and batch; unrelated prepared files are kept separate. An unchanged retry after a lost offer response recovers the existing retained transfer instead of creating another one.
 
+## Trusted devices and a tidy list
+
+Choose **Add a device**, then select a nearby computer. Compare the complete fingerprint with **This device** on that computer, confirm the comparison, and send the request. Approve it on the other computer once. The wizard waits for the confirmed identity before showing the connection as successful. Manual address entry is available when discovery does not find the other computer.
+
+The selected device exposes its settings and the optional **Automatically receive from this device** control. This affects incoming files on this Windows computer only. **Remove from list** removes a finished transfer entry. **Remove finished entries…** asks before removing the captured completed/failed/cancelled entries; active and later-finished transfers stay. Received files and originals remain on disk.
+
 ## Updating and quitting
 
 For development updates, download the newer **Setup** EXE manually from the private Releases page using an authorized GitHub account, then run it. The in-app update action cannot access this private repository anonymously; an unavailable feed does not mean your version is current. Making the repository or update delivery public later requires a new owner decision. Quit the old native app through its notification-area menu if Setup asks, then retry. After confirming the installed app opens from the Start menu, you can manually delete any older downloaded portable AirLink EXE.
@@ -37,7 +43,7 @@ This is an unsigned development preview in the private AirLink repository. Only 
 
 ## Deutsch
 
-Lade **`AirLink-0.9.0-windows-x64-setup.exe`** für einen Intel-/AMD-Rechner oder **`AirLink-0.9.0-windows-arm64-setup.exe`** für Windows auf ARM manuell aus den privaten [AirLink-Releases](https://github.com/lucasfd3/Airlink/releases) herunter. Melde dich dafür bei GitHub mit einem Konto an, das Zugriff auf das Repository hat, und öffne danach **Setup**. Falls AirLink noch läuft, über **Beenden / Quit** im Infobereich beenden und im Setup erneut versuchen. Nur das Hauptfenster zu schließen beendet die App nicht. Ein altes Konsolenfenster bei Bedarf einmal mit **Strg+C** stoppen.
+Lade **`AirLink-0.10.0-windows-x64-setup.exe`** für einen Intel-/AMD-Rechner oder **`AirLink-0.10.0-windows-arm64-setup.exe`** für Windows auf ARM manuell aus den privaten [AirLink-Releases](https://github.com/lucasfd3/Airlink/releases) herunter. Melde dich dafür bei GitHub mit einem Konto an, das Zugriff auf das Repository hat, und öffne danach **Setup**. Falls AirLink noch läuft, über **Beenden / Quit** im Infobereich beenden und im Setup erneut versuchen. Nur das Hauptfenster zu schließen beendet die App nicht. Ein altes Konsolenfenster bei Bedarf einmal mit **Strg+C** stoppen.
 
 Setup installiert AirLink für dein Benutzerkonto unter **`%LOCALAPPDATA%\Programs\AirLink`** und legt Einträge im **Startmenü** und unter **Installierte Apps** an. Ein Administratorkonto, Entpacken, eine separate .NET-Installation und ein Terminal sind nicht erforderlich. Öffne AirLink nach der Installation über die Abschlussseite oder das Startmenü.
 
@@ -52,3 +58,7 @@ Neuere Entwicklungsstände manuell aus den privaten Releases mit einem berechtig
 Zum Entfernen **Windows-Einstellungen → Apps → Installierte Apps → AirLink → Deinstallieren** wählen. Die Deinstallation entfernt die installierte App und ihre Startmenü- und Deinstallationseinträge. App-Daten, Laufzeitdateien, empfangene Dateien und andere Dateien im Installationsordner bleiben erhalten. Enthält der Installationsordner solche anderen Dateien, bleibt auch der Ordner bestehen.
 
 Dies ist eine private Vorabversion ohne Authenticode-Signatur. Verwende nur Setup aus den Releases des privaten AirLink-Repositorys. Hintergrundtests und Paketprüfungen ersetzen keine Abnahme auf einem echten Windows-Gerät; die tatsächlich ausgeführten Prüfungen stehen in [TESTING.md](../docs/TESTING.md).
+
+Ab 0.10 führt **Gerät hinzufügen** zuerst zu den Computern im selben Netzwerk. Auf dem anderen Computer **Dieses Gerät** öffnen, den vollständigen Fingerabdruck vergleichen und die Anfrage einmal bestätigen. Das Gerät wird erst nach der tatsächlichen Bestätigung als verbunden angezeigt. **Automatisch empfangen** ist direkt beim gewählten vertrauten Gerät erreichbar und gilt nur für eingehende Dateien auf diesem Windows-PC.
+
+**Aus Liste entfernen** entfernt einen fertigen Verlaufseintrag. **Fertige Einträge entfernen…** fragt vor der gesammelten Bereinigung nach; laufende und später fertig werdende Übertragungen bleiben in der Liste. Die Dateien selbst bleiben erhalten.

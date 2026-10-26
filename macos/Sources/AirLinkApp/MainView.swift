@@ -19,7 +19,7 @@ struct MainView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $model.selectedDeviceID) {
-                Section(model.text("Geräte", "Devices")) {
+                Section(model.text("Vertraute Geräte", "Trusted devices")) {
                     ForEach(pairedDevices) { device in deviceRow(device) }
                     if model.status?.devices.filter(\.paired).isEmpty != false {
                         Text(model.text("Noch keine Geräte", "No devices yet")).foregroundStyle(.secondary)
@@ -38,7 +38,7 @@ struct MainView: View {
             .navigationSplitViewColumnWidth(min: 270, ideal: 310, max: 460)
             .safeAreaInset(edge: .bottom) {
                 VStack(alignment: .leading, spacing: 14) {
-                    Button { model.showConnection = true } label: { Label(model.text("Gerät hinzufügen", "Add device"), systemImage: "plus.circle") }.disabled(!model.isReady || !model.setupComplete)
+                    Button { model.showConnection() } label: { Label(model.text("Gerät hinzufügen", "Add device"), systemImage: "plus.circle") }.disabled(!model.isReady || !model.setupComplete)
                     Divider()
                     Button { showHistory = true } label: { Label(model.text("Übertragungen", "Transfers"), systemImage: "clock") }.disabled(!model.isReady)
                     Menu {
@@ -63,6 +63,7 @@ struct MainView: View {
                     } else {
                     pairingRequests
                     failedDirectSends
+                    if let device = model.selectedDevice, device.paired { TrustedDeviceSummary(deviceID: device.id, onManage: { editingDevice = device }).environmentObject(model).id(device.id) }
                     dropArea
                     }
                     transfers
@@ -71,7 +72,7 @@ struct MainView: View {
             .background(Color(nsColor: .windowBackgroundColor))
             .toolbar {
                 ToolbarItem { Button { model.openReceiveDirectory() } label: { Label(model.text("Empfangsordner", "Receive folder"), systemImage: "tray.and.arrow.down") }.labelStyle(.titleAndIcon).disabled(!model.isReady) }
-                ToolbarItem { Button { showLocalConnection = true } label: { Label(model.text("Verbindung", "Connection"), systemImage: "qrcode") }.disabled(!model.isReady) }
+                ToolbarItem { Button { showLocalConnection = true } label: { Label(model.text("Dieses Gerät", "This device"), systemImage: "qrcode") }.disabled(!model.isReady) }
             }
         }
         .sheet(isPresented: $model.showConnection) { ConnectView().environmentObject(model) }
@@ -178,7 +179,7 @@ struct MainView: View {
                 if !model.pendingURLs.isEmpty {
                     Button(model.text("Leeren", "Clear")) { model.pendingURLs = [] }.buttonStyle(.borderless)
                     Button(model.text("Freigabelink …", "Share link …")) { showShareCreator = true }.disabled(!model.isReady)
-                    Button(model.sendingFiles ? model.text("Wird gesendet …", "Sending …") : model.text("Senden", "Send")) { model.send() }.buttonStyle(.borderedProminent)
+                    Button(model.sendingFiles ? model.text("Wird gesendet …", "Sending …") : model.selectedDevice.map { model.text("An \($0.name) senden", "Send to \($0.name)") } ?? model.text("Senden", "Send")) { model.send() }.buttonStyle(.borderedProminent)
                         .disabled(model.selectedDevice?.canReceive != true || !model.isReady || model.sendingFiles)
                 }
             }
@@ -192,7 +193,6 @@ struct MainView: View {
     }
     private var transfers: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(model.text("Übertragungen", "Transfers")).font(.title2.weight(.semibold))
             let all = model.status?.transfers.sorted { $0.createdAt == $1.createdAt ? $0.id < $1.id : $0.createdAt > $1.createdAt } ?? []
             let lastActivity = Dictionary(uniqueKeysWithValues: all.map { ($0.id, ShareDate.parse($0.updatedAt) ?? ShareDate.parse($0.createdAt) ?? .distantPast) })
             let recent = all.filter { !$0.isActive }.sorted {
@@ -200,12 +200,23 @@ struct MainView: View {
                 let right = lastActivity[$1.id] ?? .distantPast
                 return left == right ? $0.id < $1.id : left > right
             }
-            let list = all.filter(\.isActive) + Array(recent.prefix(5))
-            if list.isEmpty {
-                Text(model.text("Hier erscheinen deine Übertragungen.", "Your transfers will appear here.")).foregroundStyle(.secondary).padding(.vertical, 14)
+            let active = all.filter(\.isActive)
+            if !active.isEmpty {
+                Text(model.text("Gerade aktiv", "Active now")).font(.title2.weight(.semibold))
+                ForEach(active) { transfer in TransferRow(transfer: transfer).environmentObject(model) }
             }
-            ForEach(list) { transfer in TransferRow(transfer: transfer).environmentObject(model) }
-            if all.count > list.count { Button(model.text("Gesamten Verlauf öffnen", "Open full history")) { showHistory = true }.buttonStyle(.link) }
+            if !recent.isEmpty {
+                HStack {
+                    Text(model.text("Zuletzt übertragen", "Recent transfers")).font(.title2.weight(.semibold))
+                    Spacer()
+                    RemoveFinishedTransfersButton(transfers: recent).environmentObject(model)
+                }
+                ForEach(recent.prefix(5)) { transfer in TransferRow(transfer: transfer).environmentObject(model) }
+                if recent.count > 5 { Button(model.text("Gesamten Verlauf öffnen", "Open full history")) { showHistory = true }.buttonStyle(.link) }
+            }
+            if all.isEmpty {
+                Label(model.text("Alles aufgeräumt. Hier erscheinen deine nächsten Übertragungen.", "All clear. Your next transfers will appear here."), systemImage: "tray").foregroundStyle(.secondary).padding(.vertical, 14)
+            }
         }
     }
 }
@@ -273,6 +284,9 @@ struct TransferRow: View {
             if transfer.avoidedBytes > 0 {
                 Text(TransferFormatting.bytes(transfer.completedBytes) + model.text(" bestätigt · ", " confirmed · ") + TransferFormatting.bytes(transfer.avoidedBytes) + model.text(" durch Überspringen vermieden", " avoided by skipping")).font(.caption).foregroundStyle(.secondary)
             }
+            if transfer.canRemoveFromHistory {
+                HStack { Spacer(); RemoveTransferButton(transfer: transfer).environmentObject(model) }
+            }
             if transfer.direction == "receive" {
                 ForEach(transfer.pendingDuplicateFiles) { file in
                     DuplicateAttentionView(transfer: transfer, file: file).environmentObject(model)
@@ -310,80 +324,50 @@ struct TransferRow: View {
     }
 }
 
-struct ConnectView: View {
-    @EnvironmentObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
-    @State private var requesting = false
-    @State private var issue: String?
-    @State private var sentRequest = false
-    private var pending: PeerConnectionAttempt? {
-        guard let pending = model.pendingConnection, pending.matches(model.connectionDraft) else { return nil }
-        return pending
-    }
-    private var pairedDeviceID: String? { model.connectionDraft.pairedDevice(in: model.status?.devices ?? [])?.id }
-    private var waiting: Bool { pending != nil && pending?.isExpired() == false }
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text(model.text("Gerät verbinden", "Connect a device")).font(.title2.weight(.semibold))
-            Text(model.text("Öffne auf dem anderen Computer AirLink. Übernimm dessen Adresse und vergleiche den Zertifikat-Fingerabdruck direkt auf beiden Geräten.", "Open AirLink on the other computer. Enter its address and compare the certificate fingerprint directly on both devices.")).foregroundStyle(.secondary)
-            TextField("https://192.168.1.10:…", text: $model.connectionDraft.address).disabled(requesting || waiting)
-            TextField("SHA-256", text: $model.connectionDraft.fingerprint).font(.system(.body, design: .monospaced)).disabled(requesting || waiting)
-            if !model.connectionDraft.fingerprint.isEmpty { Text(model.connectionDraft.comparisonFingerprint).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled).fixedSize(horizontal: false, vertical: true) }
-            if let devices = model.status?.devices.filter({ !$0.paired && $0.address != nil }), !devices.isEmpty {
-                Text(model.text("Entdeckte Geräte", "Discovered devices")).font(.headline)
-                ForEach(devices) { device in
-                    Button(device.name) { model.connectionDraft = PeerConnectionDraft(device: device); issue = nil }.buttonStyle(.link).disabled(requesting || waiting)
-                }
-                Text(model.text("Auch bei automatisch erkannten Geräten den Fingerabdruck vergleichen.", "Compare the fingerprint even for discovered devices.")).font(.caption).foregroundStyle(.secondary)
-            }
-            Toggle(model.text("Dateien von diesem Gerät automatisch empfangen", "Automatically receive files from this device"), isOn: $model.connectionDraft.automaticReceive).disabled(requesting || waiting)
-            Text(model.text("Optional: Nach der Kopplung werden Dateien dieses Geräts auf diesem Mac ohne weitere Annahme empfangen. Für andere Geräte bleibt die Bestätigung erforderlich.", "Optional: after pairing, files from this device arrive on this Mac without another acceptance prompt. Other devices still need approval.")).font(.caption).foregroundStyle(.secondary)
-            if let pending {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    if pending.isExpired(at: context.date) {
-                        Label(model.text("Noch keine Kopplung bestätigt. Prüfe das andere Gerät und versuche es erneut.", "Pairing has not been confirmed. Check the other device and try again."), systemImage: "clock.badge.exclamationmark").font(.callout).foregroundStyle(.secondary)
-                    } else {
-                        HStack(spacing: 10) { ProgressView().controlSize(.small); Text(model.text("Anfrage gesendet · jetzt auf dem anderen Gerät bestätigen.", "Request sent · approve it on the other device.")) }.font(.callout)
-                    }
-                }
-            } else if pairedDeviceID != nil {
-                Label(model.text("Gerät verbunden", "Device connected"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-            } else {
-                Text(model.text("Einmal auf dem anderen Computer bestätigen. Danach bleibt das Gerät gespeichert. Browsergeräte verbinden sich über den QR-Code.", "Approve once on the other computer. The device remains saved afterward. Browser clients connect through the QR code.")).font(.caption).foregroundStyle(.secondary)
-            }
-            if let issue { Text(issue).font(.callout).foregroundStyle(.red).textSelection(.enabled) }
-            HStack {
-                Spacer()
-                Button(pending != nil ? model.text("Im Hintergrund warten", "Wait in background") : model.text("Fertig", "Done")) { dismiss() }.disabled(requesting)
-                if pairedDeviceID == nil {
-                    Button(requesting ? model.text("Wird angefragt …", "Requesting …") : pending != nil ? model.text("Erneut versuchen", "Try again") : model.text("Anfrage senden", "Request pairing")) { request() }.buttonStyle(.borderedProminent).disabled(!model.connectionDraft.isValid || !model.isReady || requesting || (pending != nil && pending?.isExpired() == false))
-                }
-            }
-        }.textFieldStyle(.roundedBorder).padding(28).frame(width: 510)
-            .onAppear { if pending != nil { sentRequest = true } }
-            .onChange(of: pairedDeviceID) { _, id in if let id, sentRequest { model.selectedDeviceID = id; dismiss() } }
-            .interactiveDismissDisabled(requesting)
-    }
-    private func request() {
-        guard !requesting else { return }
-        requesting = true; issue = nil
-        Task {
-            do { try await model.connect(model.connectionDraft); sentRequest = true; if let id = pairedDeviceID { model.selectedDeviceID = id; dismiss() } }
-            catch { issue = error.localizedDescription }
-            requesting = false
-        }
-    }
-}
-
 struct LocalConnectionView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var selectedURL = ""
     @State private var setupQR = true
+    @State private var browserExpanded = false
+    var embedded = false
     private var addresses: [String] { setupQR ? (model.status?.setupURLs ?? model.status?.urls ?? []) : (model.status?.urls ?? []) }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack { Text(model.text("Mit AirLink verbinden", "Connect to AirLink")).font(.title2.weight(.semibold)); Spacer(); Button(model.text("Fertig", "Done")) { dismiss() } }
+            if !embedded { HStack { Text(model.text("Dieses Gerät", "This device")).font(.title2.weight(.semibold)); Spacer(); Button(model.text("Fertig", "Done")) { dismiss() } } }
+            if embedded { browserSetup }
+            else {
+                identity
+                Divider()
+                DisclosureGroup(model.text("Handy oder Tablet über den Browser verbinden", "Connect a phone or tablet through its browser"), isExpanded: $browserExpanded) {
+                    browserSetup.padding(.top, 16)
+                }
+            }
+        }.padding(embedded ? 0 : 28).frame(width: embedded ? nil : 540).onAppear { selectedURL = addresses.first ?? "" }
+            .onChange(of: setupQR) { _, _ in selectedURL = addresses.first ?? "" }
+    }
+    private var identity: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label(model.status?.name ?? "AirLink", systemImage: "laptopcomputer").font(.title3.weight(.semibold))
+            Text(model.text("Wähle diesen Namen auf dem anderen Computer in AirLink aus. Vergleiche dort den Fingerabdruck mit dieser Anzeige.", "Select this name in AirLink on the other computer. Compare the fingerprint there with this display.")).font(.callout).foregroundStyle(.secondary)
+            Text(model.text("Fingerabdruck dieses Geräts", "This device’s fingerprint")).font(.caption.weight(.medium))
+            Text(PeerConnectionDraft(fingerprint: model.status?.fingerprint ?? "").comparisonFingerprint)
+                .font(.system(.body, design: .monospaced)).textSelection(.enabled)
+                .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+            Text(model.text("Adresse für eine manuelle Verbindung", "Address for a manual connection")).font(.caption.weight(.medium))
+            ForEach(model.status?.urls.filter { !($0.contains("localhost")) } ?? [], id: \.self) { url in
+                HStack {
+                    Text(url).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                    Spacer()
+                    copyButton(url)
+                }
+            }
+        }
+    }
+    private var browserSetup: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(model.text("Mit \(model.status?.name ?? "AirLink") verbinden", "Connect to \(model.status?.name ?? "AirLink")")).font(.headline)
             Text(model.text("Auf dem anderen Gerät zuerst das Zertifikat einrichten. Danach laufen Kopplung und Übertragungen über HTTPS.", "First set up the certificate on the other device. Pairing and transfers then use HTTPS.")).foregroundStyle(.secondary)
             Picker(model.text("QR-Code", "QR code"), selection: $setupQR) {
                 Text(model.text("Einrichtung", "Setup")).tag(true)
@@ -391,17 +375,19 @@ struct LocalConnectionView: View {
             }.pickerStyle(.segmented)
             if let image = qrCode(selectedURL) { Image(nsImage: image).interpolation(.none).resizable().frame(width: 180, height: 180).padding(16).background(.white, in: RoundedRectangle(cornerRadius: 16)).frame(maxWidth: .infinity) }
             Picker(model.text("Adresse", "Address"), selection: $selectedURL) { ForEach(addresses, id: \.self) { Text($0).tag($0) } }
-            HStack { Text(selectedURL).textSelection(.enabled).font(.system(.callout, design: .monospaced)); Spacer(); Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(selectedURL, forType: .string) } label: { Image(systemName: "doc.on.doc") } }
+            HStack { Text(selectedURL).textSelection(.enabled).font(.system(.callout, design: .monospaced)); Spacer(); copyButton(selectedURL) }
             Text(model.text("Die HTTP-Einrichtungsseite enthält nur das öffentliche Zertifikat. Den SHA-256-Fingerabdruck direkt mit dieser Anzeige vergleichen, bevor du das Zertifikat installierst. Anschließend die HTTPS-Adresse öffnen und die Verbindungsanfrage hier bestätigen.", "The HTTP setup page contains only the public certificate. Compare its SHA-256 fingerprint directly with this display before installing the certificate. Then open the HTTPS address and approve the pairing request here.")).font(.callout).foregroundStyle(.secondary)
-            ForEach(model.status?.urls.filter { !($0.contains("localhost")) } ?? [], id: \.self) { url in
-                HStack { Text(url).font(.system(.caption, design: .monospaced)).textSelection(.enabled); Spacer(); Button { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(url, forType: .string) } label: { Image(systemName: "doc.on.doc") } }
-            }
-            Text(model.status?.fingerprint ?? "").font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+            Text(model.text("Fingerabdruck dieses Geräts", "This device’s fingerprint")).font(.caption.weight(.medium))
+            Text(PeerConnectionDraft(fingerprint: model.status?.fingerprint ?? "").comparisonFingerprint).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
             if let path = model.status?.certificatePath {
                 Button(model.text("Zertifikat im Finder zeigen", "Reveal certificate in Finder")) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
             }
-        }.padding(28).frame(width: 540).onAppear { selectedURL = addresses.first ?? "" }
-            .onChange(of: setupQR) { _, _ in selectedURL = addresses.first ?? "" }
+        }
+    }
+    private func copyButton(_ text: String) -> some View {
+        Button {
+            NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
+        } label: { Label(model.text("Adresse kopieren", "Copy address"), systemImage: "doc.on.doc") }.labelStyle(.iconOnly).help(model.text("Adresse kopieren", "Copy address")).disabled(text.isEmpty)
     }
     private func qrCode(_ string: String) -> NSImage? {
         guard !string.isEmpty else { return nil }

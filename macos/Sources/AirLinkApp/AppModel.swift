@@ -27,6 +27,7 @@ struct FailedDirectSend: Identifiable {
     @Published private(set) var preparingDirectSend = false
     @Published private(set) var failedDirectSends: [FailedDirectSend] = []
     @Published private(set) var sendNotice: String?
+    @Published private(set) var removingHistory = false
     @Published var showConnection = false
     @Published var showSetup = false
     private var setupOffered = false
@@ -40,7 +41,7 @@ struct FailedDirectSend: Identifiable {
     private let client = DaemonClient()
     private var polling: Task<Void, Never>?
     private var lifecycleGeneration = UUID()
-    private var refreshID: UUID?
+    private var statusRequests = StatusRefreshGate()
     private var notified = Set<String>()
     private var lastShortcutAttempt: Shortcut?
     private var selectingDefaultRecipient = false
@@ -69,7 +70,7 @@ struct FailedDirectSend: Identifiable {
         guard lifecycle == .stopped || lifecycle == .failed else { return }
         let generation = UUID(); lifecycleGeneration = generation
         lifecycle = .starting; engineError = nil; recoveredReceiveFolder = nil
-        polling?.cancel(); polling = nil; refreshID = nil
+        polling?.cancel(); polling = nil; statusRequests.invalidate()
         do {
             guard await client.stop() else { throw NativeError.unavailable(text("Der vorherige AirLink-Helfer konnte nicht beendet werden. Bitte erneut versuchen.", "The previous AirLink helper could not be stopped. Please try again.")) }
             guard lifecycleGeneration == generation, lifecycle != .stopping else { return }
@@ -98,7 +99,7 @@ struct FailedDirectSend: Identifiable {
     }
     @discardableResult func stop() async -> Bool {
         lifecycle = .stopping; lifecycleGeneration = UUID()
-        polling?.cancel(); polling = nil; refreshID = nil
+        polling?.cancel(); polling = nil; statusRequests.invalidate()
         let exited = await client.stop()
         lifecycle = exited ? .stopped : .failed
         if !exited { engineError = text("Der AirLink-Helfer konnte nicht beendet werden. Bitte erneut versuchen.", "AirLink helper could not be stopped. Please try again.") }
@@ -114,15 +115,15 @@ struct FailedDirectSend: Identifiable {
             Task { @MainActor in await self?.start(receiveDirectory: url) }
         }
     }
-    func refresh() async {
-        guard lifecycle == .starting || lifecycle == .ready, refreshID == nil else { return }
-        let requestID = UUID(), generation = lifecycleGeneration
-        refreshID = requestID
-        defer { if refreshID == requestID { refreshID = nil } }
+    func refresh(force: Bool = false) async {
+        guard lifecycle == .starting || lifecycle == .ready,
+              let requestID = statusRequests.begin(force: force) else { return }
+        let generation = lifecycleGeneration
+        defer { statusRequests.finish(requestID) }
         do {
             let data = try await client.request("status")
             let next = try JSONDecoder().decode(HostStatus.self, from: data)
-            guard lifecycleGeneration == generation, lifecycle != .stopping else { return }
+            guard statusRequests.accepts(requestID), lifecycleGeneration == generation, lifecycle != .stopping else { return }
             let previous = status
             status = next; engineError = nil; lifecycle = .ready
             if !next.settings.setupCompleted && !setupOffered { setupOffered = true; showSetup = true }
@@ -170,7 +171,7 @@ struct FailedDirectSend: Identifiable {
                 }
             }
         } catch {
-            guard lifecycleGeneration == generation else { return }
+            guard statusRequests.accepts(requestID), lifecycleGeneration == generation else { return }
             engineError = error.localizedDescription; lifecycle = .failed
         }
     }
@@ -230,7 +231,33 @@ struct FailedDirectSend: Identifiable {
     func clearHistory() async throws {
         try requireReady()
         _ = try await client.request("history.clear")
-        await refresh()
+        await refresh(force: true)
+    }
+    func removeFromHistory(_ transfers: [Transfer]) async throws {
+        try requireReady()
+        guard !removingHistory else { return }
+        let ids = TransferHistorySelection.removableIDs(in: transfers)
+        guard !ids.isEmpty else { return }
+        removingHistory = true
+        defer { removingHistory = false }
+        do {
+            for id in ids {
+                if let current = status?.transfers.first(where: { $0.id == id }), !current.canRemoveFromHistory {
+                    throw NativeError.unavailable(text("Die Übertragung ist wieder aktiv und bleibt in der Liste.", "The transfer is active again and remains in the list."))
+                }
+                _ = try await client.request("history.remove", params: JSONEncoder().encode(["id": id]))
+            }
+            await refresh(force: true)
+        } catch { await refresh(force: true); throw error }
+    }
+    func setAutomaticReceive(_ automatic: Bool, deviceID: String) async throws {
+        try requireReady()
+        guard var device = status?.devices.first(where: { $0.id == deviceID }), device.paired, device.canSend else {
+            throw NativeError.unavailable(text("Dieses Gerät muss verbunden sein und Dateien senden dürfen.", "This device must be paired and allowed to send files."))
+        }
+        device.autoAccept = automatic
+        do { _ = try await client.request("device.update", params: JSONEncoder().encode(device)); await refresh(force: true) }
+        catch { await refresh(force: true); throw error }
     }
     func resolveDuplicate(transferID: String, fileID: String, action: String, candidateID: String? = nil) async throws {
         try requireReady()
@@ -276,11 +303,13 @@ struct FailedDirectSend: Identifiable {
     }
     func showConnection(to device: Device? = nil) {
         if let device { connectionDraft = PeerConnectionDraft(device: device) }
+        else if pendingConnection == nil { connectionDraft = PeerConnectionDraft() }
         showConnection = true
     }
-    func connect(_ draft: PeerConnectionDraft) async throws {
+    func connect(_ draft: PeerConnectionDraft, verification: PeerVerification) async throws {
         try requireReady()
         guard draft.isValid else { throw NativeError.unavailable(text("Bitte eine gültige AirLink-Adresse und den vollständigen Fingerabdruck verwenden.", "Use a valid AirLink address and its complete fingerprint.")) }
+        guard verification.matches(draft) else { throw NativeError.unavailable(text("Vergleiche zuerst den Fingerabdruck mit der Anzeige auf dem anderen Computer.", "First compare the fingerprint with the display on the other computer.")) }
         if let pending = pendingConnection, pending.matches(draft), !pending.isExpired() { return }
         struct Response: Decodable { var requestId: String }
         let response = try JSONDecoder().decode(Response.self, from: await client.request(draft.automaticReceive ? "peer.connectTrusted" : "peer.connect", params: JSONEncoder().encode(["url": draft.normalizedAddress, "fingerprint": draft.normalizedFingerprint])))

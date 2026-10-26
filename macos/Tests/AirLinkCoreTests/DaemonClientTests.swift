@@ -105,9 +105,12 @@ func slowFilesystemRPCAllowsOutOfOrderStatusResponse(method: String) async throw
     """#
     try Data(script.utf8).write(to: helper)
     try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: helper.path)
-    let client = DaemonClient(ordinaryRequestTimeout: 0.4)
+    // Leave scheduling headroom when the background suite runs alongside
+    // archive/signature work. The unanswered call still exercises a real timeout.
+    let client = DaemonClient(ordinaryRequestTimeout: 1.5)
     try await client.start(executable: helper, dataDirectory: directory)
     do {
+        _ = try await client.request("status")
         do {
             _ = try await client.request("unanswered")
             Issue.record("An ordinary unanswered request must time out.")

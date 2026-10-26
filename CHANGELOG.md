@@ -2,6 +2,16 @@
 
 AirLink uses MAJOR.MINOR.PATCH versions. Entries describe implemented changes; distribution and verification status are recorded separately.
 
+## 0.10.0 — 2026-10-26
+
+- Guide native device connection through nearby computer selection, complete fingerprint comparison and approval on the other computer. Keep manual entry as a fallback and browser/QR setup separate. Pairing is shown as complete only after the saved certificate identity is confirmed.
+- Make trusted devices, device settings and optional automatic receiving easier to find. New pairings keep automatic receiving off until explicitly enabled for that receiving computer.
+- Add **Remove from list** for individual finished file transfers and a confirmed **Remove finished entries…** action with a fixed selection. Active transfers and transfers finishing later are not swept into the removal.
+- Persist history removal without deleting originals, received files or independent shares. Check ownership and terminal state atomically; database failures retain the entry. Lifetime traffic counters remain separate from history-derived totals.
+- Discard older status responses after mutation refreshes so removed entries and changed device preferences do not reappear from an earlier poll.
+
+This remains a private development preview distributed through manual GitHub release downloads. Completed background checks and build evidence are recorded in [TESTING.md](docs/TESTING.md); native visual/device acceptance remains separate. No new 100 GiB or WLAN throughput claim is made.
+
 ## 0.9.0 — 2026-10-25
 
 - Replace portable Windows downloads with real x64/ARM64 Setup executables. Setup installs the self-contained app in `%LOCALAPPDATA%\Programs\AirLink`, creates a current-user Start menu shortcut and registers an Installed apps uninstall entry without administrator privileges.

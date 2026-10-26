@@ -13,7 +13,7 @@ func actualHelperStatusAndSettingsUseNativeContract() async throws {
     do {
         let data = try await client.request("status")
         let status = try JSONDecoder().decode(HostStatus.self, from: data)
-        #expect(status.version == "0.9.0")
+        #expect(status.version == "0.10.0")
         #expect(status.chunkSize == 8 * 1024 * 1024)
         #expect(status.fingerprint.count == 64)
         #expect(!status.urls.isEmpty)
@@ -68,7 +68,7 @@ func actualNativeTrustedPairAndReceivedResultUsePrivateContract() async throws {
         try await receiver.start(executable: URL(fileURLWithPath: path), dataDirectory: directory.appendingPathComponent("receiver-state"), receiveDirectory: directory.appendingPathComponent("receiver-files"), disableDiscovery: true)
         let first = try JSONDecoder().decode(HostStatus.self, from: await source.request("status"))
         let second = try JSONDecoder().decode(HostStatus.self, from: await receiver.request("status"))
-        #expect(first.version == "0.9.0" && second.version == "0.9.0")
+        #expect(first.version == "0.10.0" && second.version == "0.10.0")
         let address = try #require(second.urls.last(where: { $0.contains("localhost:") }))
         struct Requested: Decodable { var requestId: String }
         let requested = try JSONDecoder().decode(Requested.self, from: await source.request("peer.connectTrusted", params: JSONEncoder().encode(["url": address, "fingerprint": second.fingerprint])))
@@ -117,6 +117,28 @@ func actualNativeTrustedPairAndReceivedResultUsePrivateContract() async throws {
         #expect(completedReplay.id == offered.id)
         let sourceStatus = try JSONDecoder().decode(HostStatus.self, from: await source.request("status"))
         #expect(sourceStatus.transfers.count == 1)
+        let completionDeadline = Date().addingTimeInterval(10)
+        var sent: Transfer?
+        while Date() < completionDeadline {
+            let current = try JSONDecoder().decode(HostStatus.self, from: await source.request("status"))
+            if let transfer = current.transfers.first(where: { $0.id == offered.id && $0.state == "completed" }) { sent = transfer; break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        _ = try #require(sent)
+        let share = try JSONDecoder().decode(Share.self, from: await receiver.request("share.create", params: JSONEncoder().encode(ShareCreate(name: "Kept received file", paths: [item.path]))))
+        _ = try await receiver.request("history.remove", params: JSONEncoder().encode(["id": received.id]))
+        _ = try await source.request("history.remove", params: JSONEncoder().encode(["id": offered.id]))
+        let removed = try JSONDecoder().decode(HostStatus.self, from: await receiver.request("status"))
+        #expect(!removed.transfers.contains(where: { $0.id == received.id }))
+        #expect(removed.shares?.contains(where: { $0.id == share.id }) == true)
+        #expect(try Data(contentsOf: original) == contents)
+        #expect(try Data(contentsOf: URL(fileURLWithPath: item.path)) == contents)
+        _ = await receiver.stop()
+        try await receiver.start(executable: URL(fileURLWithPath: path), dataDirectory: directory.appendingPathComponent("receiver-state"), receiveDirectory: directory.appendingPathComponent("receiver-files"), disableDiscovery: true)
+        let restarted = try JSONDecoder().decode(HostStatus.self, from: await receiver.request("status"))
+        #expect(!restarted.transfers.contains(where: { $0.id == received.id }))
+        #expect(restarted.shares?.contains(where: { $0.id == share.id }) == true)
+        #expect(try Data(contentsOf: URL(fileURLWithPath: item.path)) == contents)
         _ = await source.stop(); _ = await receiver.stop()
     } catch {
         _ = await source.stop(); _ = await receiver.stop()

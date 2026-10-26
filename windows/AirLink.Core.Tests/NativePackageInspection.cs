@@ -16,7 +16,7 @@ internal static class NativePackageInspection
             var metadata = image.GetMetadataReader();
             if (!metadata.IsAssembly) throw new InvalidDataException("The native client payload is not an assembly.");
             var assembly = metadata.GetAssemblyDefinition();
-            if (metadata.GetString(assembly.Name) != "AirLink" || assembly.Version != new Version(0, 9, 0, 0)) throw new InvalidDataException("Wrong native client identity or assembly version; expected AirLink 0.9.0.0.");
+            if (metadata.GetString(assembly.Name) != "AirLink" || assembly.Version != new Version(0, 10, 0, 0)) throw new InvalidDataException("Wrong native client identity or assembly version; expected AirLink 0.10.0.0.");
             var directory = header.ResourcesDirectory;
             if (directory.RelativeVirtualAddress <= 0 || directory.Size <= 0) throw new InvalidDataException("Missing managed resource directory.");
             var block = image.GetSectionData(directory.RelativeVirtualAddress);

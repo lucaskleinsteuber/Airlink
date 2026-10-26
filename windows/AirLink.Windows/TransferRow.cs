@@ -46,7 +46,7 @@ internal sealed class TransferRow : Border
         var speed = double.IsFinite(t.BytesPerSecond) && t.BytesPerSecond > 0 ? t.BytesPerSecond : 0;
         detail.Text = t.State == "completed" ? c.Bytes(t.CompletedBytes) + (t.SkippedBytes > 0 ? " · " + c.Bytes(t.SkippedBytes) + c.T(" übersprungen", " skipped") : "") : c.Bytes(t.CompletedBytes) + " / " + c.Bytes(t.TotalBytes) + (speed > 0 && t.State == "running" ? " · " + c.Bytes((long)Math.Min(speed, long.MaxValue)) + "/s" : "");
         problem.Text = t.Error ?? ""; problem.Visibility = string.IsNullOrWhiteSpace(t.Error) ? Visibility.Collapsed : Visibility.Visible;
-        var key = t.State + ":" + c.Ready + ":" + string.Join('|', t.Files.Select(f => f.Id + f.Completed + f.Skipped + f.DuplicateState));
+        var key = t.State + ":" + c.Ready + ":" + c.RemovingHistory + ":" + string.Join('|', t.Files.Select(f => f.Id + f.Completed + f.Skipped + f.DuplicateState));
         if (key == actionKey) return; actionKey = key; actions.Children.Clear(); files.Children.Clear();
         ContextMenu = null;
         if (t.State == "offered" && t.Direction == "receive")
@@ -79,6 +79,12 @@ internal sealed class TransferRow : Border
         {
             var menu = new ContextMenu(); var share = new MenuItem { Header = c.T("Freigabelink erstellen …", "Create share link …") };
             share.Click += (_, _) => SharingDialogs.Share(owner, c, transfer: current); menu.Items.Add(share); ContextMenu = menu;
+        }
+        if (NativeExperience.CanRemoveFromHistory(t))
+        {
+            var remove = Action(c.T("Aus Liste entfernen", "Remove from list"), () => c.RemoveHistoryAsync(new[] { ProtocolJson.Clone(current) }));
+            remove.ToolTip = c.T("Entfernt nur diesen Verlaufseintrag. Die Dateien bleiben erhalten.", "Removes this history entry only. The files are preserved.");
+            remove.IsEnabled = c.Ready && !c.RemovingHistory; actions.Children.Add(remove);
         }
         actions.IsEnabled = files.IsEnabled = c.Ready;
     }

@@ -14,23 +14,7 @@ internal static class Dialogs
 {
     public static void Pair(Window owner, Controller c, RemoteDevice? seed)
     {
-        var form = new Form(owner, c.T("Gerät verbinden", "Connect a device"));
-        form.Help(c.T("Vergleiche den Fingerabdruck mit der Anzeige in AirLink auf dem anderen Gerät. Bestätige anschließend die Anfrage dort.",
-            "Compare this fingerprint with AirLink on the other device. Then approve the request there."));
-        var address = form.Input(c.T("HTTPS-Adresse", "HTTPS address"), seed?.Address ?? "https://");
-        var fingerprint = form.Input(c.T("Fingerabdruck (SHA-256)", "Fingerprint (SHA-256)"), seed?.Fingerprint ?? "");
-        fingerprint.FontFamily = new System.Windows.Media.FontFamily("Consolas");
-        var verified = form.Check(c.T("Ich habe den Fingerabdruck am anderen Gerät verglichen.", "I compared the fingerprint on the other device."));
-        var automatic = form.Check(c.T("Dateien von diesem Gerät künftig automatisch annehmen", "Automatically accept future files from this device"));
-        form.Help(c.T("Diese Freigabe gilt für den Empfang auf diesem PC. Die Empfangsrechte des anderen Geräts werden dort festgelegt.",
-            "This permission applies to receiving on this PC. Receiving permissions on the other device are set there."));
-        form.Commit(c.T("Verbindung anfragen", "Request connection"), async () =>
-        {
-            if (verified.IsChecked != true)
-                throw new InvalidOperationException(c.T("Bitte zuerst den Fingerabdruck am anderen Gerät vergleichen.", "First compare the fingerprint on the other device."));
-            await c.ConnectAsync(address.Text, fingerprint.Text, automatic.IsChecked == true);
-        });
-        form.Show();
+        new PairingWindow(owner, c, seed).ShowDialog();
     }
 
     public static void Settings(Window owner, Controller c)
@@ -67,15 +51,18 @@ internal static class Dialogs
         var send = form.Check(c.T("Darf Dateien an diesen PC senden", "May send files to this PC"), copy.CanSend);
         var receive = form.Check(c.T("Darf Dateien von diesem PC empfangen", "May receive files from this PC"), copy.CanReceive);
         var automatic = form.Check(c.T("Eingehende Dateien automatisch annehmen", "Automatically accept incoming files"), copy.AutoAccept);
+        automatic.IsEnabled = send.IsChecked == true;
+        send.Checked += (_, _) => automatic.IsEnabled = true;
+        send.Unchecked += (_, _) => { automatic.IsChecked = false; automatic.IsEnabled = false; };
         var clipboard = form.Check(c.T("Darf Zwischenablagentext austauschen", "May exchange clipboard text"), copy.CanClipboard);
-        var relay = form.Check(c.T("Darf Browserübertragungen vermitteln", "May take part in browser relay transfers"), copy.CanRelay);
+        var relay = copy.Kind == "browser" ? form.Check(c.T("Darf Browserübertragungen vermitteln", "May take part in browser relay transfers"), copy.CanRelay) : null;
         if (!string.IsNullOrEmpty(copy.Fingerprint))
             form.ReadOnly(c.T("Gespeicherter Fingerabdruck", "Saved fingerprint"), copy.Fingerprint);
         form.Commit(c.T("Speichern", "Save"), async () =>
         {
             copy.CanSend = send.IsChecked == true; copy.CanReceive = receive.IsChecked == true;
-            copy.AutoAccept = automatic.IsChecked == true;
-            copy.CanClipboard = clipboard.IsChecked == true; copy.CanRelay = relay.IsChecked == true;
+            copy.AutoAccept = copy.CanSend && automatic.IsChecked == true;
+            copy.CanClipboard = clipboard.IsChecked == true; if (relay is not null) copy.CanRelay = relay.IsChecked == true;
             await c.SaveDeviceAsync(copy);
         });
         form.Action(c.T("Kopplung widerrufen", "Revoke pairing"), async () =>
@@ -125,16 +112,24 @@ internal static class Dialogs
     public static void ConnectionInfo(Window owner, Controller c)
     {
         if (c.Status is null) return;
-        var form = new Form(owner, c.T("Verbindungsdaten", "Connection details"), 650);
-        form.Help(c.T("Desktopgeräte verbinden sich über die Geräteauswahl. Für iPhone, iPad und andere Browsergeräte öffne eine Einrichtungsadresse im selben lokalen Netzwerk.",
-            "Desktop devices connect from the device list. For iPhone, iPad and other browser devices, open a setup address on the same local network."));
-        foreach (var url in c.Status.SetupUrls)
-            CopyField(form, c, c.T("Browser einrichten", "Set up browser"), url);
+        var form = new Form(owner, c.T("Dieses Gerät", "This device"), 650);
+        form.Help(c.Status.Name);
+        form.Help(c.T("Vergleiche diese Angaben beim Verbinden eines Computers. Über „Gerät hinzufügen“ wählst du den anderen Computer im Netzwerk aus.",
+            "Compare these details when connecting a computer. Use Add device to choose the other computer on your network."));
         foreach (var url in c.Status.Urls)
             CopyField(form, c, c.T("HTTPS-Adresse", "HTTPS address"), url);
-        CopyField(form, c, c.T("Fingerabdruck dieses PCs", "This PC's fingerprint"), c.Status.Fingerprint);
-        form.Help(c.T("Vergleiche den Fingerabdruck bei der ersten Verbindung. Die Einrichtungsseite erklärt die nötige Zertifikatsfreigabe für den Browser.",
-            "Compare the fingerprint on first connection. The setup page explains the certificate trust steps for the browser."));
+        CopyField(form, c, c.T("Fingerabdruck dieses PCs", "This PC's fingerprint"), new ConnectionDraft("", c.Status.Fingerprint).ComparisonFingerprint);
+        var browser = new StackPanel();
+        browser.Children.Add(Theme.Text(c.T("iPhone, iPad oder Android", "iPhone, iPad or Android"), 15, true));
+        browser.Children.Add(Theme.Text(c.T("Öffne auf dem Handy oder Tablet eine dieser Adressen im selben Netzwerk. Die Seite führt durch die Zertifikatsfreigabe. Vergleiche dabei den Fingerabdruck mit diesem PC.",
+            "Open one of these addresses on your phone or tablet on the same network. The page guides you through certificate trust. Compare the fingerprint with this PC."), 13, secondary: true));
+        foreach (var url in c.Status.SetupUrls)
+        {
+            var value = url;
+            browser.Children.Add(new TextBox { Text = value, IsReadOnly = true, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 6) });
+            browser.Children.Add(Theme.Button(c.T("Einrichtungsadresse kopieren", "Copy setup address"), () => Clipboard.SetText(value)));
+        }
+        form.Add(new Expander { Header = c.T("Handy oder Tablet verbinden", "Connect phone or tablet"), Content = browser, Foreground = Theme.Foreground, Margin = new Thickness(0, 22, 0, 0) });
         form.Show();
     }
 

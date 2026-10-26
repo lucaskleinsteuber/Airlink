@@ -6,17 +6,18 @@ struct PairingApprovalView: View {
     let request: PairRequest
     @State private var working = false
     @State private var issue: String?
+    @State private var automatic = false
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label(model.text("\(request.name) möchte sich verbinden", "\(request.name) wants to connect"), systemImage: "person.badge.key.fill").font(.headline)
             Text(model.text("Nur verbinden, wenn du die Anfrage auf diesem Gerät gerade gestartet und den Fingerabdruck verglichen hast.", "Connect only if you just started this request on that device and compared its fingerprint.")).font(.callout).foregroundStyle(.secondary)
+            Toggle(model.text("Von diesem Gerät automatisch empfangen", "Automatically receive from this device"), isOn: $automatic).disabled(working)
+            Text(model.text("Optional. Künftige Dateien dieses Geräts kommen auf diesem Mac ohne weitere Annahme an. Du kannst das direkt beim Gerät wieder ausschalten.", "Optional. Future files from this device arrive on this Mac without another acceptance prompt. You can turn this off on the device card.")).font(.caption).foregroundStyle(.secondary)
             HStack {
                 Button(model.text("Ablehnen", "Deny")) { respond(deny: true) }
                 Spacer()
-                Button(model.text("Verbinden", "Connect")) { respond() }
-                Button(model.text("Verbinden und automatisch empfangen", "Connect and receive automatically")) { respond(automatic: true) }.buttonStyle(.borderedProminent)
+                Button(model.text("Verbinden", "Connect")) { respond(automatic: automatic) }.buttonStyle(.borderedProminent)
             }.disabled(working || !model.isReady)
-            Text(model.text("Automatisch empfangen gilt nur für dieses gekoppelte Gerät. Seine nächsten Dateien kommen ohne erneute Annahme an. Die Einstellung lässt sich in den Geräteberechtigungen jederzeit ausschalten.", "Automatic receipt applies only to this paired device. Its next files arrive without another acceptance prompt. You can disable it in the device permissions at any time.")).font(.caption).foregroundStyle(.secondary)
             if working { ProgressView().controlSize(.small) }
             if let issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
         }.padding(18).frame(maxWidth: .infinity, alignment: .leading).background(.blue.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))

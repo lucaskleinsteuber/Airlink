@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"math"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lucasfd3/Airlink/internal/engine"
 	"github.com/lucasfd3/Airlink/internal/model"
 )
 
@@ -32,6 +34,180 @@ func historyReceived(t *testing.T, s *Server, d model.Device, path string, data 
 	}
 	tr, _ = s.engine.Get(tr.ID)
 	return tr
+}
+
+func TestRemoveHistoryHTTPPreservesUnselectedDataSharesAndRelays(t *testing.T) {
+	s := integrationHost(t)
+	d, token := integrationDevice(t, s, true)
+	other, _ := integrationDevice(t, s, true)
+	data := []byte("A shared received file outlives its list entry.")
+	own := historyReceived(t, s, d, "keep.bin", data)
+	unselected := historyReceived(t, s, d, "unselected.bin", []byte("other own entry"))
+	foreign := historyReceived(t, s, other, "foreign.bin", []byte("private"))
+	active, err := s.engine.CreateIncoming(d, []model.File{{ID: "active", Path: "pending.bin", Size: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	share, err := s.createShare("local", model.ShareCreate{TransferID: own.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.CanRelay = true
+	other.CanRelay = true
+	relay, err := s.relays.Create(d, other, []model.File{{ID: "relay-file", Path: "relay.txt", Size: 0, SHA256: digest(nil)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.relays.Action(relay.ID, d.ID, "cancel"); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.ReadAll(s.traffic.WrapReader(context.Background(), bytes.NewReader(data), "receive"))
+	var result map[string]bool
+	if err = requestJSON(context.Background(), pinnedClient(s.fingerprint), http.MethodDelete, hostURL(s)+"/api/v1/history/"+own.ID, token, nil, &result); err != nil || !result["ok"] {
+		t.Fatal("owned entry could not be removed", result, err)
+	}
+	if _, err = s.engine.Get(own.ID); !errors.Is(err, engine.ErrNotFound) {
+		t.Fatal("selected entry retained", err)
+	}
+	for _, id := range []string{unselected.ID, foreign.ID, active.ID} {
+		if _, err = s.engine.Get(id); err != nil {
+			t.Fatal("unselected entry removed", id, err)
+		}
+	}
+	if _, err = s.relays.Get(relay.ID, d.ID); err != nil {
+		t.Fatal("file removal affected relay history", err)
+	}
+	if got := s.statistics("").TrafficReceivedBytes; got != int64(len(data)) {
+		t.Fatal("lifetime traffic counter changed", got)
+	}
+	if got, err := os.ReadFile(filepath.Join(own.Destination, "keep.bin")); err != nil || !bytes.Equal(got, data) {
+		t.Fatal("received payload changed", err)
+	}
+	f, _, err := s.shares.Open(share.ID, share.Files[0].ID)
+	if err != nil {
+		t.Fatal("independent share source lost", err)
+	}
+	got, err := io.ReadAll(f)
+	f.Close()
+	if err != nil || !bytes.Equal(got, data) {
+		t.Fatal("share bytes changed", err)
+	}
+	opts := s.opts
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	next, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer next.Close()
+	if _, err = next.engine.Get(own.ID); !errors.Is(err, engine.ErrNotFound) {
+		t.Fatal("entry returned after server restart", err)
+	}
+	if _, err = next.relays.Get(relay.ID, d.ID); err != nil {
+		t.Fatal("relay history lost across restart", err)
+	}
+	f, _, err = next.shares.Open(share.ID, share.Files[0].ID)
+	if err != nil {
+		t.Fatal("share lost across restart", err)
+	}
+	f.Close()
+}
+
+func TestRemoveHistoryHTTPEnforcesOwnerStateAuthenticationAndMethods(t *testing.T) {
+	s := integrationHost(t)
+	d, token := integrationDevice(t, s, true)
+	other, _ := integrationDevice(t, s, true)
+	foreign := historyReceived(t, s, other, "private.bin", []byte("other"))
+	active, err := s.engine.CreateIncoming(d, []model.File{{ID: "active", Path: "active.bin", Size: 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := func(method, path, bearer string) (int, string, http.Header) {
+		t.Helper()
+		req, err := http.NewRequest(method, hostURL(s)+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		res, err := pinnedClient(s.fingerprint).Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(res.Body)
+		res.Body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.StatusCode, string(body), res.Header
+	}
+	foreignCode, foreignBody, _ := request(http.MethodDelete, "/api/v1/history/"+foreign.ID, token)
+	missingCode, missingBody, _ := request(http.MethodDelete, "/api/v1/history/missing-entry", token)
+	if foreignCode != 404 || missingCode != 404 || foreignBody != missingBody || foreignBody != "{\"error\":\"history entry not found\"}\n" {
+		t.Fatal("foreign entry existence disclosed", foreignCode, foreignBody, missingCode, missingBody)
+	}
+	if code, _, _ := request(http.MethodDelete, "/api/v1/history/"+active.ID, token); code != 409 {
+		t.Fatal("active entry was removable", code)
+	}
+	if code, _, _ := request(http.MethodDelete, "/api/v1/history/", token); code != 400 {
+		t.Fatal("missing ID accepted", code)
+	}
+	if code, _, _ := request(http.MethodDelete, "/api/v1/history/invalid/path", token); code != 400 {
+		t.Fatal("invalid ID accepted", code)
+	}
+	if code, _, headers := request(http.MethodGet, "/api/v1/history/"+foreign.ID, token); code != 405 || headers.Get("Allow") != http.MethodDelete {
+		t.Fatal("wrong method accepted", code, headers)
+	}
+	if code, _, _ := request(http.MethodDelete, "/api/v1/history/"+foreign.ID, ""); code != 401 {
+		t.Fatal("unauthenticated deletion accepted", code)
+	}
+	for _, id := range []string{foreign.ID, active.ID} {
+		if _, err = s.engine.Get(id); err != nil {
+			t.Fatal("rejected request removed entry", id, err)
+		}
+	}
+}
+
+func TestRemoveHistoryPrivateControlValidatesInputAndCanRemoveSentEntry(t *testing.T) {
+	s := integrationHost(t)
+	d, _ := integrationDevice(t, s, true)
+	source := filepath.Join(t.TempDir(), "original.txt")
+	data := []byte("Host source remains available.")
+	if err := os.WriteFile(source, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	tr, err := s.engine.Offer(d, []string{source})
+	if err != nil {
+		t.Fatal(err)
+	}
+	params, _ := json.Marshal(map[string]string{"id": tr.ID})
+	if _, err = s.Control("history.remove", params); !errors.Is(err, engine.ErrConflict) {
+		t.Fatal("active local entry removed", err)
+	}
+	if err = s.engine.Cancel(tr.ID); err != nil {
+		t.Fatal(err)
+	}
+	result, err := s.Control("history.remove", params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(result)
+	if string(encoded) != `{"ok":true}` {
+		t.Fatal("unexpected removal response", string(encoded))
+	}
+	if _, err = s.engine.Get(tr.ID); !errors.Is(err, engine.ErrNotFound) {
+		t.Fatal("host removal retained entry", err)
+	}
+	if got, err := os.ReadFile(source); err != nil || !bytes.Equal(got, data) {
+		t.Fatal("host removal changed source", err)
+	}
+	for _, input := range []string{"", "null", "{}", `{"id":""}`, `{"id":"/invalid"}`, `{"id":12}`, "{"} {
+		if _, err = s.Control("history.remove", json.RawMessage(input)); !errors.Is(err, engine.ErrInvalid) {
+			t.Fatal("invalid input accepted", input, err)
+		}
+	}
 }
 func TestHistoryFiltersPrivacyAndClearPreservesSharedData(t *testing.T) {
 	s := integrationHost(t)

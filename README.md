@@ -6,7 +6,7 @@
 
 AirLink transfers files and folders between computers and browsers on the same local network. It combines native macOS and Windows apps with a web interface for desktop and mobile browsers. The Linux service is experimental, available from source and untested at runtime; no Linux binary download is published.
 
-**Current version: 0.9.0. Repository status: private development preview.** Source and release downloads require a GitHub account with access to this private repository. Download development builds manually from [Releases](https://github.com/lucasfd3/Airlink/releases). The source is MIT licensed. Version 0.8 adds guided device naming and receive-folder setup, a clearer desktop interface and direct receive destinations; 0.9.0 adds a per-user Windows Setup installer. Windows runtime and physical-network acceptance remain open. Automated verification, package creation, physical acceptance, and historical results remain separate delivery states recorded in [TESTING.md](docs/TESTING.md). The [release readiness gates](docs/RELEASE-READINESS.md) define the evidence still needed before 1.0; no release date is assigned.
+**Current version: 0.10.0. Repository status: private development preview.** Source and release downloads require a GitHub account with access to this private repository. Download development builds manually from [Releases](https://github.com/lucasfd3/Airlink/releases). The source is MIT licensed. Version 0.8 adds guided device naming and receive-folder setup, a clearer desktop interface and direct receive destinations; 0.9.0 adds a per-user Windows Setup installer. Windows runtime and physical-network acceptance remain open. Automated verification, package creation, physical acceptance, and historical results remain separate delivery states recorded in [TESTING.md](docs/TESTING.md). The [release readiness gates](docs/RELEASE-READINESS.md) define the evidence still needed before 1.0; no release date is assigned.
 
 The active repository containing the sanitized branch/tag history is **private** under the owner's current decision. Independent object/history and known old-object route checks passed for this new repository, and the six published 0.8.1 files matched the reviewed local checksums at the migration check. The earlier repository remains a separate **private, archived** repository. Making the active repository public later requires a new owner decision. The completed historical checks and their limits are recorded in [PRIVACY-REVIEW.md](docs/PRIVACY-REVIEW.md).
 
@@ -27,6 +27,14 @@ The active repository containing the sanitized branch/tag history is **private**
 The complete web interface is embedded in the desktop service. Normal use needs no account, cloud relay, external website, CDN, or internet connection. Downloading dependencies and building from source requires internet access initially.
 
 Version 0.4 adds **optional duplicate decisions and extension-based sorting for new desktop receives**. Both are off by default, including upgrades. They do not organize browser-managed downloads or relay payloads. See the [organization workflow](#optional-incoming-file-organization) and [roadmap](docs/ROADMAP.md).
+
+## Everyday use in 0.10
+
+**Add a device** starts with computers found on the same network. Choose the other computer, compare the complete fingerprint with its **This device** display, then approve the request there once. Manual address entry remains available if discovery is blocked. Phones and tablets have a separate browser/QR setup path. A device appears under **Trusted devices** after its pairing is actually confirmed.
+
+The selected trusted device shows **Automatically receive from this device** directly, with access to its device settings. This is an explicit local choice and starts off for a new pairing. Enable it on the receiving computer to accept future files from that sender without another approval; the opposite direction is configured separately.
+
+Finished file transfers have **Remove from list**. **Remove finished entries…** captures the completed, failed and cancelled entries present when selected and asks for confirmation. Active transfers and transfers finishing later remain visible. Removal is persistent and removes history metadata only: originals, received files and independent Quick Share sources stay available. History-derived totals change with removed entries; lifetime payload counters remain. An older status reply cannot put a removed entry back in the interface.
 
 ## Setup and desktop workflow in 0.8
 
@@ -82,7 +90,7 @@ For a manual check with a Mac, Windows laptop, iPhone and iPad, follow the [Germ
 
 ### macOS
 
-1. Download `AirLink-0.9.0-macos-universal.dmg` manually from the private [Releases](https://github.com/lucasfd3/Airlink/releases), signed in with a GitHub account that has repository access, when that version's asset is available.
+1. Download `AirLink-0.10.0-macos-universal.dmg` manually from the private [Releases](https://github.com/lucasfd3/Airlink/releases), signed in with a GitHub account that has repository access, when that version's asset is available.
 2. Quit the existing AirLink app from its menu-bar menu before updating. Open the disk image and drag **AirLink.app** to **Applications**, replacing the previous AirLink app if present.
 3. Open AirLink. Keep only the intended current app in `/Applications`; app updates preserve the separate AirLink data directory and received files.
 4. Complete the device-name and receive-folder setup. Choose **Connect device** to pair another computer; use connection information/QR to connect a browser.
@@ -93,7 +101,7 @@ Closing the window leaves AirLink running in the menu bar. **Quit** checkpoints 
 
 ### Windows
 
-1. Download **`AirLink-0.9.0-windows-x64-setup.exe`** for an Intel/AMD laptop, or **`AirLink-0.9.0-windows-arm64-setup.exe`** for Windows on ARM, manually from the private [Releases](https://github.com/lucasfd3/Airlink/releases), signed in with a GitHub account that has repository access. The development preview is not Authenticode signed; approve only the file obtained from this repository.
+1. Download **`AirLink-0.10.0-windows-x64-setup.exe`** for an Intel/AMD laptop, or **`AirLink-0.10.0-windows-arm64-setup.exe`** for Windows on ARM, manually from the private [Releases](https://github.com/lucasfd3/Airlink/releases), signed in with a GitHub account that has repository access. The development preview is not Authenticode signed; approve only the file obtained from this repository.
 2. Run Setup. It installs for your account in **`%LOCALAPPDATA%\Programs\AirLink`**, adds **AirLink** to the Start menu and Windows **Installed apps**, and needs no administrator account, ZIP extraction, separate .NET installation or terminal. If Setup asks you to close AirLink, choose **Quit** in the old app's system-tray menu, then retry; closing its window alone keeps it running. Stop a legacy console service with **Ctrl+C** if needed. Open AirLink from the finish page or Start menu.
 3. Complete the two-step setup: a recognizable **device name** and the **receive folder**. Downloads is the usual choice. Licenses for AirLink and the bundled runtime are available under **Settings → Licenses**.
 4. Select the other computer in the sidebar. If it is new, use **Connect device**, compare the fingerprint shown directly on the other computer, and approve the request there. Existing pairings remain saved.
