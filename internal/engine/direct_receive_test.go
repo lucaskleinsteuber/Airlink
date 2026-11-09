@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
 
 func TestDirectReceivePublishesIntoChosenFolderAndCleansOnlyItsStage(t *testing.T) {

@@ -22,7 +22,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 	"golang.org/x/crypto/argon2"
 	_ "modernc.org/sqlite"
 )

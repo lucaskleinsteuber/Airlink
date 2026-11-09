@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
 
 // These isolate block buffering and validation from network/filesystem rates.

@@ -15,8 +15,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/lucasfd3/Airlink/internal/model"
-	"github.com/lucasfd3/Airlink/internal/shares"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/shares"
 )
 
 func sharedSource(t *testing.T, s *Server, data []byte, limit int64) model.Share {

@@ -1,6 +1,6 @@
 # AirLink 0.11.0 for Windows
 
-Requires a supported 64-bit Windows 10 or Windows 11 installation. Download **`AirLink-0.11.0-windows-x64-setup.exe`** for an Intel/AMD computer or **`AirLink-0.11.0-windows-arm64-setup.exe`** for Windows on ARM manually from the private [AirLink releases](https://github.com/lucasfd3/Airlink/releases), signed in with a GitHub account that has repository access.
+Requires a supported 64-bit Windows 10 or Windows 11 installation. Download **`AirLink-0.11.0-windows-x64-setup.exe`** for an Intel/AMD computer or **`AirLink-0.11.0-windows-arm64-setup.exe`** for Windows on ARM manually from the private [AirLink releases](https://github.com/lucaskleinsteuber/Airlink/releases), signed in with a GitHub account that has repository access.
 
 ## Install
 
@@ -49,7 +49,7 @@ This is an unsigned development preview in the private AirLink repository. Only 
 
 ## Deutsch
 
-Lade **`AirLink-0.11.0-windows-x64-setup.exe`** für einen Intel-/AMD-Rechner oder **`AirLink-0.11.0-windows-arm64-setup.exe`** für Windows auf ARM manuell aus den privaten [AirLink-Releases](https://github.com/lucasfd3/Airlink/releases) herunter. Melde dich dafür bei GitHub mit einem Konto an, das Zugriff auf das Repository hat, und öffne danach **Setup**. Falls AirLink noch läuft, über **Beenden / Quit** im Infobereich beenden und im Setup erneut versuchen. Nur das Hauptfenster zu schließen beendet die App nicht. Ein altes Konsolenfenster bei Bedarf einmal mit **Strg+C** stoppen.
+Lade **`AirLink-0.11.0-windows-x64-setup.exe`** für einen Intel-/AMD-Rechner oder **`AirLink-0.11.0-windows-arm64-setup.exe`** für Windows auf ARM manuell aus den privaten [AirLink-Releases](https://github.com/lucaskleinsteuber/Airlink/releases) herunter. Melde dich dafür bei GitHub mit einem Konto an, das Zugriff auf das Repository hat, und öffne danach **Setup**. Falls AirLink noch läuft, über **Beenden / Quit** im Infobereich beenden und im Setup erneut versuchen. Nur das Hauptfenster zu schließen beendet die App nicht. Ein altes Konsolenfenster bei Bedarf einmal mit **Strg+C** stoppen.
 
 Setup installiert AirLink für dein Benutzerkonto unter **`%LOCALAPPDATA%\Programs\AirLink`** und legt Einträge im **Startmenü** und unter **Installierte Apps** an. Ein Administratorkonto, Entpacken, eine separate .NET-Installation und ein Terminal sind nicht erforderlich. Öffne AirLink nach der Installation über die Abschlussseite oder das Startmenü.
 

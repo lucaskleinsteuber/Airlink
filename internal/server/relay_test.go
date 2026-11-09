@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
 
 func relayBrowser(t *testing.T, s *Server, id string) (model.Device, string) {

@@ -11,7 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/grandcat/zeroconf"
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
 
 const discoveryRefreshInterval = 15 * time.Second

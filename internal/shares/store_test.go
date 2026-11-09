@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
 
 func fixture(t *testing.T) (*Store, string, []Source) {

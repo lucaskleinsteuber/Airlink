@@ -21,11 +21,11 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
-	"github.com/lucasfd3/Airlink/internal/engine"
-	"github.com/lucasfd3/Airlink/internal/model"
-	"github.com/lucasfd3/Airlink/internal/relay"
-	"github.com/lucasfd3/Airlink/internal/shares"
-	"github.com/lucasfd3/Airlink/internal/traffic"
+	"github.com/lucaskleinsteuber/Airlink/internal/engine"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/relay"
+	"github.com/lucaskleinsteuber/Airlink/internal/shares"
+	"github.com/lucaskleinsteuber/Airlink/internal/traffic"
 )
 
 //go:embed assets/*
@@ -68,6 +68,9 @@ type Server struct {
 	active                               map[string]map[string]context.CancelFunc
 	transferRequests                     map[string]map[string]context.CancelFunc
 	chunkSlots                           chan struct{}
+	preparations                         map[string]*preparationJob
+	pairingWorkers                       map[string]bool
+	pairingSlots                         chan struct{}
 	ctx                                  context.Context
 	cancel                               context.CancelFunc
 	httpServer, adminServer, setupServer *http.Server
@@ -151,6 +154,7 @@ func New(opts Options) (*Server, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Server{engine: eng, shares: shareStore, relays: relayStore, traffic: meter, store: store, opts: opts, fingerprint: fp, certificate: ca, pending: map[string]*pendingPair{}, discovered: map[string]model.Device{}, rate: map[string][]time.Time{}, senders: map[string]bool{}, senderCancels: map[string]context.CancelFunc{}, outgoingWake: make(chan struct{}, 1), discoveryNames: make(chan struct{}, 1), active: map[string]map[string]context.CancelFunc{}, chunkSlots: make(chan struct{}, 2), ctx: ctx, cancel: cancel, lock: lock}
+	s.pairingWorkers, s.pairingSlots = map[string]bool{}, make(chan struct{}, 2)
 	port := opts.Port
 	if port == 0 {
 		port = 43871
@@ -217,6 +221,8 @@ func New(opts Options) (*Server, error) {
 	go s.heartbeatLoop()
 	s.wg.Add(1)
 	go s.clipboardLoop()
+	s.wg.Add(1)
+	go s.pairingLoop()
 	success = true
 	return s, nil
 }
@@ -260,7 +266,7 @@ func (s *Server) Close() error {
 	return e
 }
 func (s *Server) AdminURL() string { return s.adminURL }
-func (s *Server) Status() model.Status {
+func (s *Server) basicStatus() model.Status {
 	p := s.store.snapshot()
 	ds := []model.Device{}
 	known := map[string]bool{}
@@ -280,7 +286,29 @@ func (s *Server) Status() model.Status {
 		}
 	}
 	s.mu.Unlock()
-	return model.Status{Version: model.Version, ID: p.ID, Name: p.Settings.Name, URLs: s.currentURLs(s.urls), SetupURLs: s.currentURLs(s.setupURLs), Fingerprint: s.fingerprint, CertificatePath: filepath.Join(s.opts.DataDir, "certificate.pem"), ChunkSize: model.ChunkSize, Devices: ds, Transfers: s.engine.Transfers(""), PairRequests: requests, Settings: p.Settings, Shares: s.shareSummaries(""), Clipboard: s.clipboardSnapshot(""), ClipboardAllowed: true, CurrentDeviceID: p.ID, RelayDevices: []model.Device{}, Relays: s.relaySummaries(""), Statistics: s.statistics("")}
+	return model.Status{Version: model.Version, ID: p.ID, Name: p.Settings.Name, URLs: s.currentURLs(s.urls), SetupURLs: s.currentURLs(s.setupURLs), Fingerprint: s.fingerprint, CertificatePath: filepath.Join(s.opts.DataDir, "certificate.pem"), ChunkSize: model.ChunkSize, Devices: ds, PairRequests: requests, Settings: p.Settings, ClipboardAllowed: true, CurrentDeviceID: p.ID, RelayDevices: []model.Device{}, Capabilities: []string{"status-summary-v1", "preparation-v1", "history-page-v1"}}
+}
+func (s *Server) Status() model.Status {
+	v := s.basicStatus()
+	v.Transfers, v.Shares, v.Clipboard, v.Relays = s.engine.Transfers(""), s.shareSummaries(""), s.clipboardSnapshot(""), s.relaySummaries("")
+	v.Statistics = s.statistics("")
+	return v
+}
+func (s *Server) summaryStatus() model.Status {
+	v := s.basicStatus()
+	v.Summary = true
+	v.Statistics.Days = []model.DayStatistics{}
+	v.Transfers, v.ActiveTransferCount = s.engine.StatusSummaries()
+	v.Shares = []model.Share{}
+	v.Relays, v.ActiveRelayCount = s.relays.ActiveSummaries()
+	v.Clipboard = s.clipboardSnapshot("")
+	for i := range v.Clipboard {
+		v.Clipboard[i].Text = ""
+	}
+	v.Preparations = s.preparationSnapshots()
+	v.PairingSessions = s.pairingSnapshots()
+	v.Capabilities = append(v.Capabilities, "pairing-v2")
+	return v
 }
 func (s *Server) guestStatus(d model.Device) model.Status {
 	p := s.store.snapshot()
@@ -319,7 +347,7 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("GET /certificate.mobileconfig", func(w http.ResponseWriter, r *http.Request) { s.serveCertificate(w, r) })
 	mux.HandleFunc("GET /api/v1/info", func(w http.ResponseWriter, r *http.Request) {
 		p := s.store.snapshot()
-		respond(w, 200, map[string]any{"version": model.Version, "id": p.ID, "name": p.Settings.Name, "chunkSize": model.ChunkSize, "fingerprint": s.fingerprint, "urls": s.currentURLs(s.urls)})
+		respond(w, 200, map[string]any{"version": model.Version, "id": p.ID, "name": p.Settings.Name, "chunkSize": model.ChunkSize, "fingerprint": s.fingerprint, "urls": s.currentURLs(s.urls), "capabilities": []string{"pairing-v2"}})
 	})
 	mux.HandleFunc("GET /certificate.pem", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-pem-file")
@@ -329,6 +357,10 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("GET /setup", s.setup)
 	mux.HandleFunc("POST /api/v1/pair/request", s.pairRequest)
 	mux.HandleFunc("POST /api/v1/pair/poll", s.pairPoll)
+	mux.HandleFunc("POST /api/v1/pair/v2/start", s.pairingBegin)
+	for _, action := range []string{"poll", "confirm", "ack", "cancel"} {
+		mux.HandleFunc("POST /api/v1/pair/v2/"+action, s.pairingRemote)
+	}
 	mux.HandleFunc("/api/v1/", s.authenticated)
 	sub, _ := fs.Sub(assets, "assets")
 	files := http.FileServer(http.FS(sub))

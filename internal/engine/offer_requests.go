@@ -1,13 +1,15 @@
 package engine
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"time"
 
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
 
 // OfferWithRequestID recovers a local submission whose durable commit may have
@@ -15,8 +17,12 @@ import (
 // document as the transfer, without a second commit window or source copy.
 // Legacy callers omit the ID. This does not resume or modify an existing job.
 func (e *Engine) OfferWithRequestID(device model.Device, paths []string, requestID string) (model.Transfer, error) {
+	return e.OfferWithRequestIDContext(e.ctx, device, paths, requestID)
+}
+
+func (e *Engine) OfferWithRequestIDContext(ctx context.Context, device model.Device, paths []string, requestID string) (model.Transfer, error) {
 	if requestID == "" {
-		return e.Offer(device, paths)
+		return e.offerContext(ctx, device, paths, "", "")
 	}
 	if len(requestID) != 32 || !device.CanReceive {
 		return model.Transfer{}, ErrInvalid
@@ -41,8 +47,17 @@ func (e *Engine) OfferWithRequestID(device model.Device, paths []string, request
 	inputHash := hex.EncodeToString(hash[:])
 	// Only keyed submissions serialize with one another. The filesystem walk
 	// happens outside mu, so status, pause, receipt and shutdown stay responsive.
-	e.offerMu.Lock()
+	for !e.offerMu.TryLock() {
+		select {
+		case <-ctx.Done():
+			return model.Transfer{}, ctx.Err()
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
 	defer e.offerMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return model.Transfer{}, err
+	}
 	e.mu.Lock()
 	if e.closed {
 		e.mu.Unlock()
@@ -61,5 +76,5 @@ func (e *Engine) OfferWithRequestID(device model.Device, paths []string, request
 		return result, nil
 	}
 	e.mu.Unlock()
-	return e.offer(device, clean, requestID, inputHash)
+	return e.offerContext(ctx, device, clean, requestID, inputHash)
 }

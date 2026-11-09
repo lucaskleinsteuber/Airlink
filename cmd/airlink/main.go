@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -9,13 +10,25 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/lucasfd3/Airlink/internal/model"
-	"github.com/lucasfd3/Airlink/internal/server"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/server"
+	"github.com/lucaskleinsteuber/Airlink/internal/update"
 )
 
 func main() {
 	var opts server.Options
 	var stdio, version bool
+	var applyUpdate bool
+	var applyOptions update.ApplyOptions
+	var readyPath string
+	flag.BoolVar(&applyUpdate, "apply-linux-update", false, "Apply a verified Linux AppImage update after the owning app exits")
+	flag.IntVar(&applyOptions.ParentPID, "parent-pid", 0, "Owning desktop process")
+	flag.StringVar(&applyOptions.ParentExecutable, "parent-executable", "", "Owning desktop executable")
+	flag.StringVar(&applyOptions.Target, "target", "", "Current AppImage")
+	flag.StringVar(&applyOptions.Package, "package", "", "Verified replacement AppImage")
+	flag.StringVar(&applyOptions.Feed, "feed", "", "Signed beta manifest")
+	flag.StringVar(&applyOptions.SignatureFile, "feed-signature", "", "Detached manifest signature")
+	flag.StringVar(&readyPath, "ready-file", "", "Private update readiness reply")
 	flag.StringVar(&opts.DataDir, "data-dir", "", "Private state directory (default: OS user config/AirLink)")
 	flag.StringVar(&opts.ReceiveDir, "receive-dir", "", "Override persisted receive directory")
 	flag.IntVar(&opts.Port, "port", 0, "HTTPS port (default 43871, fallback available port)")
@@ -23,6 +36,17 @@ func main() {
 	flag.BoolVar(&stdio, "stdio", false, "Private native-app JSON control over stdin/stdout")
 	flag.BoolVar(&version, "version", false, "Print version and exit")
 	flag.Parse()
+	if applyUpdate {
+		applyOptions.PublicKey, _ = base64.StdEncoding.DecodeString(update.PublicKeyBase64)
+		applyOptions.InstalledVersion = model.Version
+		applyOptions.Ready = func() error { return update.WriteReadiness(readyPath, true, "") }
+		if err := update.ApplyLinux(applyOptions); err != nil {
+			_ = update.WriteReadiness(readyPath, false, "The verified update could not be applied. The previous application has been kept.")
+			log.Print(err)
+			os.Exit(1)
+		}
+		return
+	}
 	if version {
 		fmt.Println(model.Version)
 		return

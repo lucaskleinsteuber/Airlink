@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
 
 func TestThrottledSharesRecheckExpiryAndRevocationAfterWaiting(t *testing.T) {

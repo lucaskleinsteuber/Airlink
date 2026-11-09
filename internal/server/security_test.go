@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
 
 func newSecurityServer(t *testing.T) *Server {

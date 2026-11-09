@@ -20,7 +20,7 @@
   <key>NSDocumentsFolderUsageDescription</key><string>AirLink reads files you select to send and writes accepted files to your selected receive folder.</string>
   <key>NSDesktopFolderUsageDescription</key><string>AirLink accesses Desktop files only when you select them to send or choose Desktop as your receive folder.</string>
   <key>SUPublicEDKey</key><string>Qv0ebRzPio5qS8peZP0RnKqPe+J8mcE0LO3haWpcEjg=</string>
-  <key>SUFeedURL</key><string>https://raw.githubusercontent.com/lucasfd3/Airlink/main/updates/macos.xml</string>
+  <key>SUFeedURL</key><string>https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/macos.xml</string>
   <key>SUEnableAutomaticChecks</key><false/>
   <key>SUAutomaticallyUpdate</key><false/>
   <key>SUAllowsAutomaticUpdates</key><false/>

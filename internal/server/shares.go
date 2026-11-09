@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lucasfd3/Airlink/internal/model"
-	"github.com/lucasfd3/Airlink/internal/shares"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/shares"
 )
 
 func (s *Server) registerShareRoutes(mux *http.ServeMux) {
@@ -31,6 +31,8 @@ func (s *Server) shareSummaries(owner string) []model.Share {
 }
 func (s *Server) shareControl(method string, params json.RawMessage) (any, error) {
 	switch method {
+	case "share.list":
+		return s.shareSummaries(""), nil
 	case "share.create":
 		var v model.ShareCreate
 		if err := json.Unmarshal(params, &v); err != nil {

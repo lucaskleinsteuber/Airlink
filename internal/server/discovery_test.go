@@ -12,7 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/grandcat/zeroconf"
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
 
 func discoveryEntry(id, fingerprint, address string) *zeroconf.ServiceEntry {

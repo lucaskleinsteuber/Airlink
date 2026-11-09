@@ -11,8 +11,10 @@ import sys
 import unittest
 from pathlib import Path
 
-MAINTAINER = "lucasfd3"
-COMMIT_EMAIL = "307191020+lucasfd3@users.noreply.github.com"
+MAINTAINER = "lucaskleinsteuber"
+COMMIT_EMAIL = "307191020+lucaskleinsteuber@users.noreply.github.com"
+APPROVED_IDENTITIES = {(MAINTAINER, COMMIT_EMAIL), ("lucasfd3", "307191020+lucasfd3@users.noreply.github.com")}
+APPROVED_COPYRIGHT = {"lucasfd3", "lucaskleinsteuber", "lucas kleinsteuber"}
 EXAMPLE_USERS = {"test", "example", "user", "username", "shared", "public"}
 EXAMPLE_DOMAINS = {"example.com", "example.org", "example.net", "localhost", "test.invalid"}
 # Reviewed upstream legal texts retain their authors; path/key scans still apply.
@@ -39,11 +41,11 @@ def findings(data, third_party=False):
             found.append((line, "personal home path"))
         for match in EMAIL.finditer(value):
             address = match.group().lower()
-            if not third_party and address != COMMIT_EMAIL.lower() and address.split("@", 1)[1] not in EXAMPLE_DOMAINS:
+            if not third_party and address not in {email for _, email in APPROVED_IDENTITIES} and address.split("@", 1)[1] not in EXAMPLE_DOMAINS:
                 found.append((line, "unreviewed email address"))
         if TOKENS.search(value):
             found.append((line, "credential-shaped token"))
-        if not third_party and re.search(r"copyright.*\b2026\b", value, re.I) and "lucasfd3" not in value.lower():
+        if not third_party and re.search(r"copyright.*\b2026\b", value, re.I) and not any(name in value.lower() for name in APPROVED_COPYRIGHT):
             found.append((line, "first-party copyright identity requires review"))
     for match in PRIVATE_KEY.finditer(text):
         found.append((text[:match.start()].count("\n") + 1, "private key material"))
@@ -84,7 +86,7 @@ def check_history():
     commits = run("rev-list", "--branches", "--tags").decode().splitlines()
     for oid in commits:
         values = run("show", "-s", "--format=%an%x00%ae%x00%cn%x00%ce%x00%B", oid).decode().split("\0", 4)
-        if values[:4] != [MAINTAINER, COMMIT_EMAIL, MAINTAINER, COMMIT_EMAIL]:
+        if tuple(values[:2]) not in APPROVED_IDENTITIES or tuple(values[2:4]) not in APPROVED_IDENTITIES:
             print(f"commit {oid[:12]}: unreviewed author/committer identity", file=sys.stderr)
             errors += 1
         errors += check_file(f"commit {oid[:12]} message", values[4].encode())
@@ -94,7 +96,7 @@ def check_history():
             continue
         body = run("cat-file", "tag", tag).decode()
         identity = next((line for line in body.splitlines() if line.startswith("tagger ")), "")
-        if not identity.startswith(f"tagger {MAINTAINER} <{COMMIT_EMAIL}> "):
+        if not any(identity.startswith(f"tagger {name} <{email}> ") for name,email in APPROVED_IDENTITIES):
             print(f"{tag}: unreviewed tagger identity", file=sys.stderr)
             errors += 1
         errors += check_file(f"{tag} message", body.split("\n\n", 1)[-1].encode())

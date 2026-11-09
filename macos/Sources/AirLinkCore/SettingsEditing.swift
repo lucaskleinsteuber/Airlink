@@ -10,6 +10,7 @@ public enum SettingsEditing {
         if draft.appearance != baseline.appearance { result.appearance = draft.appearance }
         if draft.language != baseline.language { result.language = draft.language }
         if draft.notifications != baseline.notifications { result.notifications = draft.notifications }
+        if draft.automaticUpdateChecks != baseline.automaticUpdateChecks { result.automaticUpdateChecks = draft.automaticUpdateChecks }
         if draft.sendLimitBytesPerSecond != baseline.sendLimitBytesPerSecond { result.sendLimitBytesPerSecond = draft.sendLimitBytesPerSecond }
         if draft.receiveLimitBytesPerSecond != baseline.receiveLimitBytesPerSecond { result.receiveLimitBytesPerSecond = draft.receiveLimitBytesPerSecond }
         if draft.shortcut.enabled != baseline.shortcut.enabled { result.shortcut.enabled = draft.shortcut.enabled }

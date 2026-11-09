@@ -1,0 +1,2 @@
+#pragma once
+namespace AirLink { inline constexpr auto Version = "@AIRLINK_VERSION@"; }

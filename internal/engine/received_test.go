@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
 
 func completedReceivedManifest(t *testing.T, e *Engine, files []model.File, contents map[string][]byte) model.Transfer {

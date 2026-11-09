@@ -138,7 +138,7 @@ struct SettingsView: View {
                 Section("AirLink") {
                     LabeledContent(model.text("Version", "Version"), value: model.version)
                     Text(model.text("Dateien direkt in deinem Netzwerk teilen. Die Übertragung ist verschlüsselt und wird auf Dateiintegrität geprüft.", "Share files directly on your network. Transfers are encrypted and checked for file integrity.")).foregroundStyle(.secondary)
-                    Link(model.text("Entwicklungsstände herunterladen …", "Download development builds …"), destination: URL(string: "https://github.com/lucasfd3/Airlink/releases")!)
+                    Link(model.text("Entwicklungsstände herunterladen …", "Download development builds …"), destination: URL(string: "https://github.com/lucaskleinsteuber/Airlink/releases")!)
                     Text(model.text("Entwicklungsstände lädst du mit deinem berechtigten GitHub-Konto herunter und installierst sie manuell.", "Download development builds using your authorized GitHub account and install them manually.")).font(.caption).foregroundStyle(.secondary)
                 }
             }

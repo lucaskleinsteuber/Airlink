@@ -31,6 +31,9 @@ public struct Transfer: Codable, Identifiable, Sendable {
     public var error: String?
     public var destination: String?
     public var skippedBytes: Int64?
+    public var summary: Bool?
+    public var fileCount: Int?
+    public var hasContent: Bool?
     public var avoidedBytes: Int64 { max(0, skippedBytes ?? 0) }
     public var accountedBytes: Int64 {
         let confirmed = max(0, completedBytes)
@@ -45,7 +48,8 @@ public struct Transfer: Codable, Identifiable, Sendable {
     public var isActive: Bool { ["offered", "queued", "running", "paused", "reconnecting", "verifying", "checkingDuplicate", "waitingDuplicate"].contains(state) }
     public var pendingDuplicateFiles: [TransferFile] { direction == "receive" ? files.filter { $0.duplicateState == "pending" && !$0.isSkipped } : [] }
     public var canResolveDuplicates: Bool { direction == "receive" && ["waitingDuplicate", "running", "queued"].contains(state) }
-    public var hasReceivedContent: Bool { direction == "receive" && files.contains { $0.directory == true || ($0.completed && !$0.isSkipped) } }
+    public var hasReceivedContent: Bool { direction == "receive" && (hasContent == true || files.contains { $0.directory == true || ($0.completed && !$0.isSkipped) }) }
+    public var numberOfFiles: Int { fileCount ?? files.count }
     public var title: String { files.first?.path.components(separatedBy: "/").last ?? "Transfer" }
 }
 
@@ -93,6 +97,7 @@ public struct HostSettings: Codable, Equatable, Sendable {
     public var appearance: String
     public var language: String
     public var notifications: Bool
+    public var automaticUpdateChecks: Bool = false
     public var sendLimitBytesPerSecond: Int64
     public var receiveLimitBytesPerSecond: Int64
     public var shortcut: Shortcut
@@ -104,7 +109,7 @@ public struct HostSettings: Codable, Equatable, Sendable {
         self.organization = organization
     }
     enum CodingKeys: String, CodingKey {
-        case name, receiveDirectory, appearance, language, notifications, sendLimitBytesPerSecond, receiveLimitBytesPerSecond, shortcut, organization, setupCompleted
+        case name, receiveDirectory, appearance, language, notifications, automaticUpdateChecks, sendLimitBytesPerSecond, receiveLimitBytesPerSecond, shortcut, organization, setupCompleted
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -114,6 +119,7 @@ public struct HostSettings: Codable, Equatable, Sendable {
         appearance = try c.decode(String.self, forKey: .appearance)
         language = try c.decode(String.self, forKey: .language)
         notifications = try c.decode(Bool.self, forKey: .notifications)
+        automaticUpdateChecks = try c.decodeIfPresent(Bool.self, forKey: .automaticUpdateChecks) ?? false
         sendLimitBytesPerSecond = try c.decodeIfPresent(Int64.self, forKey: .sendLimitBytesPerSecond) ?? 0
         receiveLimitBytesPerSecond = try c.decodeIfPresent(Int64.self, forKey: .receiveLimitBytesPerSecond) ?? 0
         shortcut = try c.decodeIfPresent(Shortcut.self, forKey: .shortcut) ?? Shortcut()
@@ -122,6 +128,12 @@ public struct HostSettings: Codable, Equatable, Sendable {
 }
 
 public struct HostStatus: Codable, Sendable {
+    public var summary: Bool?
+    public var activeTransferCount: Int?
+    public var activeRelayCount: Int?
+    public var capabilities: [String]?
+    public var pairingSessions: [PairingSession]?
+    public var preparations: [Preparation]?
     public var version: String
     public var id: String
     public var name: String

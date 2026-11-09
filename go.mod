@@ -1,4 +1,4 @@
-module github.com/lucasfd3/Airlink
+module github.com/lucaskleinsteuber/Airlink
 
 go 1.27.0
 

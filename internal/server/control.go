@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lucasfd3/Airlink/internal/engine"
-	"github.com/lucasfd3/Airlink/internal/model"
-	"github.com/lucasfd3/Airlink/internal/traffic"
+	"github.com/lucaskleinsteuber/Airlink/internal/engine"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/traffic"
 	qrcode "github.com/skip2/go-qrcode"
 )
 
@@ -25,6 +25,12 @@ type rpcRequest struct {
 }
 
 func (s *Server) Control(method string, params json.RawMessage) (any, error) {
+	if strings.HasPrefix(method, "pairing.") {
+		return s.pairingControl(method, params)
+	}
+	if strings.HasPrefix(method, "preparation.") {
+		return s.preparationControl(method, params)
+	}
 	if strings.HasPrefix(method, "duplicate.") {
 		return s.duplicateControl(method, params)
 	}
@@ -47,6 +53,37 @@ func (s *Server) Control(method string, params json.RawMessage) (any, error) {
 	switch method {
 	case "status":
 		return s.Status(), nil
+	case "status.summary":
+		return s.summaryStatus(), nil
+	case "statistics.get":
+		return s.statistics(""), nil
+	case "connection.qr":
+		var input struct {
+			URL string `json:"url"`
+		}
+		if err := json.Unmarshal(params, &input); err != nil {
+			return nil, err
+		}
+		allowed := append(s.currentURLs(s.urls), s.currentURLs(s.setupURLs)...)
+		for _, address := range allowed {
+			if address == input.URL {
+				png, err := qrcode.Encode(address, qrcode.Medium, 384)
+				return map[string]any{"png": png}, err
+			}
+		}
+		return nil, errors.New("choose one of this host's connection addresses")
+	case "transfer.files":
+		var v struct {
+			ID     string `json:"id"`
+			Offset int    `json:"offset"`
+			Limit  int    `json:"limit"`
+		}
+		if err := json.Unmarshal(params, &v); err != nil {
+			return nil, err
+		}
+		return s.engine.FilePage(v.ID, v.Offset, v.Limit)
+	case "transfer.get":
+		return s.engine.Get(id.ID)
 	case "pair.approve":
 		return map[string]bool{"ok": true}, s.approvePair(id.ID, true)
 	case "pair.approveTrusted":
@@ -62,6 +99,9 @@ func (s *Server) Control(method string, params json.RawMessage) (any, error) {
 			return nil, err
 		}
 		s.pauseDisallowedTransfers(d)
+		if !d.CanReceive {
+			s.cancelDevicePreparations(d.ID)
+		}
 		if !d.CanRelay {
 			s.cancelDeviceRelays(d.ID)
 		} else {
@@ -77,6 +117,7 @@ func (s *Server) Control(method string, params json.RawMessage) (any, error) {
 		if err := s.store.revoke(id.ID); err != nil {
 			return nil, err
 		}
+		s.cancelDevicePreparations(id.ID)
 		s.cancelDeviceRelays(id.ID)
 		s.dismissDeviceClipboard(id.ID)
 		s.cancelDeviceRequests(id.ID)
@@ -114,23 +155,7 @@ func (s *Server) Control(method string, params json.RawMessage) (any, error) {
 		s.stopTransferRequests(id.ID)
 		return map[string]bool{"ok": true}, err
 	case "offer":
-		var v struct {
-			DeviceID  string   `json:"deviceId"`
-			Paths     []string `json:"paths"`
-			RequestID string   `json:"requestId"`
-		}
-		if e := json.Unmarshal(params, &v); e != nil {
-			return nil, e
-		}
-		rec, ok := s.store.snapshot().Devices[v.DeviceID]
-		if !ok {
-			return nil, errors.New("pair the receiving device first")
-		}
-		transfer, err := s.engine.OfferWithRequestID(rec.Device, v.Paths, v.RequestID)
-		if err == nil {
-			s.wakeOutgoing()
-		}
-		return transfer, err
+		return s.offerControl(s.ctx, params)
 	case "peer.connect", "peer.connectTrusted":
 		var v struct {
 			URL         string `json:"url"`
@@ -209,6 +234,7 @@ func (s *Server) Stdio(in io.Reader, out io.Writer) error {
 		return outputError
 	}
 	resolveSlots := make(chan struct{}, 2)
+	offerSlots := make(chan struct{}, 2)
 	for scan.Scan() {
 		var req rpcRequest
 		if err := json.Unmarshal(scan.Bytes(), &req); err != nil {
@@ -235,6 +261,29 @@ func (s *Server) Stdio(in io.Reader, out io.Writer) error {
 				}(req)
 			default:
 				if e := write(map[string]any{"id": req.ID, "error": "two duplicate decisions are already being checked"}); e != nil {
+					return e
+				}
+			}
+			continue
+		}
+		if req.Method == "offer" {
+			select {
+			case offerSlots <- struct{}{}:
+				workers.Add(1)
+				go func(req rpcRequest) {
+					defer workers.Done()
+					defer func() { <-offerSlots }()
+					result, err := s.offerControl(ctx, req.Params)
+					reply := map[string]any{"id": req.ID}
+					if err != nil {
+						reply["error"] = err.Error()
+					} else {
+						reply["result"] = result
+					}
+					_ = write(reply)
+				}(req)
+			default:
+				if e := write(map[string]any{"id": req.ID, "error": "two source selections are already being prepared"}); e != nil {
 					return e
 				}
 			}

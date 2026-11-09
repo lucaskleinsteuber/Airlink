@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
 
 func (s *Server) outgoingLoop() {
@@ -276,62 +276,87 @@ func (s *Server) sendTransfer(ctx context.Context, t model.Transfer, rec deviceR
 				continue
 			}
 			_ = s.engine.MarkOutgoingProgress(t.ID, f.ID, f.Received, hash)
-			for offset := f.Received; offset < f.Size; {
-				own, err := s.engine.Get(t.ID)
-				if err != nil || own.State == "paused" || own.State == "cancelled" || ctx.Err() != nil {
-					return
-				}
-				if own.State != "running" {
-					retryTransfer = true
-					break
-				}
-				data, chunkHash, err := s.engine.ReadSourceChunk(ctx, t.ID, f.ID, offset/model.ChunkSize)
-				if err != nil {
-					if ctx.Err() != nil {
-						return
+			blocks, stopPrefetch := prefetchBlocks(ctx, f.Received/model.ChunkSize, (f.Size+model.ChunkSize-1)/model.ChunkSize, func(readCtx context.Context, index int64) ([]byte, string, error) {
+				return s.engine.ReadSourceChunk(readCtx, t.ID, f.ID, index)
+			})
+			// This scope releases a prefetched block on every pause, error or
+			// early return without leaving a producer behind the transfer.
+			chunkResult := func() bool {
+				defer stopPrefetch()
+				for offset := f.Received; offset < f.Size; {
+					own, err := s.engine.Get(t.ID)
+					if err != nil || own.State == "paused" || own.State == "cancelled" || ctx.Err() != nil {
+						return false
 					}
-					_ = s.engine.Fail(t.ID, err.Error())
-					return
-				}
-				raw := fmt.Sprintf("%s/%s/files/%s/chunks/%d", base, remote, f.ID, offset/model.ChunkSize)
-				chunkCtx, chunkCancel := context.WithCancel(ctx)
-				req, err := http.NewRequestWithContext(chunkCtx, "PUT", raw, s.traffic.WrapReader(chunkCtx, bytes.NewReader(data), "send"))
-				if err != nil {
-					chunkCancel()
-					return
-				}
-				req.Header.Set("Authorization", "Bearer "+rec.OutboundToken)
-				req.Header.Set("X-Chunk-SHA256", chunkHash)
-				req.Header.Set("Content-Type", "application/octet-stream")
-				// The block already exists in a bounded buffer. Explicit length
-				// avoids chunked request framing around every metered 32 KiB read.
-				req.ContentLength = int64(len(data))
-				res, err := client.Do(req)
-				if err == nil {
-					if res.StatusCode != 200 {
-						b, _ := io.ReadAll(io.LimitReader(res.Body, 1024))
-						err = &peerHTTPError{Code: res.StatusCode, Message: string(b)}
+					if own.State != "running" {
+						retryTransfer = true
+						break
 					}
-					_, _ = io.Copy(io.Discard, res.Body)
-					_ = res.Body.Close()
-				}
-				chunkCancel()
-				if err != nil {
-					if ctx.Err() != nil {
-						return
+					var block sourceBlock
+					select {
+					case next, ok := <-blocks:
+						if !ok {
+							return false
+						}
+						block = next
+					case <-ctx.Done():
+						return false
 					}
-					if permanentPeerError(err) {
+					data, chunkHash, err := block.data, block.hash, block.err
+					if block.index != offset/model.ChunkSize {
+						return false
+					}
+					if err != nil {
+						if ctx.Err() != nil {
+							return false
+						}
 						_ = s.engine.Fail(t.ID, err.Error())
-						return
+						return false
 					}
-					_ = s.engine.MarkReconnecting(t.ID, err.Error())
-					retryTransfer = true
-					break
+					raw := fmt.Sprintf("%s/%s/files/%s/chunks/%d", base, remote, f.ID, offset/model.ChunkSize)
+					chunkCtx, chunkCancel := context.WithCancel(ctx)
+					req, err := http.NewRequestWithContext(chunkCtx, "PUT", raw, s.traffic.WrapReader(chunkCtx, bytes.NewReader(data), "send"))
+					if err != nil {
+						chunkCancel()
+						return false
+					}
+					req.Header.Set("Authorization", "Bearer "+rec.OutboundToken)
+					req.Header.Set("X-Chunk-SHA256", chunkHash)
+					req.Header.Set("Content-Type", "application/octet-stream")
+					// The block already exists in a bounded buffer. Explicit length
+					// avoids chunked request framing around every metered 32 KiB read.
+					req.ContentLength = int64(len(data))
+					res, err := client.Do(req)
+					if err == nil {
+						if res.StatusCode != 200 {
+							b, _ := io.ReadAll(io.LimitReader(res.Body, 1024))
+							err = &peerHTTPError{Code: res.StatusCode, Message: string(b)}
+						}
+						_, _ = io.Copy(io.Discard, res.Body)
+						_ = res.Body.Close()
+					}
+					chunkCancel()
+					if err != nil {
+						if ctx.Err() != nil {
+							return false
+						}
+						if permanentPeerError(err) {
+							_ = s.engine.Fail(t.ID, err.Error())
+							return false
+						}
+						_ = s.engine.MarkReconnecting(t.ID, err.Error())
+						retryTransfer = true
+						break
+					}
+					offset += int64(len(data))
+					if err = s.engine.MarkOutgoingProgress(t.ID, f.ID, offset, hash); err != nil {
+						return false
+					}
 				}
-				offset += int64(len(data))
-				if err = s.engine.MarkOutgoingProgress(t.ID, f.ID, offset, hash); err != nil {
-					return
-				}
+				return true
+			}()
+			if !chunkResult {
+				return
 			}
 			if retryTransfer {
 				break

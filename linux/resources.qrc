@@ -1,0 +1,1 @@
+<RCC><qresource prefix="/airlink"><file alias="icon.svg">../windows/AirLink.Windows/Assets/AirLink.svg</file><file alias="LICENSE">../LICENSE</file><file alias="update-keys.json">../updates/public-keys.json</file></qresource></RCC>

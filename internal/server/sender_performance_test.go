@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lucasfd3/Airlink/internal/engine"
-	"github.com/lucasfd3/Airlink/internal/model"
-	"github.com/lucasfd3/Airlink/internal/traffic"
+	"github.com/lucaskleinsteuber/Airlink/internal/engine"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/traffic"
 )
 
 // With polling disabled, only the actual private offer wake can start this

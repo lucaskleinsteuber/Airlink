@@ -32,8 +32,10 @@ import zlib
 from pathlib import Path, PurePosixPath
 from unittest import mock
 
-MAINTAINER = 'lucasfd3'
-COMMIT_EMAIL = '307191020+lucasfd3@users.noreply.github.com'
+MAINTAINER = 'lucaskleinsteuber'
+COMMIT_EMAIL = '307191020+lucaskleinsteuber@users.noreply.github.com'
+APPROVED_COPYRIGHT = ('lucasfd3', 'lucaskleinsteuber', 'Lucas Kleinsteuber')
+APPROVED_EMAILS = {COMMIT_EMAIL.lower(), '307191020+lucasfd3@users.noreply.github.com'}
 BUNDLE_MARKER = bytes.fromhex('8b1202b96a612038727b930214d7a03213f5b9e6efae3318ee3b2dce24b36aae')
 EXAMPLE_USERS = {'test', 'example', 'user', 'username', 'shared', 'public'}
 HOME = re.compile(r'(?:/Users/|/home/)([A-Za-z0-9_.-]+)|[A-Za-z]:\\+Users\\+([A-Za-z0-9_.-]+)', re.I)
@@ -248,11 +250,11 @@ def content_findings(data, first_party=False):
         if KEY.search(text): found.add('private key material')
         if first_party:
             for m in COPYRIGHT.finditer(text):
-                if not re.match(re.escape(MAINTAINER) + r'(?:\b|$)', m.group(1), re.I):
+                if not any(re.match(re.escape(name) + r'(?:\b|$)', m.group(1), re.I) for name in APPROVED_COPYRIGHT):
                     found.add('first-party copyright identity requires review')
             for m in EMAIL.finditer(text):
                 address = m.group().lower()
-                if address != COMMIT_EMAIL.lower() and address.split('@')[1] not in {'example.com', 'example.org', 'example.net', 'localhost', 'test.invalid'}:
+                if address not in APPROVED_EMAILS and address.split('@')[1] not in {'example.com', 'example.org', 'example.net', 'localhost', 'test.invalid'}:
                     found.add('first-party email address requires review')
     return found
 

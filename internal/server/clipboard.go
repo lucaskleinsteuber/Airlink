@@ -10,7 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
 
 const clipboardMaxBytes = 64 * 1024
@@ -146,6 +146,8 @@ func (s *Server) sendClipboard(deviceID, text string) (model.ClipboardMessage, e
 }
 func (s *Server) clipboardControl(method string, params json.RawMessage) (any, error) {
 	switch method {
+	case "clipboard.list":
+		return s.clipboardSnapshot(""), nil
 	case "clipboard.send":
 		var v struct {
 			DeviceID string `json:"deviceId"`

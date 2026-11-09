@@ -29,7 +29,7 @@ public sealed record WindowsUpdateChannel(string Architecture, Uri Feed, string 
         if (root.GetProperty("schemaVersion").GetInt32() != 1 || root.GetProperty("algorithm").GetString() != "Ed25519") throw new InvalidDataException("The update signing configuration is unsupported.");
         var key = root.GetProperty("publicKey").GetString() ?? "";
         if (!StrictUpdateSignatures.IsBase64(key, 32)) throw new InvalidDataException("The update verification key is invalid.");
-        var expected = new Uri("https://raw.githubusercontent.com/lucasfd3/Airlink/main/updates/windows-" + name + ".xml");
+        var expected = new Uri("https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/windows-" + name + ".xml");
         if (root.GetProperty("feeds").GetProperty("windows-" + name).GetString() != expected.AbsoluteUri) throw new InvalidDataException("The Windows update feed is unexpected.");
         return new(name, expected, key);
     }
@@ -130,7 +130,7 @@ public sealed class WindowsUpdateFilter(string architecture) : IAppCastFilter
     {
         if (architecture is not ("x64" or "arm64") || item.Version is null || !ReleaseVersion.IsMatch(item.Version) || !System.Version.TryParse(item.Version, out _)) return false;
         if (item.OperatingSystem != "windows" || item.UpdateSize <= 0 || item.UpdateSize > 1024L * 1024 * 1024 || !StrictUpdateSignatures.IsBase64(item.DownloadSignature ?? "", 64)) return false;
-        var expected = "https://github.com/lucasfd3/Airlink/releases/download/v" + item.Version + "/AirLink-" + item.Version + "-windows-" + architecture + "-setup.exe";
+        var expected = "https://github.com/lucaskleinsteuber/Airlink/releases/download/v" + item.Version + "/AirLink-" + item.Version + "-windows-" + architecture + "-setup.exe";
         return item.DownloadLink == expected;
     }
 }

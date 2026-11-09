@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
 
 func interruptRequestOnCancellation(ctx context.Context, w http.ResponseWriter, r *http.Request) func() {

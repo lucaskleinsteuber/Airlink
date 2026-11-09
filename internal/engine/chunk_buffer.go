@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
 
 // Block lengths come from the validated manifest. Allocating that exact size

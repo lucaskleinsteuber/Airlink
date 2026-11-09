@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lucasfd3/Airlink/internal/model"
-	"github.com/lucasfd3/Airlink/internal/relay"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/relay"
 )
 
 func (s *Server) registerRelayRoutes(_ *http.ServeMux)         {}

@@ -20,7 +20,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 	_ "modernc.org/sqlite"
 )
 
@@ -210,6 +210,29 @@ func (s *Store) List(actor string) []model.Relay {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt > out[j].CreatedAt })
 	return out
+}
+
+// ActiveSummaries is for the desktop's recurring status. Do not copy retained
+// relay manifests or their transport bookkeeping just to draw a tray badge.
+func (s *Store) ActiveSummaries() ([]model.Relay, int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := []model.Relay{}
+	active := 0
+	for _, r := range s.records {
+		v := r.Relay
+		if v.State == "delivered" || v.State == "failed" || v.State == "cancelled" {
+			continue
+		}
+		active++
+		if len(out) >= 100 {
+			continue
+		}
+		v.Files = append([]model.File{}, v.Files[:min(3, len(v.Files))]...)
+		out = append(out, v)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, active
 }
 func cleanFilePath(p string) bool {
 	if p == "" || p == "." || path.Clean(p) != p || strings.HasPrefix(p, "/") || strings.ContainsAny(p, "\\:\x00") {

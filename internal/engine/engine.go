@@ -22,7 +22,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 	_ "modernc.org/sqlite"
 )
 
@@ -1093,12 +1093,18 @@ func (e *Engine) Offer(device model.Device, paths []string) (model.Transfer, err
 	return e.offer(device, paths, "", "")
 }
 func (e *Engine) offer(device model.Device, paths []string, requestID, inputHash string) (model.Transfer, error) {
+	return e.offerContext(e.ctx, device, paths, requestID, inputHash)
+}
+func (e *Engine) offerContext(ctx context.Context, device model.Device, paths []string, requestID, inputHash string) (model.Transfer, error) {
 	if !device.CanReceive {
 		return model.Transfer{}, fmt.Errorf("%w: device cannot receive", ErrConflict)
 	}
 	files := []model.File{}
 	sources := map[string]source{}
 	for _, selected := range paths {
+		if err := ctx.Err(); err != nil {
+			return model.Transfer{}, err
+		}
 		if !filepath.IsAbs(selected) {
 			return model.Transfer{}, ErrInvalid
 		}
@@ -1118,6 +1124,9 @@ func (e *Engine) offer(device model.Device, paths []string, requestID, inputHash
 		}
 		base := filepath.Base(selected)
 		err = filepath.WalkDir(selected, func(p string, d fs.DirEntry, walkErr error) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if walkErr != nil {
 				return walkErr
 			}
@@ -1161,6 +1170,9 @@ func (e *Engine) offer(device model.Device, paths []string, requestID, inputHash
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return model.Transfer{}, err
+	}
 	if e.closed {
 		return model.Transfer{}, errors.New("engine closed")
 	}

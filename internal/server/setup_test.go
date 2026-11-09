@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
 
 func TestNewSetupDefaultsToDownloadsAndPreservesLegacyCustomSettings(t *testing.T) {

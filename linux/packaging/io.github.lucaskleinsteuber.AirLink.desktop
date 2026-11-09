@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=AirLink
+Comment=Send files to your devices on the local network
+Comment[de]=Dateien im lokalen Netzwerk an deine Geräte senden
+Exec=airlink %F
+Icon=io.github.lucaskleinsteuber.AirLink
+Terminal=false
+Categories=Network;FileTransfer;
+StartupNotify=true
+StartupWMClass=io.github.lucaskleinsteuber.AirLink
+Keywords=files;transfer;local;share;

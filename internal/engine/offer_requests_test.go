@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
 
 func offerSource(t *testing.T) string {

@@ -21,8 +21,8 @@ import (
 )
 
 const seedName = "ed25519.seed"
-const feedBase = "https://raw.githubusercontent.com/lucasfd3/Airlink/main/updates/"
-const releaseBase = "https://github.com/lucasfd3/Airlink/releases/download/"
+const feedBase = "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/"
+const releaseBase = "https://github.com/lucaskleinsteuber/Airlink/releases/download/"
 const sparkleNamespace = "http://www.andymatuschak.org/xml-namespaces/sparkle"
 
 type publicConfiguration struct {

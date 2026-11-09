@@ -1,6 +1,6 @@
 package server
 
-import "github.com/lucasfd3/Airlink/internal/model"
+import "github.com/lucaskleinsteuber/Airlink/internal/model"
 
 func publicTransfer(t model.Transfer) model.Transfer {
 	t.Destination = ""

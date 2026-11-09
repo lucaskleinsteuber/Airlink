@@ -4,6 +4,7 @@ public struct SetupDraft: Equatable, Sendable {
     public var name: String
     public var receiveDirectory: String
     public var notifications: Bool
+    public var automaticUpdateChecks: Bool = false
     public init(name: String, receiveDirectory: String, notifications: Bool = false) { self.name = name; self.receiveDirectory = receiveDirectory; self.notifications = notifications }
     public var normalizedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
     public var validName: Bool {

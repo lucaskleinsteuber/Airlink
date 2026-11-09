@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lucasfd3/Airlink/internal/engine"
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/engine"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
 
 func historyReceived(t *testing.T, s *Server, d model.Device, path string, data []byte) model.Transfer {

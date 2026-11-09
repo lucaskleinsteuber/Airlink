@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
 
 // This optional compatibility run executes only a previous headless helper in

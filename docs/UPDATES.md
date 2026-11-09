@@ -2,7 +2,7 @@
 
 AirLink 0.9 has explicit native **Check for Updates…** actions. The macOS action is in the AirLink application menu and menu-bar panel; Windows exposes it in Settings and the tray menu. An app predating the updater needs one manual installation first.
 
-The active repository is private during development. The owner downloads and installs new versions manually from [GitHub Releases](https://github.com/lucasfd3/Airlink/releases) while signed in with repository access. The existing updater has no private-repository authentication and cannot retrieve these private feeds or downloads. A later public release requires a new owner decision.
+The active repository is private during development. The owner downloads and installs new versions manually from [GitHub Releases](https://github.com/lucaskleinsteuber/Airlink/releases) while signed in with repository access. The existing updater has no private-repository authentication and cannot retrieve these private feeds or downloads. A later public release requires a new owner decision.
 
 Checks initialize lazily after that action. No scheduled check, automatic download or system profiling is enabled. LAN file transfers remain usable without internet. Token-free GitHub delivery requires the active repository, feeds and download assets to be publicly accessible. A private/missing feed is unavailable; it must not be reported as evidence that the installed version is current. No GitHub PAT is bundled.
 

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
 
 func sourceOffer(t *testing.T, e *Engine, body []byte) (model.Transfer, string) {

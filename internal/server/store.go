@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
 
 type deviceRecord struct {
@@ -20,9 +20,10 @@ type deviceRecord struct {
 	PendingReturnToken string       `json:"pendingReturnToken,omitempty"`
 }
 type persisted struct {
-	ID       string                  `json:"id"`
-	Settings model.Settings          `json:"settings"`
-	Devices  map[string]deviceRecord `json:"devices"`
+	ID       string                   `json:"id"`
+	Settings model.Settings           `json:"settings"`
+	Devices  map[string]deviceRecord  `json:"devices"`
+	Pairings map[string]pairingRecord `json:"pairings,omitempty"`
 }
 type stateStore struct {
 	sync.Mutex
@@ -54,6 +55,9 @@ func openStore(dir, receive string) (*stateStore, error) {
 	}
 	if s.data.Devices == nil {
 		s.data.Devices = map[string]deviceRecord{}
+	}
+	if s.data.Pairings == nil {
+		s.data.Pairings = map[string]pairingRecord{}
 	}
 	if s.data.Settings.Organization.Rules == nil {
 		s.data.Settings.Organization.Rules = []model.SortRule{}
@@ -105,6 +109,10 @@ func (s *stateStore) snapshot() persisted {
 	p.Devices = map[string]deviceRecord{}
 	for k, v := range s.data.Devices {
 		p.Devices[k] = v
+	}
+	p.Pairings = map[string]pairingRecord{}
+	for k, v := range s.data.Pairings {
+		p.Pairings[k] = v
 	}
 	return p
 }
@@ -161,5 +169,10 @@ func (s *stateStore) revoke(id string) error {
 	s.Lock()
 	defer s.Unlock()
 	delete(s.data.Devices, id)
+	for key, p := range s.data.Pairings {
+		if p.Peer.ID == id {
+			delete(s.data.Pairings, key)
+		}
+	}
 	return s.save()
 }

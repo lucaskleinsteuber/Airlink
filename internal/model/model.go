@@ -32,6 +32,10 @@ type Transfer struct {
 	Error          string  `json:"error,omitempty"`
 	Destination    string  `json:"destination,omitempty"`
 	SkippedBytes   int64   `json:"skippedBytes"`
+	Title          string  `json:"title,omitempty"`
+	FileCount      int     `json:"fileCount,omitempty"`
+	Summary        bool    `json:"summary,omitempty"`
+	HasContent     bool    `json:"hasContent,omitempty"`
 }
 type Device struct {
 	ID           string `json:"id"`
@@ -61,31 +65,60 @@ type Settings struct {
 	Appearance                 string       `json:"appearance"`
 	Language                   string       `json:"language"`
 	Notifications              bool         `json:"notifications"`
+	AutomaticUpdateChecks      bool         `json:"automaticUpdateChecks"`
 	SendLimitBytesPerSecond    int64        `json:"sendLimitBytesPerSecond"`
 	ReceiveLimitBytesPerSecond int64        `json:"receiveLimitBytesPerSecond"`
 	Shortcut                   Shortcut     `json:"shortcut"`
 	Organization               Organization `json:"organization"`
 }
 type Status struct {
-	Version          string             `json:"version"`
-	ID               string             `json:"id"`
-	Name             string             `json:"name"`
-	URLs             []string           `json:"urls"`
-	SetupURLs        []string           `json:"setupURLs"`
-	Fingerprint      string             `json:"fingerprint"`
-	CertificatePath  string             `json:"certificatePath,omitempty"`
-	ChunkSize        int64              `json:"chunkSize"`
-	Devices          []Device           `json:"devices"`
-	Transfers        []Transfer         `json:"transfers"`
-	PairRequests     []PairRequest      `json:"pairRequests"`
-	Settings         Settings           `json:"settings"`
-	Shares           []Share            `json:"shares"`
-	Clipboard        []ClipboardMessage `json:"clipboard"`
-	ClipboardAllowed bool               `json:"clipboardAllowed"`
-	CurrentDeviceID  string             `json:"currentDeviceId"`
-	RelayDevices     []Device           `json:"relayDevices"`
-	Relays           []Relay            `json:"relays"`
-	Statistics       Statistics         `json:"statistics"`
+	Summary             bool               `json:"summary,omitempty"`
+	Capabilities        []string           `json:"capabilities,omitempty"`
+	ActiveTransferCount int                `json:"activeTransferCount,omitempty"`
+	ActiveRelayCount    int                `json:"activeRelayCount,omitempty"`
+	Preparations        []Preparation      `json:"preparations,omitempty"`
+	PairingSessions     []PairingSession   `json:"pairingSessions,omitempty"`
+	Version             string             `json:"version"`
+	ID                  string             `json:"id"`
+	Name                string             `json:"name"`
+	URLs                []string           `json:"urls"`
+	SetupURLs           []string           `json:"setupURLs"`
+	Fingerprint         string             `json:"fingerprint"`
+	CertificatePath     string             `json:"certificatePath,omitempty"`
+	ChunkSize           int64              `json:"chunkSize"`
+	Devices             []Device           `json:"devices"`
+	Transfers           []Transfer         `json:"transfers"`
+	PairRequests        []PairRequest      `json:"pairRequests"`
+	Settings            Settings           `json:"settings"`
+	Shares              []Share            `json:"shares"`
+	Clipboard           []ClipboardMessage `json:"clipboard"`
+	ClipboardAllowed    bool               `json:"clipboardAllowed"`
+	CurrentDeviceID     string             `json:"currentDeviceId"`
+	RelayDevices        []Device           `json:"relayDevices"`
+	Relays              []Relay            `json:"relays"`
+	Statistics          Statistics         `json:"statistics"`
+}
+
+type Preparation struct {
+	ID         string `json:"id"`
+	RequestID  string `json:"requestId"`
+	DeviceID   string `json:"deviceId"`
+	State      string `json:"state"`
+	TransferID string `json:"transferId,omitempty"`
+	Error      string `json:"error,omitempty"`
+}
+
+type PairingSession struct {
+	ID               string `json:"id"`
+	PeerID           string `json:"peerId"`
+	PeerName         string `json:"peerName"`
+	State            string `json:"state"`
+	ComparisonCode   string `json:"comparisonCode,omitempty"`
+	ExpiresAt        string `json:"expiresAt"`
+	LocalConfirmed   bool   `json:"localConfirmed"`
+	RemoteConfirmed  bool   `json:"remoteConfirmed"`
+	AutomaticReceive bool   `json:"automaticReceive"`
+	Error            string `json:"error,omitempty"`
 }
 type Offer struct {
 	Files []File `json:"files"`

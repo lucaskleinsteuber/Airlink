@@ -52,7 +52,7 @@ internal static class UpdateTests
         try { WindowsUpdateChannel.Load(Architecture.X86); throw new InvalidOperationException("An unsupported native architecture received an update channel"); }
         catch (PlatformNotSupportedException) { }
         var filter = new WindowsUpdateFilter("x64");
-        AppCastItem Item(string version, string arch) => new() { Version = version, OperatingSystem = "windows", UpdateSize = 1024, DownloadSignature = Convert.ToBase64String(new byte[64]), DownloadLink = "https://github.com/lucasfd3/Airlink/releases/download/v" + version + "/AirLink-" + version + "-windows-" + arch + "-setup.exe" };
+        AppCastItem Item(string version, string arch) => new() { Version = version, OperatingSystem = "windows", UpdateSize = 1024, DownloadSignature = Convert.ToBase64String(new byte[64]), DownloadLink = "https://github.com/lucaskleinsteuber/Airlink/releases/download/v" + version + "/AirLink-" + version + "-windows-" + arch + "-setup.exe" };
         var latest = Item("0.11.0", "x64");
         var candidates = filter.GetFilteredAppCastItems(SemVerLike.Parse("0.9.0"), [Item("0.8.1", "x64"), Item("0.12.0", "arm64"), Item("0.10.0", "x64"), latest]).ToArray();
         Require(candidates.Length == 1 && ReferenceEquals(candidates[0], latest), "Update selection accepted a downgrade, another architecture or the wrong newest release");
