@@ -46,6 +46,7 @@ internal static class Program
             ("desktop notices announce new attention without replaying old results", DesktopNoticeTests.Transitions),
             ("recent results keep an old transfer's new completion visible", DesktopNoticeTests.RecentResults),
             ("private transport correlates out-of-order replies and reports remote errors", CorrelatedReplies),
+            ("helper fixture readiness is independent of the command deadline", StartupReadiness),
             ("request timeout and explicit cancellation preserve a live connection", TimeoutAndCancellation),
             ("long filesystem commands do not inherit the status timeout", LongOperations),
             ("immediate startup failure includes its diagnostic and can retry", StartupFailureAndRetry),
@@ -89,6 +90,7 @@ internal static class Program
         public string Data => Path.Combine(Root, "state");
         public string Received => Path.Combine(Root, "received");
         public string ModePath => Path.Combine(Data, "test-mode");
+        public string ReadyPath => Path.Combine(Data, "test-ready");
         public Fixture() { Directory.CreateDirectory(Data); }
         public void Mode(string mode) => File.WriteAllText(ModePath, mode);
         public ValueTask DisposeAsync() { Directory.Delete(Root, recursive: true); return ValueTask.CompletedTask; }
@@ -112,9 +114,29 @@ internal static class Program
 
     private static async Task Ready(DaemonClient client, Fixture fixture)
     {
+        // Process creation/JIT/antivirus scheduling is not the command under
+        // test. Wait for this fake process's explicit startup marker while
+        // retaining the short request deadline for the protocol assertions.
+        if (!client.IsRunning) File.Delete(fixture.ReadyPath);
         await client.StartAsync(FakeExecutable, fixture.Data, fixture.Received);
+        var startup = Stopwatch.StartNew();
+        while (!File.Exists(fixture.ReadyPath))
+        {
+            Require(client.IsRunning, "Fake helper exited before startup readiness");
+            if (startup.Elapsed > TimeSpan.FromSeconds(30)) throw new TimeoutException("Fake helper startup readiness timed out");
+            await Task.Delay(10);
+        }
         var result = await client.RequestAsync<HostStatus>("status");
         Require(result.Id == "fake-host" && client.IsRunning, "Helper did not become ready");
+    }
+
+    private static async Task StartupReadiness()
+    {
+        await using var fixture = new Fixture(); fixture.Mode("delayed-ready");
+        await using var client = FakeClient(TimeSpan.FromMilliseconds(500));
+        await Ready(client, fixture);
+        await Throws<TimeoutException>(async () => { await client.RequestAsync("very-slow"); });
+        Require((await client.RequestAsync<HostStatus>("status")).Id == "fake-host", "Startup synchronization changed the live request deadline");
     }
 
     private static Task SettingsRoundTrip()
@@ -672,6 +694,7 @@ internal static class FakeHelper
             mode = File.Exists(path) ? File.ReadAllText(path).Trim() : "normal";
         }
         if (mode == "immediate-exit") { Console.Error.WriteLine("RECEIVE_DIRECTORY_UNAVAILABLE"); return 18; }
+        if (mode == "delayed-ready") await Task.Delay(1500);
         using var signal = !OperatingSystem.IsWindows() && mode.StartsWith("hang", StringComparison.Ordinal)
             ? PosixSignalRegistration.Create(PosixSignal.SIGTERM, context => context.Cancel = true) : null;
         if (mode == "no-read") { Console.Error.WriteLine("NO_READ_READY"); await Task.Delay(Timeout.Infinite); }
@@ -689,6 +712,7 @@ internal static class FakeHelper
             try { Console.WriteLine(JsonSerializer.Serialize(new { id, result, error }, ProtocolJson.Options)); await Console.Out.FlushAsync(); }
             finally { write.Release(); }
         }
+        File.WriteAllText(Path.Combine(arguments[dataIndex + 1], "test-ready"), "ready");
         while (true)
         {
             var line = await Console.In.ReadLineAsync();
