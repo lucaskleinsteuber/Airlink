@@ -45,13 +45,14 @@ func TestAppImageReplacementVerifiesStagedBytesAndKeepsOnlyCurrent(t *testing.T)
 		t.Fatal("left staged app copies", matches)
 	}
 	info, _ = os.Lstat(target)
+	verified := bytes.Clone(payload)
 	payload[512] ^= 1
 	_ = os.WriteFile(source, payload, 0600)
 	if e = replaceImage(o, a, info); e == nil {
 		t.Fatal("corrupt staging was published")
 	}
 	got, _ = os.ReadFile(target)
-	if !bytes.Equal(got, old) && bytes.Equal(got, payload) {
+	if !bytes.Equal(got, verified) {
 		t.Fatal("corrupt package replaced the app")
 	}
 }

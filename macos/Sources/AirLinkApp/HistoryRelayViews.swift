@@ -100,7 +100,7 @@ struct HistoryView: View {
     }
 }
 
-private struct StatisticsView: View {
+struct StatisticsView: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
         ScrollView {

@@ -366,6 +366,13 @@ func TestPublicSharePayloadRespectsLiveGlobalSendLimit(t *testing.T) {
 	if time.Since(start) < 210*time.Millisecond {
 		t.Fatal("share bypassed shared cap")
 	}
+	// Receiving the final body byte does not synchronize with the server's
+	// post-write accounting. Keep the exact count assertion, but let that write
+	// return on a differently scheduled host before reading the counter.
+	deadline := time.Now().Add(time.Second)
+	for s.traffic.Snapshot().SentBytes < 8192 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
 	if s.traffic.Snapshot().SentBytes != 8192 {
 		t.Fatal("payload counter incorrect")
 	}

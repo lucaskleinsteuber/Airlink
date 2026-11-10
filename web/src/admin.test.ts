@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { Script, runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
-const go = readFileSync(new URL('../../internal/server/control.go', import.meta.url), 'utf8');
+// Go raw string literals discard carriage returns. Match the actual embedded
+// source even when a Windows checkout uses CRLF on disk.
+const go = readFileSync(new URL('../../internal/server/control.go', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const html = go.slice(go.indexOf('const adminHTML = `') + 'const adminHTML = `'.length, go.lastIndexOf('`'));
 const script = html.match(/<script nonce="NONCE">([\s\S]*?)<\/script>/)![1];
 describe('offline console protocol helpers', () => {

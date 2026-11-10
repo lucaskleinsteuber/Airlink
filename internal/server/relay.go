@@ -45,6 +45,9 @@ func (s *Server) cancelDeviceRelays(id string) {
 	}
 }
 func (s *Server) relayControl(method string, params json.RawMessage) (any, error) {
+	if method == "relay.list" {
+		return s.relays.List(""), nil
+	}
 	var v struct {
 		ID string `json:"id"`
 	}

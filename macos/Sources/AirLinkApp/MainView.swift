@@ -7,90 +7,15 @@ import UniformTypeIdentifiers
 struct MainView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.openWindow) private var openWindow
+    @State private var navigation: String?
     @State private var dropTarget = false
     @State private var dropDeviceID: String?
     @State private var showLocalConnection = false
     @State private var editingDevice: Device?
     @State private var showShares = false
-    @State private var showShareCreator = false
     @State private var showClipboard = false
-    @State private var showHistory = false
     @State private var showRelays = false
-    var body: some View {
-        NavigationSplitView {
-            List(selection: $model.selectedDeviceID) {
-                Section(model.text("Vertraute Geräte", "Trusted devices")) {
-                    ForEach(pairedDevices) { device in deviceRow(device) }
-                    if model.status?.devices.filter(\.paired).isEmpty != false {
-                        Text(model.text("Noch keine Geräte", "No devices yet")).foregroundStyle(.secondary)
-                    }
-                }
-                let nearby = model.status?.devices.filter { !$0.paired } ?? []
-                if !nearby.isEmpty {
-                    Section(model.text("In der Nähe", "Nearby")) {
-                        ForEach(nearby) { device in
-                            Button { model.showConnection(to: device) } label: { Label(device.name, systemImage: "antenna.radiowaves.left.and.right") }.disabled(!model.isReady)
-                                .contextMenu { Text(device.address ?? "").textSelection(.enabled) }
-                        }
-                    }
-                }
-            }
-            .navigationSplitViewColumnWidth(min: 270, ideal: 310, max: 460)
-            .safeAreaInset(edge: .bottom) {
-                VStack(alignment: .leading, spacing: 14) {
-                    Button { model.showConnection() } label: { Label(model.text("Gerät hinzufügen", "Add device"), systemImage: "plus.circle") }.disabled(!model.isReady || !model.setupComplete)
-                    Divider()
-                    Button { showHistory = true } label: { Label(model.text("Übertragungen", "Transfers"), systemImage: "clock") }.disabled(!model.isReady)
-                    Menu {
-                        Button("Quick Share") { showShares = true }
-                        Button(model.text("Zwischenablage", "Clipboard")) { showClipboard = true }
-                        Button(model.text("Browser-Relays", "Browser relays")) { showRelays = true }
-                    } label: { Label(model.text("Weitere Funktionen", "More features"), systemImage: "ellipsis.circle") }.disabled(!model.isReady || !model.setupComplete)
-                    SettingsLink { Label(model.text("Einstellungen", "Settings"), systemImage: "gearshape") }
-                }.buttonStyle(.plain).padding(18).frame(maxWidth: .infinity, alignment: .leading)
-            }
-        } detail: {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    title
-                    if !model.isReady { HelperAvailabilityView().environmentObject(model) }
-                    if model.setupRequired {
-                        VStack(alignment: .leading, spacing: 14) {
-                            Text(model.text("Willkommen bei AirLink", "Welcome to AirLink")).font(.title2.weight(.semibold))
-                            Text(model.text("Gib diesem Mac einen verständlichen Namen und lege fest, wo empfangene Dateien landen.", "Give this Mac a recognizable name and choose where received files arrive.")).foregroundStyle(.secondary)
-                            Button(model.text("AirLink einrichten", "Set up AirLink")) { model.showSetup = true }.buttonStyle(.borderedProminent)
-                        }.padding(24).frame(maxWidth: .infinity, alignment: .leading).background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
-                    } else {
-                    pairingRequests
-                    failedDirectSends
-                    if let device = model.selectedDevice, device.paired { TrustedDeviceSummary(deviceID: device.id, onManage: { editingDevice = device }).environmentObject(model).id(device.id) }
-                    dropArea
-                    }
-                    transfers
-                }.padding(30).frame(maxWidth: 1000, alignment: .leading).frame(maxWidth: .infinity)
-            }
-            .background(Color(nsColor: .windowBackgroundColor))
-            .toolbar {
-                ToolbarItem { Button { model.openReceiveDirectory() } label: { Label(model.text("Empfangsordner", "Receive folder"), systemImage: "tray.and.arrow.down") }.labelStyle(.titleAndIcon).disabled(!model.isReady) }
-                ToolbarItem { Button { showLocalConnection = true } label: { Label(model.text("Dieses Gerät", "This device"), systemImage: "qrcode") }.disabled(!model.isReady) }
-            }
-        }
-        .sheet(isPresented: $model.showConnection) { ConnectView().environmentObject(model) }
-        .sheet(isPresented: $model.showSetup, onDismiss: {
-            if model.connectAfterSetup { model.connectAfterSetup = false; model.showConnection() }
-        }) { SetupView().environmentObject(model) }
-        .sheet(isPresented: $showLocalConnection) { LocalConnectionView().environmentObject(model) }
-        .sheet(item: $editingDevice) { device in DeviceSettingsView(device: device).environmentObject(model) }
-        .sheet(isPresented: $showShares) { ShareListView().environmentObject(model) }
-        .sheet(isPresented: $showShareCreator) { ShareCreateView(initialPaths: model.pendingURLs).environmentObject(model) }
-        .sheet(isPresented: $showClipboard) { ClipboardView().environmentObject(model) }
-        .sheet(isPresented: $showHistory) { HistoryView().environmentObject(model) }
-        .sheet(isPresented: $showRelays) { RelayOverview().environmentObject(model) }
-        .alert(model.text("AirLink konnte die Aktion nicht ausführen", "AirLink could not complete the action"), isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
-            Button("OK") { model.error = nil }
-        } message: { Text(model.error ?? "") }
-        .onAppear { model.openMainWindow = { openWindow(id: "airlink-main") } }
-    }
+    @State private var showStatistics = false
     private var pairedDevices: [Device] {
         (model.status?.devices.filter(\.paired) ?? []).sorted {
             if $0.online != $1.online { return $0.online }
@@ -102,123 +27,152 @@ struct MainView: View {
         guard let device = model.selectedDevice, device.paired, device.kind == "engine", device.canReceive else { return nil }
         return device
     }
-    private var dropHint: String {
-        if let recipient = directRecipient {
-            return recipient.online ? model.text("Ablegen startet diese Sendung direkt. Empfangsbestätigungen richten sich nach den Geräteberechtigungen.", "Dropping starts this send directly. Receive approval follows the device permissions.") : model.text("Das Gerät ist offline. AirLink bereitet die Sendung vor und wartet auf die Verbindung.", "The device is offline. AirLink prepares the send and waits for a connection.")
+    var body: some View {
+        NavigationSplitView {
+            List(selection: $navigation) {
+                Section(model.text("Geräte", "Devices")) {
+                    ForEach(pairedDevices) { device in deviceRow(device).tag("device:" + device.id) }
+                    if pairedDevices.isEmpty { Text(model.text("Noch keine vertrauten Geräte", "No trusted devices yet")).foregroundStyle(.secondary) }
+                    Button { model.showConnection() } label: { Label(model.text("Gerät hinzufügen …", "Add device …"), systemImage: "plus.circle") }.disabled(!model.isReady || !model.setupComplete)
+                }
+                Section {
+                    Label {
+                        HStack { Text(model.text("Übertragungen", "Transfers")); Spacer(); if let count = model.status?.activeTransferCount, count > 0 { Text(count.formatted()).foregroundStyle(.secondary) } }
+                    } icon: { Image(systemName: "arrow.up.arrow.down") }.tag("transfers")
+                }
+                let nearby = model.status?.devices.filter { !$0.paired && $0.kind == "engine" } ?? []
+                if !nearby.isEmpty {
+                    Section(model.text("In der Nähe", "Nearby")) {
+                        ForEach(nearby) { device in
+                            Button { model.showConnection(to: device) } label: { Label(device.name, systemImage: "desktopcomputer").lineLimit(2) }.disabled(!model.isReady || !model.setupComplete)
+                        }
+                    }
+                }
+            }
+            .navigationSplitViewColumnWidth(min: 250, ideal: 290, max: 430)
+            .safeAreaInset(edge: .bottom) {
+                VStack(alignment: .leading, spacing: 14) {
+                    Menu {
+                        Button("Quick Share") { showShares = true }
+                        Button(model.text("Zwischenablage", "Clipboard")) { showClipboard = true }
+                        Button(model.text("Browser-Verbindungen", "Browser connections")) { showRelays = true }
+                        Button(model.text("Statistik", "Statistics")) { showStatistics = true }
+                    } label: { Label(model.text("Weitere Werkzeuge", "More tools"), systemImage: "ellipsis.circle") }.disabled(!model.isReady || !model.setupComplete)
+                    SettingsLink { Label(model.text("Einstellungen", "Settings"), systemImage: "gearshape") }
+                    Divider()
+                    Text(model.status?.name ?? "AirLink").font(.callout.weight(.medium)).lineLimit(2)
+                    Text(model.version + " Beta").font(.caption).foregroundStyle(.secondary)
+                }.buttonStyle(.plain).padding(18).frame(maxWidth: .infinity, alignment: .leading)
+            }
+        } detail: {
+            if navigation == "transfers" {
+                DesktopTransfersView().environmentObject(model)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 22) {
+                        if !model.isReady { HelperAvailabilityView().environmentObject(model) }
+                        connectionAttention
+                        if model.setupRequired {
+                            ContentUnavailableView {
+                                Label(model.text("Willkommen bei AirLink", "Welcome to AirLink"), systemImage: "arrow.left.arrow.right")
+                            } description: {
+                                Text(model.text("Wähle einen Gerätenamen und den Empfangsordner.", "Choose a device name and receive folder."))
+                            } actions: {
+                                Button(model.text("AirLink einrichten", "Set up AirLink")) { model.showSetup = true }.buttonStyle(.borderedProminent)
+                            }
+                        } else {
+                            if let device = model.selectedDevice {
+                                HStack(alignment: .top) {
+                                    VStack(alignment: .leading, spacing: 7) {
+                                        Text(device.name).font(.largeTitle.weight(.semibold)).textSelection(.enabled)
+                                        Label(device.online ? model.text("Im lokalen Netzwerk erreichbar", "Available on your local network") : model.text("Offline · Sendungen warten auf die Verbindung", "Offline · sends wait for a connection"), systemImage: device.online ? "circle.fill" : "circle").font(.callout).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Button { editingDevice = device } label: { Image(systemName: "slider.horizontal.3") }.help(model.text("Gerät verwalten", "Manage device"))
+                                }
+                            } else {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(model.text("An welches Gerät?", "Which device? ")).font(.largeTitle.weight(.semibold))
+                                    Text(model.text("Wähle links ein Gerät oder füge deinen anderen Computer einmal hinzu.", "Choose a device on the left or add your other computer once.")).foregroundStyle(.secondary)
+                                }
+                            }
+                            dropArea
+                            failedDirectSends
+                            if let id = model.selectedDevice?.id {
+                                let transfers = DesktopTransferSelection.visible(model.status?.transfers ?? [], deviceID: id)
+                                if !transfers.isEmpty {
+                                    HStack { Text(model.text("Übertragungen mit diesem Gerät", "Transfers with this device")).font(.headline); Spacer(); Button(model.text("Alle Übertragungen", "All transfers")) { navigation = "transfers" }.buttonStyle(.link) }
+                                    ForEach(transfers) { TransferRow(transfer: $0).environmentObject(model) }
+                                }
+                            }
+                        }
+                    }.padding(28).frame(maxWidth: 1000, alignment: .leading).frame(maxWidth: .infinity)
+                }.background(Color(nsColor: .windowBackgroundColor))
+            }
         }
-        if model.selectedDevice?.kind == "browser" {
-            return model.text("Abgelegte Dateien werden ausgewählt. Mit Senden anschließend im Browser zum Download bereitstellen.", "Dropped files are selected first. Choose Send to make them available for download in the browser.")
+        .toolbar {
+            ToolbarItem { Button { model.openReceiveDirectory() } label: { Label(model.text("Empfangsordner", "Receive folder"), systemImage: "tray.and.arrow.down") }.disabled(!model.isReady) }
+            ToolbarItem { Button { showLocalConnection = true } label: { Label(model.text("Dieses Gerät", "This device"), systemImage: "qrcode") }.disabled(!model.isReady) }
         }
-        if model.selectedDevice?.canReceive == false {
-            return model.text("Dieses Gerät darf nicht empfangen. Wähle ein anderes Gerät oder ändere seine Berechtigungen.", "This device is not allowed to receive. Choose another device or change its permissions.")
-        }
-        return model.text("Wähle links ein Gerät. Oder lege Dateien direkt auf einem gekoppelten Computer ab.", "Choose a device on the left, or drop files directly onto a paired computer.")
+        .sheet(isPresented: $model.showConnection) { ConnectView().environmentObject(model) }
+        .sheet(isPresented: $model.showSetup, onDismiss: { if model.connectAfterSetup { model.connectAfterSetup = false; model.showConnection() } }) { SetupView().environmentObject(model) }
+        .sheet(isPresented: $showLocalConnection) { LocalConnectionView().environmentObject(model) }
+        .sheet(item: $editingDevice) { DeviceSettingsView(device: $0).environmentObject(model) }
+        .sheet(isPresented: $showShares) { ShareListView().environmentObject(model).onAppear { model.observeTool("shares", active: true) }.onDisappear { model.observeTool("shares", active: false) } }
+        .sheet(isPresented: $showClipboard) { ClipboardView().environmentObject(model).onAppear { model.observeTool("clipboard", active: true) }.onDisappear { model.observeTool("clipboard", active: false) } }
+        .sheet(isPresented: $showRelays) { RelayOverview().environmentObject(model).onAppear { model.observeTool("relays", active: true) }.onDisappear { model.observeTool("relays", active: false) } }
+        .sheet(isPresented: $showStatistics) { StatisticsSheet().environmentObject(model) }
+        .alert(model.text("Aktion konnte nicht abgeschlossen werden", "Could not complete the action"), isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("OK") { model.error = nil } } message: { Text(model.error ?? "") }
+        .onAppear { model.openMainWindow = { openWindow(id: "airlink-main") }; if let id = model.selectedDeviceID { navigation = "device:" + id } }
+        .onChange(of: navigation) { _, value in if let value, value.hasPrefix("device:") { model.selectedDeviceID = String(value.dropFirst(7)) } }
+        .onChange(of: model.selectedDeviceID) { _, id in if let id, navigation != "transfers" { navigation = "device:" + id } }
     }
     private func deviceRow(_ device: Device) -> some View {
-        let direct = device.kind == "engine" && device.canReceive
-        return HStack(spacing: 10) {
+        HStack(spacing: 10) {
             Image(systemName: device.kind == "browser" ? "globe" : "desktopcomputer").font(.title3).frame(width: 24)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(device.name).fontWeight(.medium).lineLimit(2).fixedSize(horizontal: false, vertical: true).help(device.name)
-                Text(dropDeviceID == device.id && direct ? model.text("Ablegen → direkt senden", "Drop → send directly") : device.online ? model.text("Verbunden", "Connected") : model.text("Nicht erreichbar", "Unavailable")).font(.caption).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(device.name).fontWeight(.medium).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                Text(device.online ? model.text("Erreichbar", "Available") : model.text("Nicht erreichbar", "Unavailable")).font(.caption).foregroundStyle(.secondary)
             }
-            Spacer()
-            Circle().fill(device.online ? .green : .secondary).frame(width: 6, height: 6)
+            Spacer(minLength: 3)
+        }.padding(.vertical, 7).help(device.name)
+            .contextMenu { Button(model.text("Gerät verwalten …", "Manage device …")) { editingDevice = device } }
+            .onDrop(of: [UTType.fileURL], isTargeted: Binding(get: { dropDeviceID == device.id }, set: { dropDeviceID = $0 ? device.id : nil })) { providers in
+                guard device.kind == "engine", device.canReceive else { return false }; return model.receiveDrop(providers, to: device)
+            }
+    }
+    @ViewBuilder private var connectionAttention: some View {
+        if let pair = model.status?.pairingSessions?.first(where: \.needsAttention) {
+            HStack { Label(model.text("Verbindung mit \(pair.peerName) bestätigen", "Confirm connection to \(pair.peerName)"), systemImage: "person.crop.circle.badge.checkmark"); Spacer(); Button(model.text("Code vergleichen", "Compare code")) { model.selectedPairingSessionID = pair.id; model.showConnection = true } }.padding(14).background(Color.accentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
         }
-        .padding(.vertical, 9).tag(device.id)
-        .background(dropDeviceID == device.id && direct ? Color.accentColor.opacity(0.13) : .clear, in: RoundedRectangle(cornerRadius: 8))
-        .contextMenu { Button(model.text("Berechtigungen …", "Permissions …")) { editingDevice = device } }
-        .onDrop(of: [UTType.fileURL], isTargeted: Binding(get: { dropDeviceID == device.id }, set: { entered in
-            if entered { dropDeviceID = device.id }
-            else if dropDeviceID == device.id { dropDeviceID = nil }
-        })) { providers in
-            guard direct else { return false }
-            return model.receiveDrop(providers, to: device)
-        }
+        ForEach((model.status?.pairRequests ?? []).prefix(1)) { PairingApprovalView(request: $0).environmentObject(model) }
+    }
+    private var dropArea: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            Label(model.sendingFiles ? model.text("Sendung wird vorbereitet …", "Preparing send …") : model.text("Dateien und Ordner senden", "Send files and folders"), systemImage: "arrow.up.doc").font(.title3.weight(.medium))
+            Text(directRecipient.map { model.text("Hier ablegen oder auswählen, um an \($0.name) zu senden.", "Drop here or choose files to send to \($0.name).") } ?? model.text("Lege Dateien hier ab. Deine Auswahl bleibt bis zur Empfängerwahl erhalten.", "Drop files here. Your selection is kept until you choose a recipient.")).foregroundStyle(.secondary)
+            if !model.pendingURLs.isEmpty { Text(model.pendingURLs.prefix(3).map(\.lastPathComponent).joined(separator: ", ")).font(.callout).lineLimit(2) }
+            HStack {
+                Button(model.text("Dateien auswählen …", "Choose files …")) { model.chooseFiles() }.buttonStyle(.borderedProminent).disabled(model.sendingFiles || !model.isReady)
+                if !model.pendingURLs.isEmpty {
+                    Button(model.text("Auswahl leeren", "Clear selection")) { model.pendingURLs = [] }.buttonStyle(.borderless)
+                    Button(model.text("Auswahl senden", "Send selection")) { model.send() }.disabled(model.selectedDevice?.canReceive != true || model.sendingFiles || !model.isReady)
+                }
+                if let id = model.activePreparationID { ProgressView().controlSize(.small); Button(model.text("Abbrechen", "Cancel")) { model.command("preparation.cancel", params: ["id": id]) } }
+            }
+            if let notice = model.sendNotice { Text(notice).font(.caption).foregroundStyle(.secondary) }
+        }.padding(25).frame(maxWidth: .infinity, minHeight: 170, alignment: .leading)
+            .background(dropTarget ? Color.accentColor.opacity(0.08) : Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(dropTarget ? Color.accentColor : Color.secondary.opacity(0.16)))
+            .onDrop(of: [UTType.fileURL], isTargeted: $dropTarget) { model.receiveDrop($0, to: directRecipient) }
     }
     @ViewBuilder private var failedDirectSends: some View {
         ForEach(model.failedDirectSends) { failed in
-            VStack(alignment: .leading, spacing: 10) {
-                Label(model.text("Sendung an \(failed.batch.deviceName) nicht bestätigt", "Send to \(failed.batch.deviceName) not confirmed"), systemImage: "exclamationmark.triangle").font(.headline).foregroundStyle(.orange)
-                Text(failed.batch.urls.prefix(3).map(\.lastPathComponent).joined(separator: ", ")).font(.caption).foregroundStyle(.secondary)
-                Text(failed.message).font(.callout).textSelection(.enabled)
-                HStack {
-                    Button(model.text("Erneut versuchen", "Retry")) { model.retryDirectSend(failed) }.buttonStyle(.borderedProminent).disabled(!model.isReady || model.sendingFiles)
-                    Button(model.text("Verwerfen", "Dismiss")) { model.dismissDirectSend(failed.id) }.buttonStyle(.borderless).disabled(model.sendingFiles)
-                }
-            }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(.orange.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
-        }
-    }
-    private var title: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(model.selectedDevice?.name ?? model.text("Einfach teilen.", "Share with ease.")).font(.largeTitle.weight(.semibold))
-                Text(model.text("Dateien bleiben in deinem Netzwerk.", "Your files stay on your network.")).foregroundStyle(.secondary)
-            }
-            Spacer()
-            if let device = model.selectedDevice {
-                Button { editingDevice = device } label: { Image(systemName: "slider.horizontal.3") }.buttonStyle(.borderless)
-            }
-        }
-    }
-    @ViewBuilder private var pairingRequests: some View {
-        ForEach(model.status?.pairRequests ?? []) { request in
-            PairingApprovalView(request: request).environmentObject(model)
-        }
-    }
-    private var dropArea: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "arrow.up.doc").font(.system(size: 38, weight: .light)).foregroundStyle(.tint)
-            Text(model.preparingDirectSend ? model.text("Sendung wird vorbereitet …", "Preparing send …") : directRecipient.map { model.text("Hier ablegen → an \($0.name) senden", "Drop here → send to \($0.name)") } ?? model.text("Dateien und Ordner hier ablegen", "Drop files and folders here")).font(.title3.weight(.medium))
-            Text(dropHint).font(.callout).foregroundStyle(.secondary)
-            if model.preparingDirectSend { ProgressView().controlSize(.small) }
-            if let notice = model.sendNotice { Text(notice).font(.caption).foregroundStyle(.secondary) }
-            if !model.pendingURLs.isEmpty {
-                Text(model.text("Auswahl zum manuellen Senden: ", "Selection for manual send: ") + model.pendingURLs.prefix(3).map(\.lastPathComponent).joined(separator: ", ")).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-            }
-            HStack {
-                Button(model.text("Dateien auswählen …", "Choose files …")) { model.chooseFiles() }
-                if !model.pendingURLs.isEmpty {
-                    Button(model.text("Leeren", "Clear")) { model.pendingURLs = [] }.buttonStyle(.borderless)
-                    Button(model.text("Freigabelink …", "Share link …")) { showShareCreator = true }.disabled(!model.isReady)
-                    Button(model.sendingFiles ? model.text("Wird gesendet …", "Sending …") : model.selectedDevice.map { model.text("An \($0.name) senden", "Send to \($0.name)") } ?? model.text("Senden", "Send")) { model.send() }.buttonStyle(.borderedProminent)
-                        .disabled(model.selectedDevice?.canReceive != true || !model.isReady || model.sendingFiles)
-                }
-            }
-        }
-        .padding(30).frame(maxWidth: .infinity, minHeight: 240)
-        .background(dropTarget ? Color.accentColor.opacity(0.09) : Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(dropTarget ? Color.accentColor : Color.secondary.opacity(0.22), style: StrokeStyle(lineWidth: 1, dash: [6, 5])))
-        .onDrop(of: [UTType.fileURL], isTargeted: $dropTarget) { providers in
-            model.receiveDrop(providers, to: directRecipient)
-        }
-    }
-    private var transfers: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            let all = model.status?.transfers.sorted { $0.createdAt == $1.createdAt ? $0.id < $1.id : $0.createdAt > $1.createdAt } ?? []
-            let lastActivity = Dictionary(uniqueKeysWithValues: all.map { ($0.id, ShareDate.parse($0.updatedAt) ?? ShareDate.parse($0.createdAt) ?? .distantPast) })
-            let recent = all.filter { !$0.isActive }.sorted {
-                let left = lastActivity[$0.id] ?? .distantPast
-                let right = lastActivity[$1.id] ?? .distantPast
-                return left == right ? $0.id < $1.id : left > right
-            }
-            let active = all.filter(\.isActive)
-            if !active.isEmpty {
-                Text(model.text("Gerade aktiv", "Active now")).font(.title2.weight(.semibold))
-                ForEach(active) { transfer in TransferRow(transfer: transfer).environmentObject(model) }
-            }
-            if !recent.isEmpty {
-                HStack {
-                    Text(model.text("Zuletzt übertragen", "Recent transfers")).font(.title2.weight(.semibold))
-                    Spacer()
-                    RemoveFinishedTransfersButton(transfers: recent).environmentObject(model)
-                }
-                ForEach(recent.prefix(5)) { transfer in TransferRow(transfer: transfer).environmentObject(model) }
-                if recent.count > 5 { Button(model.text("Gesamten Verlauf öffnen", "Open full history")) { showHistory = true }.buttonStyle(.link) }
-            }
-            if all.isEmpty {
-                Label(model.text("Alles aufgeräumt. Hier erscheinen deine nächsten Übertragungen.", "All clear. Your next transfers will appear here."), systemImage: "tray").foregroundStyle(.secondary).padding(.vertical, 14)
-            }
+            VStack(alignment: .leading, spacing: 8) {
+                Label(model.text("Sendung an \(failed.batch.deviceName) benötigt eine Aktion", "Send to \(failed.batch.deviceName) needs attention"), systemImage: "exclamationmark.triangle").font(.headline)
+                Text(failed.message).font(.callout).foregroundStyle(.secondary)
+                HStack { Button(model.text("Erneut versuchen", "Retry")) { model.retryDirectSend(failed) }.disabled(model.sendingFiles || !model.isReady); Button(model.text("Aus Liste entfernen", "Dismiss")) { model.dismissDirectSend(failed.id) }.buttonStyle(.borderless) }
+            }.padding(14).frame(maxWidth: .infinity, alignment: .leading).background(.orange.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
         }
     }
 }
@@ -255,74 +209,54 @@ struct HelperAvailabilityView: View {
 struct TransferRow: View {
     @EnvironmentObject var model: AppModel
     let transfer: Transfer
+    @State private var details = false
+    @State private var issue: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
-                Image(systemName: transfer.direction == "receive" ? "arrow.down.circle" : "arrow.up.circle").font(.title2).foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(transfer.title + (transfer.files.count > 1 ? " +\(transfer.files.count - 1)" : "")).lineLimit(1).font(.headline)
-                    Text(transfer.deviceName + " · " + stateLabel).font(.caption).foregroundStyle(.secondary)
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: transfer.direction == "send" ? "arrow.up.doc" : "arrow.down.doc").font(.title3).foregroundStyle(.tint).frame(width: 24)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(transfer.title).font(.headline).lineLimit(2)
+                    Text(transfer.deviceName + " · " + model.stateLabel(transfer.state)).font(.callout).foregroundStyle(.secondary)
                 }
-                Spacer()
-                if ["running", "queued", "reconnecting", "checkingDuplicate", "waitingDuplicate"].contains(transfer.state) {
-                    Button { model.command("transfer.pause", params: ["id": transfer.id]) } label: { Image(systemName: "pause.fill") }.help(model.text("Pausieren", "Pause"))
+                Spacer(minLength: 8)
+                if transfer.state == "completed", transfer.hasReceivedContent {
+                    Button(model.text("Im Finder zeigen", "Show in Finder")) { Task { do { try await model.revealReceived(transfer) } catch { issue = error.localizedDescription } } }.buttonStyle(.borderless)
                 }
-                if transfer.state == "paused" || transfer.state == "failed" {
-                    Button { model.command("transfer.resume", params: ["id": transfer.id]) } label: { Image(systemName: "play.fill") }.help(model.text("Fortsetzen", "Resume"))
-                }
-                if transfer.isActive {
-                    Button { model.command("transfer.cancel", params: ["id": transfer.id]) } label: { Image(systemName: "xmark") }.help(model.text("Abbrechen", "Cancel"))
-                }
-            }.disabled(!model.isReady)
+                Menu {
+                    Button(model.text("Details", "Details")) { details = true }
+                    if transfer.state == "paused" || transfer.state == "reconnecting" || transfer.state == "failed" {
+                        Button(model.text("Fortsetzen", "Resume")) { model.command("transfer.resume", params: ["id": transfer.id]) }
+                    } else if transfer.isActive {
+                        Button(model.text("Pausieren", "Pause")) { model.command("transfer.pause", params: ["id": transfer.id]) }
+                    }
+                    if transfer.isActive { Button(model.text("Abbrechen", "Cancel")) { model.command("transfer.cancel", params: ["id": transfer.id]) } }
+                    if transfer.canRemoveFromHistory {
+                        Button(model.text("Aus Liste entfernen", "Remove from list")) { Task { do { try await model.removeFromHistory([transfer]) } catch { issue = error.localizedDescription } } }
+                    }
+                } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton).fixedSize().disabled(!model.isReady)
+            }
             if transfer.canAcceptIncoming { IncomingApprovalView(transfer: transfer).environmentObject(model) }
-            if !transfer.receivedResultEntries.isEmpty { ReceivedResultView(transfer: transfer).environmentObject(model) }
-            ProgressView(value: transfer.fractionCompleted).tint(transfer.state == "completed" ? .green : .accentColor)
-            HStack {
-                Text("\(TransferFormatting.bytes(transfer.accountedBytes)) / \(TransferFormatting.bytes(transfer.totalBytes))")
-                Spacer()
-                if transfer.state == "running" { Text(TransferFormatting.speed(transfer.bytesPerSecond)) }
-                Text(transfer.fractionCompleted, format: .percent.precision(.fractionLength(0)))
-            }.font(.caption).monospacedDigit().foregroundStyle(.secondary)
-            if transfer.avoidedBytes > 0 {
-                Text(TransferFormatting.bytes(transfer.completedBytes) + model.text(" bestätigt · ", " confirmed · ") + TransferFormatting.bytes(transfer.avoidedBytes) + model.text(" durch Überspringen vermieden", " avoided by skipping")).font(.caption).foregroundStyle(.secondary)
-            }
-            if transfer.canRemoveFromHistory {
-                HStack { Spacer(); RemoveTransferButton(transfer: transfer).environmentObject(model) }
-            }
-            if transfer.direction == "receive" {
-                ForEach(transfer.pendingDuplicateFiles) { file in
-                    DuplicateAttentionView(transfer: transfer, file: file).environmentObject(model)
-                }
-                let organized = transfer.files.filter { $0.isSkipped || ($0.destinationPath != nil && $0.destinationPath != $0.path) }
-                if !organized.isEmpty {
-                    DisclosureGroup(model.text("Empfangsdateien", "Received files")) {
-                        ForEach(organized) { file in
-                            if file.isSkipped {
-                                Label(file.path + model.text(" · übersprungen, keine neue Datei", " · skipped, no new file"), systemImage: "forward.end").font(.caption).foregroundStyle(.secondary)
-                            } else if let mapped = file.destinationPath {
-                                Text(file.path + " → " + mapped).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                            }
-                        }
+            if transfer.isActive {
+                ProgressView(value: transfer.fractionCompleted)
+                HStack {
+                    Text(TransferFormatting.bytes(transfer.accountedBytes) + " / " + TransferFormatting.bytes(transfer.totalBytes))
+                    Spacer()
+                    if transfer.state == "running" {
+                        Text(TransferFormatting.speed(transfer.bytesPerSecond))
+                        if let seconds = DesktopTransferSelection.remainingSeconds(transfer) { Text(model.text("Noch \(seconds < 60 ? "\(seconds) s" : "\(seconds / 60) min")", "\(seconds < 60 ? "\(seconds) s" : "\(seconds / 60) min") left")) }
                     }
-                }
+                }.font(.caption).monospacedDigit().foregroundStyle(.secondary)
             } else {
-                if ["checkingDuplicate", "waitingDuplicate"].contains(transfer.state) {
-                    Text(model.text("Der Empfänger prüft vorhandene Inhalte oder benötigt eine Entscheidung.", "The recipient is checking existing contents or needs a decision.")).font(.caption).foregroundStyle(.secondary)
-                }
-                let skipped = transfer.files.filter(\.isSkipped)
-                if !skipped.isEmpty {
-                    DisclosureGroup(model.text("Vom Empfänger übersprungen", "Skipped by recipient")) {
-                        ForEach(skipped) { file in Text(file.path).font(.caption).foregroundStyle(.secondary) }
-                    }
-                }
+                Text(TransferFormatting.bytes(transfer.completedBytes) + (transfer.numberOfFiles > 1 ? model.text(" · \(transfer.numberOfFiles) Einträge", " · \(transfer.numberOfFiles) entries") : "")).font(.caption).foregroundStyle(.secondary)
             }
-            if let error = transfer.error, !error.isEmpty { Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
-        }.padding(16).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
-    }
-    private var stateLabel: String {
-        let names: [String: (String, String)] = ["offered": ("Wartet auf Annahme", "Awaiting approval"), "queued": ("In Warteschlange", "Queued"), "running": ("Wird übertragen", "Transferring"), "paused": ("Pausiert", "Paused"), "reconnecting": ("Verbindung wird wiederhergestellt", "Reconnecting"), "verifying": ("Wird geprüft", "Verifying"), "checkingDuplicate": ("Vorhandene Inhalte werden geprüft", "Checking existing contents"), "waitingDuplicate": ("Wartet auf Duplikatentscheidung", "Awaiting duplicate decision"), "completed": ("Abgeschlossen", "Completed"), "failed": ("Fehlgeschlagen", "Failed"), "cancelled": ("Abgebrochen", "Cancelled")]
-        let pair = names[transfer.state] ?? (transfer.state, transfer.state)
-        return model.text(pair.0, pair.1)
+            if transfer.state == "waitingDuplicate" {
+                Button(model.text("Duplikate prüfen …", "Review duplicates …")) { details = true }
+            }
+            if let error = transfer.error, !error.isEmpty { Text(error).font(.callout).foregroundStyle(.red).lineLimit(3) }
+            if let issue { Text(issue).font(.callout).foregroundStyle(.red) }
+        }.padding(16).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+            .sheet(isPresented: $details) { TransferDetailsSheet(transfer: transfer).environmentObject(model) }
     }
 }
 

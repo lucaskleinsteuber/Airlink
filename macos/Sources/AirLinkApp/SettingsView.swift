@@ -4,9 +4,9 @@ import ServiceManagement
 import SwiftUI
 
 private enum SettingsPane: String, CaseIterable {
-    case general, receive, transfer, shortcuts, about
-    var icon: String { switch self { case .general: "gearshape"; case .receive: "tray.and.arrow.down"; case .transfer: "speedometer"; case .shortcuts: "keyboard"; case .about: "info.circle" } }
-    var titles: (String, String) { switch self { case .general: ("Allgemein", "General"); case .receive: ("Empfangen", "Receiving"); case .transfer: ("Übertragung", "Transfers"); case .shortcuts: ("Kurzbefehle", "Shortcuts"); case .about: ("Info", "About") } }
+    case general, receive, transfer, shortcuts, updates, about
+    var icon: String { switch self { case .general: "gearshape"; case .receive: "tray.and.arrow.down"; case .transfer: "speedometer"; case .shortcuts: "keyboard"; case .updates: "arrow.triangle.2.circlepath"; case .about: "info.circle" } }
+    var titles: (String, String) { switch self { case .general: ("Allgemein", "General"); case .receive: ("Empfangen", "Receiving"); case .transfer: ("Übertragungen", "Transfers"); case .shortcuts: ("Kurzbefehle", "Shortcuts"); case .updates: ("Updates", "Updates"); case .about: ("Info", "About") } }
 }
 
 struct SettingsView: View {
@@ -20,6 +20,8 @@ struct SettingsView: View {
     @State private var loginEnabled = SMAppService.mainApp.status == .enabled
     @State private var loginNeedsApproval = SMAppService.mainApp.status == .requiresApproval
     @State private var recording = false
+    @State private var advancedOrganization = false
+    @ObservedObject private var updater = AirLinkUpdater.shared
     @State private var settingsError: String?
     @State private var saving = false
     @State private var sendEnabled = false
@@ -101,7 +103,9 @@ struct SettingsView: View {
                 Text(model.text("Neue Dateien landen direkt im gewählten Ordner. Gleichnamige Dateien erhalten einen Namenszusatz. Bisherige Transfers behalten ihren Speicherort.", "New files arrive directly in the chosen folder. Name collisions receive a suffix. Previous transfers keep their existing locations.")).font(.caption).foregroundStyle(.secondary)
                 Button(model.text("Einrichtung erneut öffnen …", "Open setup again …")) { model.showSetup = true; model.showMainWindow() }
             }
-            OrganizationSection(organization: $settings.organization).environmentObject(model)
+            DisclosureGroup(model.text("Erweiterte Dateiorganisation", "Advanced file organization"), isExpanded: $advancedOrganization) {
+                OrganizationSection(organization: $settings.organization).environmentObject(model)
+            }
             }
             if pane == .transfer {
             Section(model.text("Geschwindigkeit", "Speed")) {
@@ -134,12 +138,21 @@ struct SettingsView: View {
                 Text(model.text("Im Finder: Rechtsklick → Dienste → Mit AirLink senden. Die App läuft beim Schließen des Fensters in der Menüleiste weiter.", "In Finder: right-click → Services → Send with AirLink. Closing the window keeps the app running in the menu bar.")).font(.caption).foregroundStyle(.secondary)
             }
             }
+            if pane == .updates {
+                Section(model.text("Beta-Updates", "Beta updates")) {
+                    LabeledContent(model.text("Installierte Version", "Installed version"), value: model.version)
+                    Toggle(model.text("Über neue Betas informieren", "Notify about new betas"), isOn: $settings.automaticUpdateChecks)
+                    Text(model.text("Optional, höchstens einmal pro 24 Stunden. Installiert wird erst auf deinen Klick. Ohne diese Option prüft AirLink nur auf Anfrage.", "Optional, at most once every 24 hours. Updates install only when you choose. Without this option, checks happen only on request.")).font(.caption).foregroundStyle(.secondary)
+                    Button(model.text("Nach Updates suchen …", "Check for Updates …")) { updater.checkForUpdates() }.disabled(!updater.canCheckForUpdates)
+                    Link(model.text("Betas auf GitHub", "Betas on GitHub"), destination: URL(string: "https://github.com/lucaskleinsteuber/Airlink/releases")!)
+                }
+            }
             if pane == .about {
                 Section("AirLink") {
                     LabeledContent(model.text("Version", "Version"), value: model.version)
                     Text(model.text("Dateien direkt in deinem Netzwerk teilen. Die Übertragung ist verschlüsselt und wird auf Dateiintegrität geprüft.", "Share files directly on your network. Transfers are encrypted and checked for file integrity.")).foregroundStyle(.secondary)
                     Link(model.text("Entwicklungsstände herunterladen …", "Download development builds …"), destination: URL(string: "https://github.com/lucaskleinsteuber/Airlink/releases")!)
-                    Text(model.text("Entwicklungsstände lädst du mit deinem berechtigten GitHub-Konto herunter und installierst sie manuell.", "Download development builds using your authorized GitHub account and install them manually.")).font(.caption).foregroundStyle(.secondary)
+                    Text("Copyright © 2026 Lucas Kleinsteuber · MIT").font(.caption).foregroundStyle(.secondary)
                 }
             }
             if !model.isReady { HelperAvailabilityView().environmentObject(model) }

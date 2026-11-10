@@ -6,7 +6,7 @@ import SwiftUI
 @main struct AirLinkApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject private var model = AppModel.shared
-    @StateObject private var updater = AirLinkUpdater()
+    @StateObject private var updater = AirLinkUpdater.shared
     var body: some Scene {
         Window("AirLink", id: "airlink-main") {
             MainView().environmentObject(model)

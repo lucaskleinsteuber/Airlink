@@ -48,7 +48,11 @@ public struct Transfer: Codable, Identifiable, Sendable {
     public var isActive: Bool { ["offered", "queued", "running", "paused", "reconnecting", "verifying", "checkingDuplicate", "waitingDuplicate"].contains(state) }
     public var pendingDuplicateFiles: [TransferFile] { direction == "receive" ? files.filter { $0.duplicateState == "pending" && !$0.isSkipped } : [] }
     public var canResolveDuplicates: Bool { direction == "receive" && ["waitingDuplicate", "running", "queued"].contains(state) }
-    public var hasReceivedContent: Bool { direction == "receive" && (hasContent == true || files.contains { $0.directory == true || ($0.completed && !$0.isSkipped) }) }
+    public var hasReceivedContent: Bool {
+        guard direction == "receive" else { return false }
+        if summary == true { return hasContent == true }
+        return files.contains { $0.directory == true || ($0.completed && !$0.isSkipped) }
+    }
     public var numberOfFiles: Int { fileCount ?? files.count }
     public var title: String { files.first?.path.components(separatedBy: "/").last ?? "Transfer" }
 }

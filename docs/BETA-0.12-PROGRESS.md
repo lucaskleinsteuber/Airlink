@@ -2,6 +2,10 @@
 
 Target: `0.12.0-beta.1`. This is a work record, not a release or acceptance claim.
 
+Repository workflow: the owner requested a single branch. Continue directly on
+`main`; the temporary beta branch is merged and removed. Tags retain released
+versions. Do not create another development branch for this work.
+
 ## Authorized delivery
 
 - macOS SwiftUI: simpler recipient-focused navigation, three recent results, direct picker sends, grouped settings, optional daily update notices.
@@ -36,7 +40,7 @@ Layout: readable resizable devices sidebar; recipient and one send surface; comp
 
 ## Evidence and limits
 
-Record actual test/build/benchmark results below as they complete. No new checks have run yet. Physical Mac/Arch WLAN, native window integration and a new 100 GB run require separate evidence. They must not be inferred from builds or same-host tests. The available Mac disk space at planning was insufficient for a two-copy 100 GB fixture; do not fill the user's disk to attempt it.
+Record actual test/build/benchmark results below as they complete. Physical Mac/Arch WLAN, native window integration and a new 100 GB run require separate evidence. They must not be inferred from builds or same-host tests. The available Mac disk space at planning was insufficient for a two-copy 100 GB fixture; do not fill the user's disk to attempt it.
 
 ### Work in progress, 2026-11-10
 
@@ -47,3 +51,6 @@ Record actual test/build/benchmark results below as they complete. No new checks
 - The Qt desktop target compiled with warnings treated as errors on macOS. It was not launched. This is a compile check, not Linux runtime or KDE/Wayland evidence.
 - Linux native views and signed-feed/download code exist. AppImage handoff now waits for a private readiness reply before quitting. Its Linux-only replacement path still needs Linux execution tests and packaging.
 - No app installed, GUI launched, GitHub visibility changed, tag created or release published yet.
+- The dedicated Debian 12 / Qt 6.4 hosted job passed at `d313075`, including the desktop compile, Qt Core / actual helper checks and Linux-only update tests. The Mac hosted matrix job also passed for that checkpoint. This is not final-candidate or GUI acceptance.
+- The hosted Windows run exposed CRLF-sensitive JavaScript extraction in a test; the Ubuntu run exposed a post-write counter synchronization race in a test. Both checks have been corrected without relaxing their behavioral assertions; final hosted runs remain required.
+- macOS now consumes compact status and cancellable preparation, has recipient-focused navigation, paged history/details, native code-comparison pairing and optional daily beta update checks. Compile checks passed; final background tests and release packaging are still pending.

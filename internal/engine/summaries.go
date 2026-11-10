@@ -39,12 +39,16 @@ func summarize(t model.Transfer) model.Transfer {
 		t.Title = files[0].Path
 	}
 	if t.State == "completed" && t.Direction == "receive" {
+		hasRegular, keptRegular, keptDirectory := false, false, false
 		for _, f := range files {
-			if f.Completed && !f.Skipped {
-				t.HasContent = true
-				break
+			if f.Directory {
+				keptDirectory = keptDirectory || f.Completed && !f.Skipped
+			} else {
+				hasRegular = true
+				keptRegular = keptRegular || f.Completed && !f.Skipped
 			}
 		}
+		t.HasContent = keptRegular || !hasRegular && keptDirectory
 	}
 	return t
 }

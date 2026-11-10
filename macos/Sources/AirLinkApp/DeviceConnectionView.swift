@@ -5,152 +5,122 @@ struct ConnectView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var browser = false
-    @State private var reviewing = false
     @State private var manual = false
     @State private var requesting = false
-    @State private var verification = PeerVerification()
+    @State private var automatic = false
+    @State private var verified = false
     @State private var issue: String?
-    @State private var sentRequest = false
+    @State private var sentLegacy = false
     private var nearby: [Device] {
         (model.status?.devices ?? []).filter { !$0.paired && $0.kind == "engine" && $0.address != nil }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
-    private var pending: PeerConnectionAttempt? {
-        guard let attempt = model.pendingConnection, attempt.matches(model.connectionDraft) else { return nil }
-        return attempt
+    private var session: PairingSession? {
+        (model.status?.pairingSessions ?? []).first { $0.id == model.selectedPairingSessionID }
     }
-    private var waiting: Bool { pending?.isExpired() == false }
-    private var pairedID: String? { model.connectionDraft.pairedDevice(in: model.status?.devices ?? [])?.id }
-    private var peerName: String {
-        (model.status?.devices ?? []).first { $0.fingerprint?.lowercased() == model.connectionDraft.normalizedFingerprint }?.name
-            ?? model.text("Anderer Computer", "Other computer")
+    private var openSessions: [PairingSession] {
+        (model.status?.pairingSessions ?? []).filter { ["starting", "comparing", "finishing"].contains($0.state) }
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 20) {
             HStack {
                 Text(model.text("Gerät hinzufügen", "Add a device")).font(.title2.weight(.semibold))
                 Spacer()
-                Button(waiting ? model.text("Im Hintergrund warten", "Wait in background") : model.text("Fertig", "Done")) { dismiss() }.disabled(requesting)
+                Button(session?.localConfirmed == true ? model.text("Im Hintergrund warten", "Wait in background") : model.text("Fertig", "Done")) { dismiss() }.disabled(requesting)
             }
-            Picker(model.text("Gerätetyp", "Device type"), selection: $browser) {
-                Text(model.text("Mac oder Windows-PC", "Mac or Windows PC")).tag(false)
-                Text(model.text("Handy oder Tablet", "Phone or tablet")).tag(true)
-            }.pickerStyle(.segmented).disabled(requesting || waiting)
+            if session == nil {
+                Picker(model.text("Gerätetyp", "Device type"), selection: $browser) {
+                    Text(model.text("Computer", "Computer")).tag(false)
+                    Text(model.text("Handy oder Tablet", "Phone or tablet")).tag(true)
+                }.pickerStyle(.segmented)
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if browser { LocalConnectionView(embedded: true).environmentObject(model) }
-                    else if reviewing { review }
-                    else { deviceSelection }
-                }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 4)
-            }.frame(minHeight: 330, maxHeight: 530)
+                    else if let session { comparison(session) }
+                    else { selection }
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 3)
+            }.frame(minHeight: 330, maxHeight: 520)
             if let issue { Text(issue).font(.callout).foregroundStyle(.red).textSelection(.enabled) }
-            if !browser {
-                Divider()
-                HStack {
-                    if reviewing && !waiting && !requesting {
-                        Button(model.text("Anderes Gerät wählen", "Choose another device")) { reviewing = false; verification.reset(); issue = nil }
+            if let session, !session.localConfirmed, ["starting", "comparing"].contains(session.state) {
+                Button(model.text("Verbindungsanfrage abbrechen", "Cancel connection request")) {
+                    requesting = true
+                    Task {
+                        do { try await model.cancelPairing(session.id); model.selectedPairingSessionID = nil }
+                        catch { issue = error.localizedDescription }
+                        requesting = false
                     }
-                    Spacer()
-                    if reviewing && pairedID == nil {
-                        Button(requesting ? model.text("Wird verbunden …", "Connecting …") : model.text("Verbinden", "Connect")) { request() }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(!verification.matches(model.connectionDraft) || !model.isReady || requesting || waiting)
-                    }
-                }
+                }.disabled(requesting)
+            } else if let session, ["expired", "denied", "cancelled"].contains(session.state) {
+                Button(model.text("Anderes Gerät wählen", "Choose another device")) { model.selectedPairingSessionID = nil; automatic = false; issue = nil }
             }
-        }.textFieldStyle(.roundedBorder).padding(26).frame(width: 580)
-            .onAppear {
-                reviewing = model.connectionDraft.isValid || pending != nil
-                manual = nearby.isEmpty
-                if pending != nil { sentRequest = true }
-            }
-            .onChange(of: model.connectionDraft.normalizedAddress) { _, _ in verification.reset() }
-            .onChange(of: model.connectionDraft.normalizedFingerprint) { _, _ in verification.reset() }
-            .onChange(of: pairedID) { _, id in
-                if let id, sentRequest { model.selectedDeviceID = id; dismiss() }
-            }
+        }.padding(26).frame(width: 580).textFieldStyle(.roundedBorder)
+            .onChange(of: session?.id) { _, _ in automatic = session?.automaticReceive ?? false }
+            .onChange(of: session?.state) { _, state in if state == "paired", let session { model.selectedDeviceID = session.peerId; dismiss() } }
+            .onChange(of: model.connectionDraft.normalizedAddress) { _, _ in verified = false }
+            .onChange(of: model.connectionDraft.normalizedFingerprint) { _, _ in verified = false }
+            .onChange(of: model.connectionDraft.pairedDevice(in: model.status?.devices ?? [])?.id) { _, id in if let id, sentLegacy { model.selectedDeviceID = id; dismiss() } }
             .interactiveDismissDisabled(requesting)
     }
-    private var deviceSelection: some View {
+    private var selection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(model.text("1. Wähle den anderen Computer", "1. Choose the other computer")).font(.headline)
-            Text(model.text("Öffne AirLink auf beiden Geräten und verbinde sie mit demselben Netzwerk. Du musst ein Gerät nur einmal hinzufügen.", "Open AirLink on both devices and connect them to the same network. Each device only needs to be added once.")).foregroundStyle(.secondary)
-            if nearby.isEmpty {
-                Label(model.text("Noch kein Computer gefunden", "No computer found yet"), systemImage: "antenna.radiowaves.left.and.right")
-                    .foregroundStyle(.secondary).padding(.vertical, 16)
+            Text(model.text("Öffne AirLink auf beiden Computern und wähle das andere Gerät.", "Open AirLink on both computers and choose the other device.")).foregroundStyle(.secondary)
+            ForEach(openSessions) { pending in
+                Button { model.selectedPairingSessionID = pending.id } label: { Label(model.text("Verbindung mit \(pending.peerName) fortsetzen", "Continue connecting to \(pending.peerName)"), systemImage: "checkmark.shield") }.buttonStyle(.bordered)
             }
+            if nearby.isEmpty { ContentUnavailableView(model.text("Noch kein Computer gefunden", "No computer found yet"), systemImage: "antenna.radiowaves.left.and.right", description: Text(model.text("Beide Geräte müssen im selben Netzwerk erreichbar sein.", "Both devices must be reachable on the same network."))) }
             ForEach(nearby) { device in
                 Button {
-                    model.connectionDraft = PeerConnectionDraft(device: device)
-                    verification.reset(); issue = nil; reviewing = true
+                    requesting = true; issue = nil
+                    Task { do { try await model.beginPairing(device) } catch { issue = error.localizedDescription }; requesting = false }
                 } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "desktopcomputer").font(.title2).frame(width: 34)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(device.name).fontWeight(.medium).lineLimit(2)
-                            Text(model.text("Im selben Netzwerk gefunden", "Found on your network")).font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right").foregroundStyle(.secondary)
-                    }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
-                }.buttonStyle(.plain).disabled(!model.isReady)
+                    HStack(spacing: 14) {
+                        Image(systemName: "desktopcomputer").font(.title2).frame(width: 32)
+                        VStack(alignment: .leading, spacing: 4) { Text(device.name).fontWeight(.medium).lineLimit(2); Text(model.text("Im lokalen Netzwerk gefunden", "Found on your local network")).font(.caption).foregroundStyle(.secondary) }
+                        Spacer(); Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                    }.padding(15).frame(maxWidth: .infinity, alignment: .leading).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+                }.buttonStyle(.plain).disabled(requesting || !model.isReady)
             }
-            DisclosureGroup(model.text("Nicht gefunden? Manuell verbinden", "Not found? Connect manually"), isExpanded: $manual) {
+            DisclosureGroup(model.text("Andere Verbindungsmöglichkeiten", "Other connection options"), isExpanded: $manual) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(model.text("Öffne auf dem anderen Computer „Dieses Gerät“. Übernimm seine HTTPS-Adresse und den vollständigen Fingerabdruck.", "Open This device on the other computer. Copy its HTTPS address and complete fingerprint.")).font(.callout).foregroundStyle(.secondary)
-                    TextField(model.text("HTTPS-Adresse des anderen Computers", "Other computer’s HTTPS address"), text: $model.connectionDraft.address)
+                    Text(model.text("Für ältere Apps oder manuelle Verbindungen: Übernimm Adresse und Fingerabdruck aus „Dieses Gerät“ auf dem anderen Computer.", "For older apps or manual connections, copy the address and fingerprint from This device on the other computer.")).font(.callout).foregroundStyle(.secondary)
+                    TextField(model.text("HTTPS-Adresse", "HTTPS address"), text: $model.connectionDraft.address)
                     TextField(model.text("Vollständiger SHA-256-Fingerabdruck", "Complete SHA-256 fingerprint"), text: $model.connectionDraft.fingerprint).font(.system(.callout, design: .monospaced))
-                    Button(model.text("Weiter", "Continue")) { verification.reset(); issue = nil; reviewing = true }
-                        .disabled(!model.connectionDraft.isValid || !model.isReady)
+                    Toggle(model.text("Ich habe den gesamten Fingerabdruck auf dem anderen Gerät verglichen.", "I compared the complete fingerprint on the other device."), isOn: $verified)
+                    Toggle(model.text("Dateien dieses Geräts künftig automatisch annehmen", "Automatically receive files from this device in future"), isOn: $model.connectionDraft.automaticReceive)
+                    Button(model.text("Verbindung anfragen", "Request connection")) {
+                        var comparison = PeerVerification(); comparison.confirm(model.connectionDraft)
+                        let draft = model.connectionDraft
+                        requesting = true
+                        Task { do { try await model.connect(draft, verification: comparison); sentLegacy = true } catch { issue = error.localizedDescription }; requesting = false }
+                    }.disabled(!verified || !model.connectionDraft.isValid || requesting || !model.isReady)
+                    if sentLegacy { Label(model.text("Jetzt auf dem anderen Computer bestätigen.", "Now approve on the other computer."), systemImage: "clock").font(.callout).foregroundStyle(.secondary) }
                 }.padding(.top, 12)
             }
         }
     }
-    private var review: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Label(peerName, systemImage: "desktopcomputer").font(.title3.weight(.semibold))
-            Text(model.text("2. Vergleiche einmal die Geräteidentität", "2. Compare the device identity once")).font(.headline)
-            Text(model.text("Öffne auf \(peerName) „Dieses Gerät“ und vergleiche den gesamten Fingerabdruck mit dieser Anzeige.", "Open This device on \(peerName) and compare the complete fingerprint with this display.")).foregroundStyle(.secondary)
-            Text(model.connectionDraft.comparisonFingerprint).font(.system(.body, design: .monospaced)).textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading).padding(16)
-                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
-            Toggle(model.text("Der Fingerabdruck stimmt überein", "The fingerprint matches"), isOn: Binding(
-                get: { verification.matches(model.connectionDraft) },
-                set: { if $0 { verification.confirm(model.connectionDraft) } else { verification.reset() } }
-            )).disabled(requesting || waiting)
-            Divider()
-            Toggle(model.text("Dateien von diesem Gerät automatisch empfangen", "Automatically receive files from this device"), isOn: $model.connectionDraft.automaticReceive)
-                .disabled(requesting || waiting)
-            Text(model.text("Optional. Dieser Mac nimmt künftige Dateien dieses Geräts ohne Rückfrage an. Du kannst das später direkt beim Gerät ändern.", "Optional. This Mac will accept future files from this device without asking. You can change this on the device card later.")).font(.caption).foregroundStyle(.secondary)
-            if let pending {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    if pending.isExpired(at: context.date) {
-                        Label(model.text("Noch nicht bestätigt. Prüfe den anderen Computer und versuche es erneut.", "Not confirmed yet. Check the other computer and try again."), systemImage: "clock.badge.exclamationmark").foregroundStyle(.orange)
-                    } else {
-                        HStack(spacing: 10) {
-                            ProgressView().controlSize(.small)
-                            Text(model.text("3. Jetzt auf \(peerName) bestätigen", "3. Now approve on \(peerName)")).fontWeight(.medium)
-                        }
-                    }
-                }.font(.callout).padding(.vertical, 8)
-            } else {
-                Text(model.text("Nach „Verbinden“ bestätigst du einmal auf dem anderen Computer. Danach erscheint er unter „Vertraute Geräte“.", "After choosing Connect, approve once on the other computer. It will then appear under Trusted devices.")).font(.callout).foregroundStyle(.secondary)
-            }
-        }
-    }
-    private func request() {
-        let draft = model.connectionDraft
-        guard !requesting, verification.matches(draft) else { return }
-        requesting = true; issue = nil
-        let compared = verification
-        Task {
-            do {
-                try await model.connect(draft, verification: compared)
-                sentRequest = true
-                if let id = pairedID { model.selectedDeviceID = id; dismiss() }
-            } catch { issue = error.localizedDescription }
-            requesting = false
+    @ViewBuilder private func comparison(_ session: PairingSession) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text(session.peerName.isEmpty ? model.text("Verbindung wird vorbereitet …", "Preparing connection …") : session.peerName).font(.title3.weight(.semibold))
+            if session.state == "comparing" {
+                Text(model.text("Vergleiche diesen Code auf beiden Geräten.", "Compare this code on both devices.")).foregroundStyle(.secondary)
+                Text(session.formattedCode).font(.system(size: 38, weight: .medium, design: .monospaced)).frame(maxWidth: .infinity).padding(.vertical, 20)
+                if session.localConfirmed {
+                    HStack(spacing: 10) { ProgressView().controlSize(.small); Text(model.text("Warte auf die Bestätigung am anderen Gerät.", "Waiting for confirmation on the other device.")) }
+                } else {
+                    Text(model.text("Der Code ist fünf Minuten gültig. Bestätige nur, wenn er übereinstimmt.", "The code is valid for five minutes. Confirm only if it matches.")).font(.callout).foregroundStyle(.secondary)
+                    Toggle(model.text("Dateien dieses Geräts künftig automatisch annehmen", "Automatically receive files from this device in future"), isOn: $automatic)
+                    Text(model.text("Optional. Gilt nur für den Empfang auf diesem Mac.", "Optional. Applies only to receiving on this Mac.")).font(.caption).foregroundStyle(.secondary)
+                    Button(model.text("Code stimmt überein", "Code matches")) {
+                        requesting = true; issue = nil
+                        Task { do { try await model.confirmPairing(session.id, automatic: automatic) } catch { issue = error.localizedDescription }; requesting = false }
+                    }.buttonStyle(.borderedProminent).disabled(!session.canConfirm || requesting || !model.isReady)
+                }
+            } else if session.state == "starting" || session.state == "finishing" {
+                HStack(spacing: 10) { ProgressView().controlSize(.small); Text(session.state == "starting" ? model.text("Der andere Computer wird erreicht …", "Contacting the other computer …") : model.text("Verbindung wird gespeichert …", "Saving connection …")) }
+            } else if session.state == "paired" {
+                Label(model.text("Verbunden. Du kannst jetzt Dateien senden.", "Connected. You can now send files."), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+            } else { Label(session.error ?? model.text("Diese Anfrage ist abgelaufen oder wurde abgebrochen.", "This request expired or was cancelled."), systemImage: "exclamationmark.circle").foregroundStyle(.secondary) }
         }
     }
 }

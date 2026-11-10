@@ -30,6 +30,10 @@ struct FailedDirectSend: Identifiable {
     @Published private(set) var removingHistory = false
     @Published var showConnection = false
     @Published var showSetup = false
+    @Published var selectedPairingSessionID: String?
+    @Published private(set) var activePreparationID: String?
+    @Published private(set) var historyRevision = UUID()
+    var observedTools = Set<String>()
     var connectAfterSetup = false
     private var setupOffered = false
     @Published var connectionDraft = PeerConnectionDraft()
@@ -47,6 +51,7 @@ struct FailedDirectSend: Identifiable {
     private var lastShortcutAttempt: Shortcut?
     private var selectingDefaultRecipient = false
     private var explicitRecipientSelection = false
+    private var lastStatusData: Data?
 
     var english: Bool { LanguagePreference.usesEnglish(status?.settings.language ?? "system") }
     func text(_ de: String, _ en: String) -> String { english ? en : de }
@@ -71,6 +76,7 @@ struct FailedDirectSend: Identifiable {
         guard lifecycle == .stopped || lifecycle == .failed else { return }
         let generation = UUID(); lifecycleGeneration = generation
         lifecycle = .starting; engineError = nil; recoveredReceiveFolder = nil
+        lastStatusData = nil
         polling?.cancel(); polling = nil; statusRequests.invalidate()
         do {
             guard await client.stop() else { throw NativeError.unavailable(text("Der vorherige AirLink-Helfer konnte nicht beendet werden. Bitte erneut versuchen.", "The previous AirLink helper could not be stopped. Please try again.")) }
@@ -91,6 +97,7 @@ struct FailedDirectSend: Identifiable {
                     guard !Task.isCancelled else { return }
                     guard self?.lifecycleGeneration == generation, self?.lifecycle == .ready else { return }
                     await self?.refresh()
+                    await self?.refreshTools()
                 }
             }
         } catch {
@@ -122,11 +129,19 @@ struct FailedDirectSend: Identifiable {
         let generation = lifecycleGeneration
         defer { statusRequests.finish(requestID) }
         do {
-            let data = try await client.request("status")
-            let next = try JSONDecoder().decode(HostStatus.self, from: data)
+            let data = try await client.request("status.summary")
+            var next = try JSONDecoder().decode(HostStatus.self, from: data)
             guard statusRequests.accepts(requestID), lifecycleGeneration == generation, lifecycle != .stopping else { return }
+            if lastStatusData == data, lifecycle == .ready { return }
+            lastStatusData = data
             let previous = status
+            if next.summary == true {
+                next.shares = previous?.shares
+                next.clipboard = previous?.clipboard
+                next.statistics = previous?.statistics
+            }
             status = next; engineError = nil; lifecycle = .ready
+            AirLinkUpdater.shared.configure(automatic: next.settings.automaticUpdateChecks && next.settings.setupCompleted)
             if !next.settings.setupCompleted && !setupOffered { setupOffered = true; showSetup = true }
             if let pending = pendingConnection, let connected = pending.draft.pairedDevice(in: next.devices) {
                 if selectedDeviceID == nil || selectedDevice?.fingerprint == connected.fingerprint { selectedDeviceID = connected.id }
@@ -159,6 +174,9 @@ struct FailedDirectSend: Identifiable {
                 for pair in next.pairRequests where !previous.pairRequests.contains(where: { $0.id == pair.id }) {
                     notify(id: pair.id, title: text("Verbindungsanfrage", "Pairing request"), body: pair.name)
                 }
+                for pair in next.pairingSessions ?? [] where pair.needsAttention && previous.pairingSessions?.contains(where: { $0.id == pair.id }) != true {
+                    notify(id: pair.id, title: text("Verbindung bestätigen", "Confirm connection"), body: pair.peerName)
+                }
                 for transfer in next.transfers where transfer.direction == "receive" && transfer.state == "offered" && !previous.transfers.contains(where: { $0.id == transfer.id && $0.state == "offered" }) {
                     notify(id: "offer-\(transfer.id)", title: text("Dateien warten auf Annahme", "Files waiting for acceptance"), body: transfer.deviceName + " · " + transfer.title)
                 }
@@ -182,7 +200,7 @@ struct FailedDirectSend: Identifiable {
     func perform(_ method: String, data: Data?) {
         guard isReady else { error = engineError ?? text("AirLink ist noch nicht bereit.", "AirLink is not ready yet."); return }
         Task {
-            do { try requireReady(); _ = try await client.request(method, params: data); await refresh() }
+            do { try requireReady(); _ = try await client.request(method, params: data); await refresh(force: true); await refreshTools() }
             catch { self.error = error.localizedDescription; await refresh() }
         }
     }
@@ -212,7 +230,7 @@ struct FailedDirectSend: Identifiable {
         try requireReady()
         guard draft.validName, draft.validFolder else { throw NativeError.unavailable(text("Bitte einen gültigen Namen und Empfangsordner wählen.", "Choose a valid name and receive folder.")) }
         guard var settings = status?.settings else { throw NativeError.unavailable(text("AirLink ist noch nicht bereit.", "AirLink is not ready yet.")) }
-        settings.name = draft.normalizedName; settings.receiveDirectory = draft.receiveDirectory; settings.notifications = draft.notifications; settings.setupCompleted = true
+        settings.name = draft.normalizedName; settings.receiveDirectory = draft.receiveDirectory; settings.notifications = draft.notifications; settings.automaticUpdateChecks = draft.automaticUpdateChecks; settings.setupCompleted = true
         try await saveSettings(settings)
         guard setupComplete else { throw NativeError.unavailable(text("Die Einrichtung konnte noch nicht bestätigt werden. Bitte erneut versuchen.", "Setup has not been confirmed yet. Please retry.")) }
         connectAfterSetup = connectNext
@@ -234,6 +252,7 @@ struct FailedDirectSend: Identifiable {
     func clearHistory() async throws {
         try requireReady()
         _ = try await client.request("history.clear")
+        historyRevision = UUID()
         await refresh(force: true)
     }
     func removeFromHistory(_ transfers: [Transfer]) async throws {
@@ -251,6 +270,7 @@ struct FailedDirectSend: Identifiable {
                 _ = try await client.request("history.remove", params: JSONEncoder().encode(["id": id]))
             }
             await refresh(force: true)
+            historyRevision = UUID()
         } catch { await refresh(force: true); throw error }
     }
     func setAutomaticReceive(_ automatic: Bool, deviceID: String) async throws {
@@ -264,11 +284,10 @@ struct FailedDirectSend: Identifiable {
     }
     func resolveDuplicate(transferID: String, fileID: String, action: String, candidateID: String? = nil) async throws {
         try requireReady()
-        guard let transfer = status?.transfers.first(where: { $0.id == transferID }), transfer.canResolveDuplicates,
-              let file = transfer.pendingDuplicateFiles.first(where: { $0.id == fileID }), action == "keep" || action == "skip" else {
+        guard action == "keep" || action == "skip" else {
             throw NativeError.unavailable(text("Die Übertragung benötigt eine aktuelle, nicht pausierte Duplikatentscheidung.", "Refresh or resume the transfer before resolving this duplicate."))
         }
-        if action == "skip", file.duplicateCandidates?.contains(where: { $0.id == candidateID }) != true {
+        if action == "skip", candidateID?.isEmpty != false {
             throw NativeError.unavailable(text("Die vorhandene Datei muss erneut geprüft werden.", "The existing candidate needs to be checked again."))
         }
         var params = ["transferId": transferID, "fileId": fileID, "action": action]
@@ -291,6 +310,7 @@ struct FailedDirectSend: Identifiable {
         guard request.hasValidSource else { throw NativeError.unavailable(text("Bitte Dateien oder einen Ordner auswählen.", "Please choose files or a folder.")) }
         let result = try await client.request("share.create", params: JSONEncoder().encode(request))
         let share = try JSONDecoder().decode(Share.self, from: result)
+        status?.shares = (status?.shares ?? []).filter { $0.id != share.id } + [share]
         await refresh()
         return share
     }
@@ -302,12 +322,80 @@ struct FailedDirectSend: Identifiable {
         }
         let request = ["deviceId": deviceID, "text": text]
         _ = try await client.request("clipboard.send", params: JSONEncoder().encode(request))
+        await refreshTools()
         await refresh()
     }
     func showConnection(to device: Device? = nil) {
+        selectedPairingSessionID = nil
         if let device { connectionDraft = PeerConnectionDraft(device: device) }
         else if pendingConnection == nil { connectionDraft = PeerConnectionDraft() }
         showConnection = true
+        if let device { Task { do { try await beginPairing(device) } catch { self.error = error.localizedDescription } } }
+    }
+    func beginPairing(_ device: Device) async throws {
+        try requireReady()
+        let draft = PeerConnectionDraft(device: device)
+        guard device.kind == "engine", !device.paired, draft.isValid else { throw NativeError.unavailable(text("Wähle einen erreichbaren Computer in AirLink.", "Choose an available computer in AirLink.")) }
+        let response = try await client.request("pairing.start", params: JSONEncoder().encode(["url": draft.normalizedAddress, "fingerprint": draft.normalizedFingerprint]))
+        let session = try JSONDecoder().decode(PairingSession.self, from: response)
+        selectedPairingSessionID = session.id
+        await refresh(force: true)
+    }
+    func confirmPairing(_ id: String, automatic: Bool) async throws {
+        try requireReady()
+        guard status?.pairingSessions?.contains(where: { $0.id == id && $0.canConfirm }) == true else { throw NativeError.unavailable(text("Die Verbindung muss erneut geprüft werden.", "The connection needs to be checked again.")) }
+        struct Confirmation: Encodable { let id: String; let automaticReceive: Bool }
+        _ = try await client.request("pairing.confirm", params: JSONEncoder().encode(Confirmation(id: id, automaticReceive: automatic)))
+        await refresh(force: true)
+    }
+    func cancelPairing(_ id: String) async throws {
+        try requireReady()
+        _ = try await client.request("pairing.cancel", params: JSONEncoder().encode(["id": id]))
+        await refresh(force: true)
+    }
+    func transferPage(cursor: String? = nil, deviceID: String? = nil) async throws -> TransferPage {
+        struct Query: Encodable { var cursor: String?; var deviceId: String?; var limit = 50 }
+        try requireReady()
+        return try JSONDecoder().decode(TransferPage.self, from: await client.request("history.page", params: JSONEncoder().encode(Query(cursor: cursor, deviceId: deviceID))))
+    }
+    func filePage(transferID: String, offset: Int) async throws -> TransferFilePage {
+        struct Query: Encodable { var id: String; var offset: Int; var limit = 50 }
+        try requireReady()
+        return try JSONDecoder().decode(TransferFilePage.self, from: await client.request("transfer.files", params: JSONEncoder().encode(Query(id: transferID, offset: offset))))
+    }
+    func observeTool(_ tool: String, active: Bool) {
+        if active { observedTools.insert(tool); Task { await refreshTools() } }
+        else { observedTools.remove(tool) }
+    }
+    func refreshTools() async {
+        guard isReady else { return }
+        let generation = lifecycleGeneration
+        for tool in observedTools.sorted() {
+            do {
+                let method = tool == "statistics" ? "statistics.get" : tool == "shares" ? "share.list" : tool == "clipboard" ? "clipboard.list" : "relay.list"
+                let data = try await client.request(method)
+                guard generation == lifecycleGeneration, isReady, observedTools.contains(tool) else { continue }
+                switch tool {
+                case "shares": status?.shares = try JSONDecoder().decode([Share].self, from: data)
+                case "clipboard": status?.clipboard = try JSONDecoder().decode([ClipboardMessage].self, from: data)
+                case "statistics": status?.statistics = try JSONDecoder().decode(Statistics.self, from: data)
+                case "relays": status?.relays = try JSONDecoder().decode([Relay].self, from: data)
+                default: break
+                }
+            } catch { if generation == lifecycleGeneration { self.error = error.localizedDescription } }
+        }
+    }
+    private func prepareOffer(_ data: Data) async throws {
+        var preparation = try JSONDecoder().decode(Preparation.self, from: await client.request("preparation.start", params: data))
+        let id = preparation.id
+        activePreparationID = id
+        defer { if activePreparationID == id { activePreparationID = nil } }
+        while preparation.state == "preparing" {
+            try await Task.sleep(for: .milliseconds(150))
+            try requireReady()
+            preparation = try JSONDecoder().decode(Preparation.self, from: await client.request("preparation.status", params: JSONEncoder().encode(["id": id])))
+        }
+        guard preparation.state == "completed" else { throw NativeError.unavailable(preparation.error ?? text("Vorbereitung abgebrochen. Deine Auswahl bleibt erhalten.", "Preparation cancelled. Your selection is kept.")) }
     }
     func connect(_ draft: PeerConnectionDraft, verification: PeerVerification) async throws {
         try requireReady()
@@ -350,7 +438,7 @@ struct FailedDirectSend: Identifiable {
         Task {
             do {
                 try requireReady()
-                _ = try await client.request("offer", params: JSONEncoder().encode(submission))
+                try await prepareOffer(JSONEncoder().encode(submission))
                 sendSelection.acknowledge(submission)
                 await refresh()
             } catch {
@@ -412,7 +500,7 @@ struct FailedDirectSend: Identifiable {
             guard let current = status?.devices.first(where: { $0.id == batch.deviceID }), current.paired, current.kind == "engine", current.canReceive, current.fingerprint == batch.fingerprint else {
                 throw NativeError.unavailable(text("Der gewählte Empfänger ist nicht mehr gekoppelt oder darf nicht empfangen. Verbinde das Gerät erneut und starte die Sendung bewusst neu.", "The chosen recipient is no longer paired or allowed to receive. Reconnect it and explicitly start a new send."))
             }
-            _ = try await client.request("offer", params: JSONEncoder().encode(batch))
+            try await prepareOffer(JSONEncoder().encode(batch))
             failedDirectSends.removeAll { $0.id == batch.id }
             sendNotice = text("Für \(batch.deviceName) vorgemerkt · Fortschritt unter Übertragungen", "Queued for \(batch.deviceName) · follow progress below")
             await refresh()
@@ -453,8 +541,21 @@ struct FailedDirectSend: Identifiable {
     }
     func chooseFiles() {
         showMainWindow()
+        let recipient = selectedDevice.flatMap { $0.paired && $0.kind == "engine" && $0.canReceive ? $0 : nil }
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = true; panel.allowsMultipleSelection = true
-        panel.begin { response in if response == .OK { Task { @MainActor in self.add(panel.urls) } } }
+        panel.begin { response in
+            guard response == .OK else { return }
+            let urls = panel.urls
+            Task { @MainActor in
+                guard let recipient, self.setupComplete, self.isReady, !self.sendingFiles else { self.add(urls); return }
+                do {
+                    let batch = try DirectSendBatch(device: recipient, urls: urls)
+                    self.preparingDirectSend = true
+                    defer { self.preparingDirectSend = false }
+                    await self.submitDirectSend(batch)
+                } catch { self.error = error.localizedDescription }
+            }
+        }
     }
     func showMainWindow() {
         NSApp.activate(ignoringOtherApps: true)
@@ -477,7 +578,7 @@ struct FailedDirectSend: Identifiable {
     }
     func revealReceived(_ transfer: Transfer, fileID: String? = nil) async throws {
         try requireReady()
-        guard transfer.direction == "receive", transfer.state == "completed", !transfer.receivedResultEntries.isEmpty else {
+        guard transfer.direction == "receive", transfer.state == "completed", transfer.hasReceivedContent else {
             throw NativeError.unavailable(text("Für diese Übertragung ist keine empfangene Datei verfügbar.", "No received file is available for this transfer."))
         }
         let response = try JSONDecoder().decode(ReceivedTransfer.self, from: await client.request("transfer.received", params: JSONEncoder().encode(["id": transfer.id])))
@@ -485,11 +586,8 @@ struct FailedDirectSend: Identifiable {
         if let fileID {
             guard let selected = response.item(fileID: fileID) else { throw NativeError.unavailable(text("Diese empfangene Datei ist nicht mehr verfügbar.", "This received file is no longer available.")) }
             item = selected
-        } else if transfer.receivedResultEntries.count == 1 {
-            guard let selected = response.item(fileID: transfer.receivedResultEntries[0].id) else {
-                throw NativeError.unavailable(text("Diese empfangene Datei ist nicht mehr verfügbar.", "This received file is no longer available."))
-            }
-            item = selected
+        } else if let single = response.singleItem {
+            item = single
         } else { item = nil }
         if let item {
             guard item.path.hasPrefix("/") else { throw NativeError.unavailable(text("Ungültiger Empfangspfad.", "Invalid receive path.")) }

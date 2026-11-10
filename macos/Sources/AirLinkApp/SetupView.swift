@@ -54,6 +54,7 @@ struct SetupView: View {
                         Text(model.text("macOS benötigt dafür deine Freigabe. Du kannst sie auch später in den Einstellungen erteilen.", "macOS needs your permission for notifications. You can also allow them later in Settings.")).font(.caption).foregroundStyle(.secondary)
                     }
                     Toggle(model.text("Danach ein Gerät hinzufügen", "Add a device next"), isOn: $connectNext)
+                    Toggle(model.text("Über neue Betas informieren", "Notify about new betas"), isOn: $draft.automaticUpdateChecks)
                     Text(model.text("Deine Auswahl lässt sich jederzeit in den geordneten Einstellungen ändern.", "You can change these choices in Settings at any time.")).font(.caption).foregroundStyle(.secondary)
                 }.padding(18).background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
             }
@@ -73,6 +74,7 @@ struct SetupView: View {
                 let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")
                 draft = SetupDraft(name: SetupDraft.suggestedName(saved: model.status?.settings.name ?? "", fallback: model.text("Mein Mac", "My Mac")), receiveDirectory: SetupDraft.suggestedFolder(saved: model.status?.settings.receiveDirectory ?? "", downloads: downloads), notifications: model.status?.settings.notifications ?? false)
                 connectNext = model.status?.devices.contains(where: \.paired) != true
+                draft.automaticUpdateChecks = model.status?.settings.automaticUpdateChecks ?? false
                 nameFocused = true
             }
     }
