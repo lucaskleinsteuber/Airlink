@@ -1,0 +1,65 @@
+{
+  "candidate": "0.12.0-beta.2",
+  "applicationSourceCommit": "7c4359b3b53d988a744455b253ce2282e3373706",
+  "run": "https://github.com/lucaskleinsteuber/Airlink/actions/runs/42774288049",
+  "builder": "Debian 12 / Qt 6.4.2",
+  "guiLaunched": false,
+  "checks": [
+    "native installation",
+    "synthetic upgrade from beta 2 to beta 3 with identical payload",
+    "14 Qt Core tests with real installed helper",
+    "AppImage version/linkage",
+    "beta version ordering",
+    "uninstall and preserved fixture data"
+  ],
+  "environments": [
+    {
+      "system": "Debian 12",
+      "image": "debian:12",
+      "imageDigest": "debian@sha256:268fb24c39bca92d326dd83ea3abebe4a3f7751c804ffef23bb6d857dd343ff8",
+      "qt": "6.4.2",
+      "jobId": 129690247265,
+      "result": "passed"
+    },
+    {
+      "system": "Ubuntu 24.04",
+      "image": "ubuntu:24.04",
+      "imageDigest": "ubuntu@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852",
+      "qt": "6.4.2",
+      "jobId": 129690247315,
+      "result": "passed"
+    },
+    {
+      "system": "Arch 20261108.0.623074",
+      "image": "archlinux:base-devel",
+      "imageDigest": "archlinux@sha256:fa2d4ce3310ddd90a4208e5168be8ad367da5129af1245f38fd2d803bcbe3239",
+      "qt": "6.12.0",
+      "jobId": 129690247340,
+      "result": "passed"
+    },
+    {
+      "system": "Fedora 45",
+      "image": "fedora:latest",
+      "imageDigest": "fedora@sha256:a7d72ba2745b100a3351087472e5ee7b2450af7cf331e7673007e3817612839c",
+      "qt": "6.11.2",
+      "jobId": 129690247313,
+      "result": "passed"
+    },
+    {
+      "system": "openSUSE Leap 16.0",
+      "image": "opensuse/leap:16.0",
+      "imageDigest": "opensuse/leap@sha256:a4115e2f5aea9712a7c73974fd94000a034fc3051ef29b5f7722fbf04070dd9d",
+      "qt": "6.9.1",
+      "jobId": 129690247336,
+      "result": "passed"
+    },
+    {
+      "system": "openSUSE Tumbleweed 20261108",
+      "image": "opensuse/tumbleweed:latest",
+      "imageDigest": "opensuse/tumbleweed@sha256:a1476d80fb682a6e893cc23ea8694ddf7eed1e59f97c7006cc7d56e511f82d64",
+      "qt": "6.12.0",
+      "jobId": 129690247293,
+      "result": "passed"
+    }
+  ]
+}

@@ -2,11 +2,39 @@
 
 AirLink uses background unit, protocol, subprocess, filesystem, and HTTPS integration tests. The test suite does not automate Finder, click application windows, launch a simulator, or take control of the user's desktop. Interactive runtime acceptance is recorded separately from automated test results.
 
-## 0.12.0 Beta 2 — candidate checks
+## 0.12.0 Beta 2 — stabilization evidence, 2026-11-10
 
-`main` is preparing Beta 2; the published Beta 1 packages and live update feeds remain unchanged until the new release is verified. The candidate adds per-file durable checkpoints, compact file replies, local aggregate diagnostics and explicit retry guidance. Its tests cover a 10,000-file manifest without rewriting untouched checkpoints, failed transaction rollback and restart/replay, atomic legacy migration, incomplete manifests, private report redaction, legacy/compact reply compatibility, ownership and an actual two-service retry from a previously confirmed block. Native helper contract tests derive the current source version instead of retaining a previous beta's literal.
+The Beta 2 candidate passed the complete background, package and performance checks. Release delivery and live-feed verification are completed separately after upload. The candidate adds per-file durable checkpoints, compact file replies, local aggregate diagnostics and explicit retry guidance. Its tests cover a 10,000-file manifest without rewriting untouched checkpoints, failed transaction rollback and restart/replay, atomic legacy migration, incomplete manifests, private report redaction, legacy/compact reply compatibility, ownership and an actual two-service retry from a previously confirmed block. Native helper contract tests derive the current source version instead of retaining a previous beta's literal.
 
-The manual **Background transfer comparison** workflow compares the immutable Beta 1 tag with the candidate under identical Linux-runner conditions: three 300-MiB runs each, three 4-GiB runs each, one matched 10,000-file run each, separate restart/recovery and concurrent sending/receiving. Payloads are real, results use independent SHA-256 checks and both services' RSS is sampled. This hosted measurement keeps local large-file activity off the user's Mac while device acceptance is running. It does not establish Mac↔Arch WLAN throughput. Results are recorded after completion; no candidate speedup is inferred from the unit tests.
+The application candidate at `7c4359b` passed the [Windows/macOS/Ubuntu background matrix](https://github.com/lucaskleinsteuber/Airlink/actions/runs/42774287811): Go race tests/vet, 43 Windows Core tests, 74 Swift tests and 68 web tests/build. Actual helper subprocesses ran with isolated data. Both Mac and Windows architectures compiled; Windows x64 silent install, upgrade and uninstall passed. [Both DMGs and Setup architectures were built](https://github.com/lucaskleinsteuber/Airlink/actions/runs/42774331052).
+
+[All six Linux package lifecycles passed](https://github.com/lucaskleinsteuber/Airlink/actions/runs/42774288049), including 14 Qt Core tests per environment, the installed helper and AppImage version/linkage, upgrade to a synthetic Beta 3 containing the same payload, removal and preserved fixtures. The [exact images and Qt versions](evidence/0.12.0-beta.2-linux-packages.json) cover Debian 12, Ubuntu 24.04, Arch, Fedora 45 and both openSUSE variants. The synthetic successor is a test fixture and is not a released Beta 3.
+
+The sealed Mac DMGs additionally passed build/version, single-architecture app/helper, deep ad hoc signature, architecture-feed and pinned-public-key checks without launching an app. All 74 Swift tests then passed with extracted ARM64 helper `a024ce2bbe75fc38c8fc8619864692955f93e2934dfbc20e5e29a24c3a3ea578`. The eight-package local privacy audit inspected 1,403 payloads, 919 bundle entries, 2,010 managed resources and four NSIS streams with zero findings. A fresh anonymous clone at `7c4359b` passed the guard for 328 tracked inputs, 44 commits, 13 tags and 999 historical blobs.
+
+The sealed eight-package manifest and five feeds passed public-only Go verification with the existing key. Actual Sparkle verified both architecture-specific feeds and DMG signatures, NetSparkle verified both complete Setup files and their exact channels, and Qt verified the signed Linux feed and all four complete packages. Wrong keys, modified content and the wrong Windows architecture were rejected. Headless updater handoff/stop/interruption tests passed in the matrix; native updater clicks remain separate device acceptance.
+
+The full [Background transfer comparison](https://github.com/lucaskleinsteuber/Airlink/actions/runs/42774007494) passed against the immutable Beta 1 tag under identical Linux-runner conditions: three 300-MiB runs each, three 4-GiB runs each, one matched 10,000-file run each, separate restart/recovery and concurrent sending/receiving. The comparison uses actual dense payloads, independent SHA-256 checks and both services' RSS samples. It runs off the user's Mac and does not establish Mac↔Arch WLAN throughput.
+
+| Matched full Linux-runner loopback case | Beta 1 | Beta 2 | Scope |
+| --- | --- | --- | --- |
+| 300 MiB single file, median of three runs each | 2.330 s | 1.895 s | Identical immutable input; alternating helper order |
+| 4 GiB single file, median of three runs each | 28.973 s | 24.833 s | Independent end size/hash and unchanged-source checks |
+| 10,000 small files, Unicode folders and two empty subfolders | 2,525.075 s | 79.541 s | One matched run each; about 31.75 times faster in this workload |
+| Highest sampled process RSS across these comparison cases | 98.16 MiB | 52.54 MiB | Both processes sampled every 100 ms; below the 256-MiB target |
+
+The complete run also passed a separate 4-GiB pause/receiver-crash/sender-crash recovery and simultaneous 300-MiB transfers in both directions. Later non-application commits leave the Go source unchanged; all full, focused and recovery runs used candidate helper SHA-256 `df7164aa4e30acd926e080a67d18cfa3f7b5d7649ce28b45262993e9bc6dc635`.
+
+The [focused small-file run](https://github.com/lucaskleinsteuber/Airlink/actions/runs/42778589022) completed with matching, immutable data and independent end hashes:
+
+| Linux-runner loopback case | Beta 1 | Beta 2 | Scope |
+| --- | --- | --- | --- |
+| 1,000 small files; median of three runs per helper | 18.869 s | 4.919 s | Alternating helper order; approximately 3.84 times faster in this measured case |
+| 10,000 small files, Unicode folders and two empty subfolders | Not part of this focused cohort | 74.912 s | One candidate run, complete structure/size/SHA-256/source checks; not compared to historical Mac measurements |
+| Highest sampled RSS, matched 1,000-file runs | 28.90 MiB | 24.69 MiB | Per-process maximum across the three runs each |
+| Highest sampled RSS, 10,000-file candidate | Not part of this focused cohort | 48.29 MiB | Per-process maximum in the separate larger workload |
+
+The [separate recovery/concurrency run](https://github.com/lucaskleinsteuber/Airlink/actions/runs/42777749771) passed a complete 4-GiB file with pause, abrupt receiver restart and abrupt sender restart, preserved confirmed progress and independent final SHA-256. Sampled RSS peaked at 50.82 MiB for the sender and 42.26 MiB for the receiver. Simultaneous 300-MiB sends in both directions passed independent hashes with observed overlapping progress and a deliberate 64-MiB/s send limit; peak sampled RSS was 75.79 MiB. The [machine-readable evidence](evidence/0.12.0-beta.2-performance.json) retains every run, phase, helper hash and recovery event. These values are not physical-network or 100-GB acceptance.
 
 ## 0.12.0 Beta 1 — stabilization evidence, 2026-11-10
 

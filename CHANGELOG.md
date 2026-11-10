@@ -2,13 +2,13 @@
 
 AirLink uses MAJOR.MINOR.PATCH versions. Entries describe implemented changes; distribution and verification status are recorded separately.
 
-## 0.12.0-beta.2 — in development
+## 0.12.0-beta.2 — 2026-11-10
 
 - Store immutable manifests and individual file checkpoints separately. Block receipts, the file offset and the compact transfer header commit in one SQLite transaction after data fsync. Existing records migrate atomically; older clients fail closed on the new private storage format rather than ignoring checkpoints. Downgrading an upgraded data directory to Beta 1 is unsupported.
 - Avoid full-manifest copies in worker status/file reads and source anchoring. Native senders request bounded per-file preparation/completion responses; older peers retain the original response shape.
 - Add a manually saved local diagnostic report in macOS, Linux and Windows settings. The service exports a strict aggregate schema with no raw logs, identifiers, names, addresses, paths, credentials, clipboard text or file hashes. Unavailable services permit a minimal client-only report.
 - Present German/English recovery advice separately from technical details. Retry recognized recoverable sender failures using the same transfer/source identity and the receiver's durable offsets; source changes, integrity failures, cancellation and completed jobs do not silently restart.
-- Build 15. Large comparative measurements run only on isolated hosted runners while device acceptance continues on the published Beta 1. No local installation or existing release/feed replacement is part of source preparation.
+- Build 15. Matched Linux-runner TLS measurements: 10,000 small files 2,525.075 → 79.541 seconds (one matched run each); median 300 MiB 2.330 → 1.895 seconds and 4 GiB 28.973 → 24.833 seconds (three runs each). Independent end hashes, crash recovery and concurrent sending/receiving passed. These are loopback measurements, not WLAN claims. Source/package/update verification is recorded in [TESTING.md](docs/TESTING.md); physical and 100-GB device acceptance remain separate.
 
 ## 0.12.0-beta.1 — 2026-11-10
 

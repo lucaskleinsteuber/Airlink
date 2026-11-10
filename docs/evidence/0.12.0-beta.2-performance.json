@@ -1,0 +1,799 @@
+{
+  "candidate": "0.12.0-beta.2",
+  "date": "2026-11-10",
+  "applicationSourceCommit": "7c4359b3b53d988a744455b253ce2282e3373706",
+  "smallFileMeasurementCommit": "5b877990a64d141b4bb4927f2c1780bd8d3cd0c4",
+  "recoveryMeasurementCommit": "bf33c41f34fa2c1548ec306f4c00264c3f15b329",
+  "transferSourcesUnchangedSince": "74ed82e2f11d9183af75fbc65fd76b8aa50178f3",
+  "environment": {
+    "os": "Linux / GitHub ubuntu-latest runner",
+    "architecture": "x64",
+    "network": "same host / loopback TLS",
+    "workers": 4,
+    "physicalNetworkTested": false,
+    "pollingSeconds": 0.02,
+    "RSSSamplingSeconds": 0.1
+  },
+  "smallFilesRun": "https://github.com/lucaskleinsteuber/Airlink/actions/runs/42778589022",
+  "smallFiles": [
+    {
+      "helperVersion": "0.12.0-beta.1",
+      "helperSHA256": "f31f9a52c119cc21e8b3c11001750abbd555dd2edf7c016b6e18c1f838d6273d",
+      "iteration": 1,
+      "bytes": 8192000,
+      "files": 1000,
+      "directories": 12,
+      "manifestSHA256": "98ebd732bfb8edad3ee0ad4f037bf58c79b6a5b3a8bc348e60054ed897e3fe50",
+      "timingsSeconds": {
+        "preparationComplete": 0.222734,
+        "incomingOffer": 0.233899,
+        "sourceRunning": 0.255097,
+        "firstConfirmedBlock": 0.255117,
+        "allPayloadConfirmed": 24.047795,
+        "receiverComplete": 24.068476,
+        "bothComplete": 24.068478
+      },
+      "MiBPerSecondIncludingPreparation": 0.325,
+      "sampledRSSBytes": {
+        "source": 29835264,
+        "receiver": 29818880
+      },
+      "scope": "same-host actual two-service TLS transfer, unlimited rates, non-sparse source, no GUI",
+      "case": "1000-files",
+      "role": "baseline",
+      "comparisonRepetition": 1
+    },
+    {
+      "helperVersion": "0.12.0-beta.2",
+      "helperSHA256": "df7164aa4e30acd926e080a67d18cfa3f7b5d7649ce28b45262993e9bc6dc635",
+      "iteration": 1,
+      "bytes": 8192000,
+      "files": 1000,
+      "directories": 12,
+      "manifestSHA256": "98ebd732bfb8edad3ee0ad4f037bf58c79b6a5b3a8bc348e60054ed897e3fe50",
+      "timingsSeconds": {
+        "preparationComplete": 0.14137,
+        "incomingOffer": 0.179266,
+        "sourceRunning": 0.200225,
+        "firstConfirmedBlock": 0.200232,
+        "allPayloadConfirmed": 4.782267,
+        "receiverComplete": 4.782268,
+        "bothComplete": 4.78227
+      },
+      "MiBPerSecondIncludingPreparation": 1.634,
+      "sampledRSSBytes": {
+        "source": 24915968,
+        "receiver": 25833472
+      },
+      "scope": "same-host actual two-service TLS transfer, unlimited rates, non-sparse source, no GUI",
+      "case": "1000-files",
+      "role": "candidate",
+      "comparisonRepetition": 1
+    },
+    {
+      "helperVersion": "0.12.0-beta.2",
+      "helperSHA256": "df7164aa4e30acd926e080a67d18cfa3f7b5d7649ce28b45262993e9bc6dc635",
+      "iteration": 1,
+      "bytes": 8192000,
+      "files": 1000,
+      "directories": 12,
+      "manifestSHA256": "98ebd732bfb8edad3ee0ad4f037bf58c79b6a5b3a8bc348e60054ed897e3fe50",
+      "timingsSeconds": {
+        "preparationComplete": 0.14117,
+        "incomingOffer": 0.159712,
+        "sourceRunning": 0.180239,
+        "firstConfirmedBlock": 0.180249,
+        "allPayloadConfirmed": 4.966854,
+        "receiverComplete": 4.966855,
+        "bothComplete": 4.966855
+      },
+      "MiBPerSecondIncludingPreparation": 1.573,
+      "sampledRSSBytes": {
+        "source": 24924160,
+        "receiver": 25890816
+      },
+      "scope": "same-host actual two-service TLS transfer, unlimited rates, non-sparse source, no GUI",
+      "case": "1000-files",
+      "role": "candidate",
+      "comparisonRepetition": 2
+    },
+    {
+      "helperVersion": "0.12.0-beta.1",
+      "helperSHA256": "f31f9a52c119cc21e8b3c11001750abbd555dd2edf7c016b6e18c1f838d6273d",
+      "iteration": 1,
+      "bytes": 8192000,
+      "files": 1000,
+      "directories": 12,
+      "manifestSHA256": "98ebd732bfb8edad3ee0ad4f037bf58c79b6a5b3a8bc348e60054ed897e3fe50",
+      "timingsSeconds": {
+        "preparationComplete": 0.141183,
+        "incomingOffer": 0.150882,
+        "sourceRunning": 0.173226,
+        "firstConfirmedBlock": 0.173237,
+        "allPayloadConfirmed": 18.620083,
+        "receiverComplete": 18.649062,
+        "bothComplete": 18.649062
+      },
+      "MiBPerSecondIncludingPreparation": 0.419,
+      "sampledRSSBytes": {
+        "source": 30306304,
+        "receiver": 29671424
+      },
+      "scope": "same-host actual two-service TLS transfer, unlimited rates, non-sparse source, no GUI",
+      "case": "1000-files",
+      "role": "baseline",
+      "comparisonRepetition": 2
+    },
+    {
+      "helperVersion": "0.12.0-beta.1",
+      "helperSHA256": "f31f9a52c119cc21e8b3c11001750abbd555dd2edf7c016b6e18c1f838d6273d",
+      "iteration": 1,
+      "bytes": 8192000,
+      "files": 1000,
+      "directories": 12,
+      "manifestSHA256": "98ebd732bfb8edad3ee0ad4f037bf58c79b6a5b3a8bc348e60054ed897e3fe50",
+      "timingsSeconds": {
+        "preparationComplete": 0.141242,
+        "incomingOffer": 0.150541,
+        "sourceRunning": 0.171141,
+        "firstConfirmedBlock": 0.171153,
+        "allPayloadConfirmed": 18.869446,
+        "receiverComplete": 18.869446,
+        "bothComplete": 18.869447
+      },
+      "MiBPerSecondIncludingPreparation": 0.414,
+      "sampledRSSBytes": {
+        "source": 29749248,
+        "receiver": 29782016
+      },
+      "scope": "same-host actual two-service TLS transfer, unlimited rates, non-sparse source, no GUI",
+      "case": "1000-files",
+      "role": "baseline",
+      "comparisonRepetition": 3
+    },
+    {
+      "helperVersion": "0.12.0-beta.2",
+      "helperSHA256": "df7164aa4e30acd926e080a67d18cfa3f7b5d7649ce28b45262993e9bc6dc635",
+      "iteration": 1,
+      "bytes": 8192000,
+      "files": 1000,
+      "directories": 12,
+      "manifestSHA256": "98ebd732bfb8edad3ee0ad4f037bf58c79b6a5b3a8bc348e60054ed897e3fe50",
+      "timingsSeconds": {
+        "preparationComplete": 0.141215,
+        "incomingOffer": 0.161446,
+        "sourceRunning": 0.182593,
+        "firstConfirmedBlock": 0.182603,
+        "allPayloadConfirmed": 4.918952,
+        "receiverComplete": 4.918952,
+        "bothComplete": 4.918953
+      },
+      "MiBPerSecondIncludingPreparation": 1.588,
+      "sampledRSSBytes": {
+        "source": 24719360,
+        "receiver": 25645056
+      },
+      "scope": "same-host actual two-service TLS transfer, unlimited rates, non-sparse source, no GUI",
+      "case": "1000-files",
+      "role": "candidate",
+      "comparisonRepetition": 3
+    },
+    {
+      "helperVersion": "0.12.0-beta.2",
+      "helperSHA256": "df7164aa4e30acd926e080a67d18cfa3f7b5d7649ce28b45262993e9bc6dc635",
+      "iteration": 1,
+      "bytes": 81920000,
+      "files": 10000,
+      "directories": 102,
+      "manifestSHA256": "7a34350a109ef2475abcfd8c755e7053b613ad1fc863d3bbf1ff7d24ef7c0fd3",
+      "timingsSeconds": {
+        "preparationComplete": 1.351249,
+        "incomingOffer": 1.707337,
+        "sourceRunning": 1.831984,
+        "firstConfirmedBlock": 1.852632,
+        "allPayloadConfirmed": 74.890988,
+        "receiverComplete": 74.890989,
+        "bothComplete": 74.911557
+      },
+      "MiBPerSecondIncludingPreparation": 1.043,
+      "sampledRSSBytes": {
+        "source": 48586752,
+        "receiver": 50630656
+      },
+      "scope": "same-host actual two-service TLS transfer, unlimited rates, non-sparse source, no GUI",
+      "case": "10000-files",
+      "role": "candidate",
+      "comparisonRepetition": 1
+    }
+  ],
+  "recoveryRun": "https://github.com/lucaskleinsteuber/Airlink/actions/runs/42777749771",
+  "singleFileRecovery": {
+    "helperSHA256": "df7164aa4e30acd926e080a67d18cfa3f7b5d7649ce28b45262993e9bc6dc635",
+    "version": "0.12.0-beta.2",
+    "bytes": 4294967296,
+    "singleFile": true,
+    "transport": "native service to service, TLS 1.3, same-host loopback",
+    "transferAndRecoverySeconds": 47.58,
+    "totalSeconds": 52.78,
+    "sha256": "662c437ba3c1a8d6f1e4bd5bc129133e62113ffd4f3b6d052deb1e6480bd3a46",
+    "peakRSSBytes": {
+      "source": 53288960,
+      "receiver": 44314624
+    },
+    "rssSamplingSeconds": 0.5,
+    "sourcePayloadCounter": 4255350784,
+    "receiverPayloadCounter": 4222844928,
+    "counterNote": "Lifetime counters checkpoint periodically; abrupt process kills may lose recent counter samples, not confirmed file receipts.",
+    "events": [
+      {
+        "event": "offered",
+        "seconds": 1.1,
+        "bytes": 4294967296,
+        "fixture": "sparse source with nonzero markers; all bytes transferred"
+      },
+      {
+        "event": "progress",
+        "seconds": 1.1,
+        "confirmedBytes": 0,
+        "sourceState": "offered",
+        "receiverState": "waiting",
+        "peakRSSBytes": {
+          "source": 15970304,
+          "receiver": 15396864
+        }
+      },
+      {
+        "event": "paused",
+        "seconds": 4.72,
+        "confirmedBytes": 83886080
+      },
+      {
+        "event": "progress",
+        "seconds": 11.25,
+        "confirmedBytes": 696254464,
+        "sourceState": "running",
+        "receiverState": "running",
+        "peakRSSBytes": {
+          "source": 53047296,
+          "receiver": 44314624
+        }
+      },
+      {
+        "event": "receiver-crash-recovered",
+        "seconds": 17.07,
+        "confirmedBytes": 1442840576
+      },
+      {
+        "event": "progress",
+        "seconds": 21.35,
+        "confirmedBytes": 1736441856,
+        "sourceState": "running",
+        "receiverState": "running",
+        "peakRSSBytes": {
+          "source": 53235712,
+          "receiver": 44314624
+        }
+      },
+      {
+        "event": "source-crash-recovered",
+        "seconds": 29.42,
+        "confirmedBytes": 2877292544
+      },
+      {
+        "event": "progress",
+        "seconds": 31.61,
+        "confirmedBytes": 3011510272,
+        "sourceState": "running",
+        "receiverState": "running",
+        "peakRSSBytes": {
+          "source": 53288960,
+          "receiver": 44314624
+        }
+      },
+      {
+        "event": "progress",
+        "seconds": 41.97,
+        "confirmedBytes": 4018143232,
+        "sourceState": "running",
+        "receiverState": "running",
+        "peakRSSBytes": {
+          "source": 53288960,
+          "receiver": 44314624
+        }
+      },
+      {
+        "event": "transfer-completed",
+        "seconds": 47.58,
+        "confirmedBytes": 4294967296
+      }
+    ],
+    "physicalDevicesTested": false,
+    "guiAutomation": false
+  },
+  "bidirectional": {
+    "version": "0.12.0-beta.2",
+    "helperSHA256": "df7164aa4e30acd926e080a67d18cfa3f7b5d7649ce28b45262993e9bc6dc635",
+    "bytesPerDirection": 314572800,
+    "seconds": 16.087827,
+    "simultaneousProgressObserved": true,
+    "sendLimitMiBPerSecondPerHost": 64,
+    "sampledRSSBytes": {
+      "left": 71081984,
+      "right": 79474688
+    },
+    "sha256": {
+      "left": "dfc5ad17c349c9606a6564fe4f89287342936a2e0abca79d68f55a46586b8a42",
+      "right": "9e308dfa79d2bca49cdabc2a86fcdfebf621af252afb01cc260b4775db1111a2"
+    },
+    "independentHashesPassed": true,
+    "scope": "same-host actual simultaneous two-service TLS transfer; no GUI or physical network"
+  },
+  "note": "All full/focused/recovery workflows passed. Matched cohorts use identical immutable dense sources and independent destination/source hashes. Do not compare absolute timings across separate runner cohorts or to historical Mac measurements. Loopback is not WLAN or 100-GB device acceptance.",
+  "comparisonRun": "https://github.com/lucaskleinsteuber/Airlink/actions/runs/42774007494",
+  "comparisonMeasurementCommit": "74ed82e2f11d9183af75fbc65fd76b8aa50178f3",
+  "comparison": [
+    {
+      "helperVersion": "0.12.0-beta.1",
+      "helperSHA256": "f31f9a52c119cc21e8b3c11001750abbd555dd2edf7c016b6e18c1f838d6273d",
+      "iteration": 1,
+      "bytes": 314572800,
+      "files": 1,
+      "directories": 0,
+      "manifestSHA256": "1e2ea8261f9f0603a015cae6f2c256145a77a49552d02dbe115177a9eb8ea258",
+      "timingsSeconds": {
+        "preparationComplete": 0.021234,
+        "sourceRunning": 0.021685,
+        "incomingOffer": 0.021686,
+        "firstConfirmedBlock": 0.222258,
+        "allPayloadConfirmed": 2.113884,
+        "receiverComplete": 2.519497,
+        "bothComplete": 2.54019
+      },
+      "MiBPerSecondIncludingPreparation": 118.101,
+      "sampledRSSBytes": {
+        "source": 53968896,
+        "receiver": 35721216
+      },
+      "scope": "same-host actual two-service TLS transfer, unlimited rates, non-sparse source, no GUI",
+      "case": "300MiB",
+      "role": "baseline"
+    },
+    {
+      "helperVersion": "0.12.0-beta.2",
+      "helperSHA256": "df7164aa4e30acd926e080a67d18cfa3f7b5d7649ce28b45262993e9bc6dc635",
+      "iteration": 1,
+      "bytes": 314572800,
+      "files": 1,
+      "directories": 0,
+      "manifestSHA256": "1e2ea8261f9f0603a015cae6f2c256145a77a49552d02dbe115177a9eb8ea258",
+      "timingsSeconds": {
+        "preparationComplete": 0.020347,
+        "sourceRunning": 0.020761,
+        "incomingOffer": 0.020761,
+        "firstConfirmedBlock": 0.207603,
+        "allPayloadConfirmed": 1.731153,
+        "receiverComplete": 1.894733,
+        "bothComplete": 1.894736
+      },
+      "MiBPerSecondIncludingPreparation": 158.333,
+      "sampledRSSBytes": {
+        "source": 53956608,
+        "receiver": 35659776
+      },
+      "scope": "same-host actual two-service TLS transfer, unlimited rates, non-sparse source, no GUI",
+      "case": "300MiB",
+      "role": "candidate"
+    },
+    {
+      "helperVersion": "0.12.0-beta.2",
+      "helperSHA256": "df7164aa4e30acd926e080a67d18cfa3f7b5d7649ce28b45262993e9bc6dc635",
+      "iteration": 1,
+      "bytes": 314572800,
+      "files": 1,
+      "directories": 0,
+      "manifestSHA256": "1e2ea8261f9f0603a015cae6f2c256145a77a49552d02dbe115177a9eb8ea258",
+      "timingsSeconds": {
+        "preparationComplete": 0.020268,
+        "sourceRunning": 0.02065,
+        "incomingOffer": 0.02065,
+        "firstConfirmedBlock": 0.203691,
+        "allPayloadConfirmed": 2.224801,
+        "receiverComplete": 2.411776,
+        "bothComplete": 2.432258
+      },
+      "MiBPerSecondIncludingPreparation": 123.342,
+      "sampledRSSBytes": {
+        "source": 53919744,
+        "receiver": 35340288
+      },
+      "scope": "same-host actual two-service TLS transfer, unlimited rates, non-sparse source, no GUI",
+      "case": "300MiB",
+      "role": "candidate"
+    },
+    {
+      "helperVersion": "0.12.0-beta.1",
+      "helperSHA256": "f31f9a52c119cc21e8b3c11001750abbd555dd2edf7c016b6e18c1f838d6273d",
+      "iteration": 1,
+      "bytes": 314572800,
+      "files": 1,
+      "directories": 0,
+      "manifestSHA256": "1e2ea8261f9f0603a015cae6f2c256145a77a49552d02dbe115177a9eb8ea258",
+      "timingsSeconds": {
+        "preparationComplete": 0.020267,
+        "sourceRunning": 0.020838,
+        "incomingOffer": 0.020839,
+        "firstConfirmedBlock": 0.202769,
+        "allPayloadConfirmed": 1.914423,
+        "receiverComplete": 2.078319,
+        "bothComplete": 2.078319
+      },
+      "MiBPerSecondIncludingPreparation": 144.347,
+      "sampledRSSBytes": {
+        "source": 54280192,
+        "receiver": 36065280
+      },
+      "scope": "same-host actual two-service TLS transfer, unlimited rates, non-sparse source, no GUI",
+      "case": "300MiB",
+      "role": "baseline"
+    },
+    {
+      "helperVersion": "0.12.0-beta.1",
+      "helperSHA256": "f31f9a52c119cc21e8b3c11001750abbd555dd2edf7c016b6e18c1f838d6273d",
+      "iteration": 1,
+      "bytes": 314572800,
+      "files": 1,
+      "directories": 0,
+      "manifestSHA256": "1e2ea8261f9f0603a015cae6f2c256145a77a49552d02dbe115177a9eb8ea258",
+      "timingsSeconds": {
+        "preparationComplete": 0.020374,
+        "sourceRunning": 0.021114,
+        "incomingOffer": 0.021114,
+        "firstConfirmedBlock": 0.204709,
+        "allPayloadConfirmed": 2.166356,
+        "receiverComplete": 2.330463,
+        "bothComplete": 2.330463
+      },
+      "MiBPerSecondIncludingPreparation": 128.73,
+      "sampledRSSBytes": {
+        "source": 53706752,
+        "receiver": 36089856
+      },
+      "scope": "same-host actual two-service TLS transfer, unlimited rates, non-sparse source, no GUI",
+      "case": "300MiB",
+      "role": "baseline"
+    },
+    {
+      "helperVersion": "0.12.0-beta.2",
+      "helperSHA256": "df7164aa4e30acd926e080a67d18cfa3f7b5d7649ce28b45262993e9bc6dc635",
+      "iteration": 1,
+      "bytes": 314572800,
+      "files": 1,
+      "directories": 0,
+      "manifestSHA256": "1e2ea8261f9f0603a015cae6f2c256145a77a49552d02dbe115177a9eb8ea258",
+      "timingsSeconds": {
+        "preparationComplete": 0.020404,
+        "sourceRunning": 0.020946,
+        "incomingOffer": 0.020946,
+        "firstConfirmedBlock": 0.206505,
+        "allPayloadConfirmed": 1.689184,
+        "receiverComplete": 1.854222,
+        "bothComplete": 1.854222
+      },
+      "MiBPerSecondIncludingPreparation": 161.793,
+      "sampledRSSBytes": {
+        "source": 53825536,
+        "receiver": 35557376
+      },
+      "scope": "same-host actual two-service TLS transfer, unlimited rates, non-sparse source, no GUI",
+      "case": "300MiB",
+      "role": "candidate"
+    },
+    {
+      "helperVersion": "0.12.0-beta.1",
+      "helperSHA256": "f31f9a52c119cc21e8b3c11001750abbd555dd2edf7c016b6e18c1f838d6273d",
+      "iteration": 1,
+      "bytes": 4294967296,
+      "files": 1,
+      "directories": 0,
+      "manifestSHA256": "0d2d4ed40846be29cbf7126f98316be71efdf106ee7253bc3c3673fe55586be2",
+      "timingsSeconds": {
+        "preparationComplete": 0.02032,
+        "sourceRunning": 0.020681,
+        "incomingOffer": 0.020682,
+        "firstConfirmedBlock": 2.181205,
+        "allPayloadConfirmed": 27.338181,
+        "receiverComplete": 29.466138,
+        "bothComplete": 29.466138
+      },
+      "MiBPerSecondIncludingPreparation": 139.007,
+      "sampledRSSBytes": {
+        "source": 55177216,
+        "receiver": 41910272
+      },
+      "scope": "same-host actual two-service TLS transfer, unlimited rates, non-sparse source, no GUI",
+      "case": "4GiB",
+      "role": "baseline"
+    },
+    {
+      "helperVersion": "0.12.0-beta.2",
+      "helperSHA256": "df7164aa4e30acd926e080a67d18cfa3f7b5d7649ce28b45262993e9bc6dc635",
+      "iteration": 1,
+      "bytes": 4294967296,
+      "files": 1,
+      "directories": 0,
+      "manifestSHA256": "0d2d4ed40846be29cbf7126f98316be71efdf106ee7253bc3c3673fe55586be2",
+      "timingsSeconds": {
+        "preparationComplete": 0.020295,
+        "sourceRunning": 0.020706,
+        "incomingOffer": 0.020707,
+        "firstConfirmedBlock": 2.135217,
+        "allPayloadConfirmed": 24.073744,
+        "receiverComplete": 26.207035,
+        "bothComplete": 26.207035
+      },
+      "MiBPerSecondIncludingPreparation": 156.294,
+      "sampledRSSBytes": {
+        "source": 55091200,
+        "receiver": 44888064
+      },
+      "scope": "same-host actual two-service TLS transfer, unlimited rates, non-sparse source, no GUI",
+      "case": "4GiB",
+      "role": "candidate"
+    },
+    {
+      "helperVersion": "0.12.0-beta.2",
+      "helperSHA256": "df7164aa4e30acd926e080a67d18cfa3f7b5d7649ce28b45262993e9bc6dc635",
+      "iteration": 1,
+      "bytes": 4294967296,
+      "files": 1,
+      "directories": 0,
+      "manifestSHA256": "0d2d4ed40846be29cbf7126f98316be71efdf106ee7253bc3c3673fe55586be2",
+      "timingsSeconds": {
+        "preparationComplete": 0.02031,
+        "sourceRunning": 0.020719,
+        "incomingOffer": 0.020719,
+        "firstConfirmedBlock": 2.179329,
+        "allPayloadConfirmed": 22.675787,
+        "receiverComplete": 24.833473,
+        "bothComplete": 24.833474
+      },
+      "MiBPerSecondIncludingPreparation": 164.939,
+      "sampledRSSBytes": {
+        "source": 54956032,
+        "receiver": 42381312
+      },
+      "scope": "same-host actual two-service TLS transfer, unlimited rates, non-sparse source, no GUI",
+      "case": "4GiB",
+      "role": "candidate"
+    },
+    {
+      "helperVersion": "0.12.0-beta.1",
+      "helperSHA256": "f31f9a52c119cc21e8b3c11001750abbd555dd2edf7c016b6e18c1f838d6273d",
+      "iteration": 1,
+      "bytes": 4294967296,
+      "files": 1,
+      "directories": 0,
+      "manifestSHA256": "0d2d4ed40846be29cbf7126f98316be71efdf106ee7253bc3c3673fe55586be2",
+      "timingsSeconds": {
+        "preparationComplete": 0.020357,
+        "sourceRunning": 0.020782,
+        "incomingOffer": 0.020782,
+        "firstConfirmedBlock": 2.18491,
+        "allPayloadConfirmed": 26.823511,
+        "receiverComplete": 28.972633,
+        "bothComplete": 28.972634
+      },
+      "MiBPerSecondIncludingPreparation": 141.375,
+      "sampledRSSBytes": {
+        "source": 54587392,
+        "receiver": 44150784
+      },
+      "scope": "same-host actual two-service TLS transfer, unlimited rates, non-sparse source, no GUI",
+      "case": "4GiB",
+      "role": "baseline"
+    },
+    {
+      "helperVersion": "0.12.0-beta.1",
+      "helperSHA256": "f31f9a52c119cc21e8b3c11001750abbd555dd2edf7c016b6e18c1f838d6273d",
+      "iteration": 1,
+      "bytes": 4294967296,
+      "files": 1,
+      "directories": 0,
+      "manifestSHA256": "0d2d4ed40846be29cbf7126f98316be71efdf106ee7253bc3c3673fe55586be2",
+      "timingsSeconds": {
+        "preparationComplete": 0.020312,
+        "sourceRunning": 0.020693,
+        "incomingOffer": 0.020694,
+        "firstConfirmedBlock": 2.165374,
+        "allPayloadConfirmed": 26.607991,
+        "receiverComplete": 28.756345,
+        "bothComplete": 28.756345
+      },
+      "MiBPerSecondIncludingPreparation": 142.438,
+      "sampledRSSBytes": {
+        "source": 54489088,
+        "receiver": 44666880
+      },
+      "scope": "same-host actual two-service TLS transfer, unlimited rates, non-sparse source, no GUI",
+      "case": "4GiB",
+      "role": "baseline"
+    },
+    {
+      "helperVersion": "0.12.0-beta.2",
+      "helperSHA256": "df7164aa4e30acd926e080a67d18cfa3f7b5d7649ce28b45262993e9bc6dc635",
+      "iteration": 1,
+      "bytes": 4294967296,
+      "files": 1,
+      "directories": 0,
+      "manifestSHA256": "0d2d4ed40846be29cbf7126f98316be71efdf106ee7253bc3c3673fe55586be2",
+      "timingsSeconds": {
+        "preparationComplete": 0.020326,
+        "sourceRunning": 0.020752,
+        "incomingOffer": 0.020753,
+        "firstConfirmedBlock": 2.213294,
+        "allPayloadConfirmed": 22.643427,
+        "receiverComplete": 24.771007,
+        "bothComplete": 24.791616
+      },
+      "MiBPerSecondIncludingPreparation": 165.217,
+      "sampledRSSBytes": {
+        "source": 54640640,
+        "receiver": 38379520
+      },
+      "scope": "same-host actual two-service TLS transfer, unlimited rates, non-sparse source, no GUI",
+      "case": "4GiB",
+      "role": "candidate"
+    },
+    {
+      "helperVersion": "0.12.0-beta.1",
+      "helperSHA256": "f31f9a52c119cc21e8b3c11001750abbd555dd2edf7c016b6e18c1f838d6273d",
+      "iteration": 1,
+      "bytes": 81920000,
+      "files": 10000,
+      "directories": 102,
+      "manifestSHA256": "2356aac92d7e8e4ed689ebe2bc8205b055b8bbccf8bb4e7fdf8aec1a57194b89",
+      "timingsSeconds": {
+        "preparationComplete": 1.170321,
+        "incomingOffer": 1.388188,
+        "sourceRunning": 1.491308,
+        "firstConfirmedBlock": 1.596776,
+        "allPayloadConfirmed": 2524.867432,
+        "receiverComplete": 2525.000789,
+        "bothComplete": 2525.074783
+      },
+      "MiBPerSecondIncludingPreparation": 0.031,
+      "sampledRSSBytes": {
+        "source": 102924288,
+        "receiver": 81051648
+      },
+      "scope": "same-host actual two-service TLS transfer, unlimited rates, non-sparse source, no GUI",
+      "case": "10000-files",
+      "role": "baseline"
+    },
+    {
+      "helperVersion": "0.12.0-beta.2",
+      "helperSHA256": "df7164aa4e30acd926e080a67d18cfa3f7b5d7649ce28b45262993e9bc6dc635",
+      "iteration": 1,
+      "bytes": 81920000,
+      "files": 10000,
+      "directories": 102,
+      "manifestSHA256": "2356aac92d7e8e4ed689ebe2bc8205b055b8bbccf8bb4e7fdf8aec1a57194b89",
+      "timingsSeconds": {
+        "preparationComplete": 1.276081,
+        "incomingOffer": 1.644408,
+        "sourceRunning": 1.773671,
+        "firstConfirmedBlock": 1.796054,
+        "allPayloadConfirmed": 79.541208,
+        "receiverComplete": 79.541208,
+        "bothComplete": 79.541209
+      },
+      "MiBPerSecondIncludingPreparation": 0.982,
+      "sampledRSSBytes": {
+        "source": 49090560,
+        "receiver": 51535872
+      },
+      "scope": "same-host actual two-service TLS transfer, unlimited rates, non-sparse source, no GUI",
+      "case": "10000-files",
+      "role": "candidate"
+    }
+  ],
+  "fullComparisonRecovery": {
+    "helperSHA256": "df7164aa4e30acd926e080a67d18cfa3f7b5d7649ce28b45262993e9bc6dc635",
+    "version": "0.12.0-beta.2",
+    "bytes": 4294967296,
+    "singleFile": true,
+    "transport": "native service to service, TLS 1.3, same-host loopback",
+    "transferAndRecoverySeconds": 28.3,
+    "totalSeconds": 32.61,
+    "sha256": "662c437ba3c1a8d6f1e4bd5bc129133e62113ffd4f3b6d052deb1e6480bd3a46",
+    "peakRSSBytes": {
+      "source": 53297152,
+      "receiver": 44130304
+    },
+    "rssSamplingSeconds": 0.5,
+    "sourcePayloadCounter": 4298768384,
+    "receiverPayloadCounter": 4244635648,
+    "counterNote": "Lifetime counters checkpoint periodically; abrupt process kills may lose recent counter samples, not confirmed file receipts.",
+    "events": [
+      {
+        "event": "offered",
+        "seconds": 1.04,
+        "bytes": 4294967296,
+        "fixture": "sparse source with nonzero markers; all bytes transferred"
+      },
+      {
+        "event": "progress",
+        "seconds": 1.04,
+        "confirmedBytes": 0,
+        "sourceState": "offered",
+        "receiverState": "waiting",
+        "peakRSSBytes": {
+          "source": 15908864,
+          "receiver": 15519744
+        }
+      },
+      {
+        "event": "paused",
+        "seconds": 3.55,
+        "confirmedBytes": 41943040
+      },
+      {
+        "event": "receiver-crash-recovered",
+        "seconds": 10.31,
+        "confirmedBytes": 1459617792
+      },
+      {
+        "event": "progress",
+        "seconds": 11.31,
+        "confirmedBytes": 1459617792,
+        "sourceState": "running",
+        "receiverState": "running",
+        "peakRSSBytes": {
+          "source": 53297152,
+          "receiver": 38789120
+        }
+      },
+      {
+        "event": "source-crash-recovered",
+        "seconds": 18.06,
+        "confirmedBytes": 2877292544
+      },
+      {
+        "event": "progress",
+        "seconds": 21.66,
+        "confirmedBytes": 3422552064,
+        "sourceState": "running",
+        "receiverState": "running",
+        "peakRSSBytes": {
+          "source": 53297152,
+          "receiver": 44130304
+        }
+      },
+      {
+        "event": "transfer-completed",
+        "seconds": 28.3,
+        "confirmedBytes": 4294967296
+      }
+    ],
+    "physicalDevicesTested": false,
+    "guiAutomation": false
+  },
+  "fullComparisonBidirectional": {
+    "version": "0.12.0-beta.2",
+    "helperSHA256": "df7164aa4e30acd926e080a67d18cfa3f7b5d7649ce28b45262993e9bc6dc635",
+    "bytesPerDirection": 314572800,
+    "seconds": 14.75457,
+    "simultaneousProgressObserved": true,
+    "sendLimitMiBPerSecondPerHost": 64,
+    "sampledRSSBytes": {
+      "left": 70262784,
+      "right": 71516160
+    },
+    "sha256": {
+      "left": "dfc5ad17c349c9606a6564fe4f89287342936a2e0abca79d68f55a46586b8a42",
+      "right": "9e308dfa79d2bca49cdabc2a86fcdfebf621af252afb01cc260b4775db1111a2"
+    },
+    "independentHashesPassed": true,
+    "scope": "same-host actual simultaneous two-service TLS transfer; no GUI or physical network"
+  }
+}

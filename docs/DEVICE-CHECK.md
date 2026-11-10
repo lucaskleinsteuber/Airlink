@@ -10,6 +10,10 @@ For `0.12.0-beta.1`, the primary physical targets are macOS and Arch/KDE under W
 
 Record candidate hash, architectures, OS/desktop versions, WLAN/LAN conditions, file sizes, timing and independent hashes. Keep the 100-GB acceptance as a separate run with enough storage; do not infer it from several-GiB tests.
 
+With Beta 2, **Settings → About → Save diagnostic report** saves a local JSON containing version/platform information, transfer totals and fixed error categories. It omits file/device names, private paths, network addresses, identifiers, hashes, access credentials, clipboard text and raw logs. Saving does not send it anywhere. Note the observed action and message separately; the aggregate report cannot reconstruct a filename or the exact sequence of events. The Go heap sample is not total process memory.
+
+For a recognized recoverable sender failure, fix the indicated storage/access/connection issue before using **Try again**. This reuses the existing transfer and confirmed receiver blocks. A changed source, failed integrity check, cancellation or a terminal receiver requires a new explicit send. Receive-folder changes apply to new transfers; an existing transfer retains its original destination.
+
 The earlier Mac/Windows/iPhone/iPad guide follows as a historical checklist. Its version-specific instructions are not the current beta download names.
 
 ---
