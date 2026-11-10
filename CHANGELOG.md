@@ -2,12 +2,12 @@
 
 AirLink uses MAJOR.MINOR.PATCH versions. Entries describe implemented changes; distribution and verification status are recorded separately.
 
-## 0.12.0-beta.3 — in development
+## 0.12.0-beta.3 — 2026-11-10
 
 - Replace a stale reconnect error with the receiver's actual waiting-for-acceptance state as soon as a trusted connection succeeds. Keep the same offer/checkpoints, persist the transition before displaying it, and preserve pause/cancellation if a response arrives late.
 - Avoid rewriting unchanged waiting status on every peer poll. Hide unsupported Pause actions while an offer is still awaiting acceptance on macOS and Linux.
 - Document the local-network firewall requirement for Linux. A real CachyOS investigation confirmed UFW blocking the service while device discovery and pairing remained visible; allowing the TLS port from the local subnet restored the verified connection.
-- Build 16. Existing releases and feeds remain unchanged while the candidate is checked.
+- Build 16. Complete Go race/vet, desktop core/web tests, native packages and six Linux package lifecycles passed. The physical investigation verified the firewall correction and trusted offer delivery; a complete physical file/hash run remains open because the laptop became unreachable again. See [TESTING.md](docs/TESTING.md) for the exact boundary.
 
 ## 0.12.0-beta.2 — 2026-11-10
 

@@ -1,0 +1,92 @@
+{
+  "version": "0.12.0-beta.3",
+  "build": 16,
+  "applicationSourceCommit": "b857fe73c46cb2895154d3437479d6e55ff77c6a",
+  "backgroundRun": "https://github.com/lucaskleinsteuber/Airlink/actions/runs/42834884019",
+  "linuxRun": "https://github.com/lucaskleinsteuber/Airlink/actions/runs/42834884131",
+  "packagesRun": "https://github.com/lucaskleinsteuber/Airlink/actions/runs/42835037598",
+  "backgroundSuites": "Go race/vet, 74 Swift, 43 Windows Core, 68 web; all passed",
+  "packageLifecycle": [
+    {
+      "name": "Install / upgrade / remove (Arch)",
+      "jobId": 129895706328,
+      "imageDigest": "[\"archlinux@sha256:fa2d4ce3310ddd90a4208e5168be8ad367da5129af1245f38fd2d803bcbe3239\"]",
+      "qtConfiguration": "2026-11-10T14:34:01.5569596Z Config: Using QtTest library 6.12.0, Qt 6.12.0 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 16.2.1 20260810), arch 20261108.0.623074",
+      "tests": "2026-11-10T14:34:01.6654815Z Totals: 14 passed, 0 failed, 0 skipped, 0 blacklisted, 109ms",
+      "result": "passed"
+    },
+    {
+      "name": "Install / upgrade / remove (openSUSE Tumbleweed)",
+      "jobId": 129895706363,
+      "imageDigest": "[\"opensuse/tumbleweed@sha256:2b219fdb2350bbe8735e96f05c9b92147938e6e83d475df70e7e6ca20a2b71cf\"]",
+      "qtConfiguration": "2026-11-10T14:34:21.3514493Z Config: Using QtTest library 6.12.0, Qt 6.12.0 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 16.2.1 20260929), opensuse-tumbleweed 20261109",
+      "tests": "2026-11-10T14:34:21.4599044Z Totals: 14 passed, 0 failed, 0 skipped, 0 blacklisted, 109ms",
+      "result": "passed"
+    },
+    {
+      "name": "Install / upgrade / remove (Ubuntu 24.04)",
+      "jobId": 129895706405,
+      "imageDigest": "[\"ubuntu@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852\"]",
+      "qtConfiguration": "2026-11-10T14:34:04.3441203Z Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.2.0), ubuntu 24.04",
+      "tests": "2026-11-10T14:34:04.4531947Z Totals: 14 passed, 0 failed, 0 skipped, 0 blacklisted, 109ms",
+      "result": "passed"
+    },
+    {
+      "name": "Install / upgrade / remove (Debian 12)",
+      "jobId": 129895706417,
+      "imageDigest": "[\"debian@sha256:268fb24c39bca92d326dd83ea3abebe4a3f7751c804ffef23bb6d857dd343ff8\"]",
+      "qtConfiguration": "2026-11-10T14:33:59.7004733Z Config: Using QtTest library 6.4.2, Qt 6.4.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 12.2.0), debian 12",
+      "tests": "2026-11-10T14:33:59.8082768Z Totals: 14 passed, 0 failed, 0 skipped, 0 blacklisted, 108ms",
+      "result": "passed"
+    },
+    {
+      "name": "Install / upgrade / remove (Fedora)",
+      "jobId": 129895706428,
+      "imageDigest": "[\"fedora@sha256:a7d72ba2745b100a3351087472e5ee7b2450af7cf331e7673007e3817612839c\"]",
+      "qtConfiguration": "2026-11-10T14:34:56.5559217Z Config: Using QtTest library 6.11.2, Qt 6.11.2 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 16.2.1 20260819 (Red Hat 16.2.1-2)), fedora 45",
+      "tests": "2026-11-10T14:34:56.6641084Z Totals: 14 passed, 0 failed, 0 skipped, 0 blacklisted, 108ms",
+      "result": "passed"
+    },
+    {
+      "name": "Install / upgrade / remove (openSUSE Leap 16)",
+      "jobId": 129895706542,
+      "imageDigest": "[\"opensuse/leap@sha256:a4115e2f5aea9712a7c73974fd94000a034fc3051ef29b5f7722fbf04070dd9d\"]",
+      "qtConfiguration": "2026-11-10T14:34:18.7092587Z Config: Using QtTest library 6.9.1, Qt 6.9.1 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 13.4.0), opensuse-leap 16.0",
+      "tests": "2026-11-10T14:34:18.8156798Z Totals: 14 passed, 0 failed, 0 skipped, 0 blacklisted, 107ms",
+      "result": "passed"
+    }
+  ],
+  "regressions": [
+    "Trusted receiver waiting for acceptance clears stale reconnect error",
+    "Status write failure preserves previous visible state",
+    "Waiting state persists across restart without rewriting every poll",
+    "Late wait response cannot revive paused/cancelled sender",
+    "Actual two-service acceptance continues the same offer to identical final bytes"
+  ],
+  "physicalInvestigation": {
+    "platforms": [
+      "macOS arm64, installed Beta 1",
+      "CachyOS x64, KDE/Wayland, installed native Beta 1 package"
+    ],
+    "confirmed": [
+      "UFW active with incoming deny; kernel recorded Mac TCP SYN blocks at AirLink TLS port",
+      "Local-subnet-only TLS-port rule added; firewall remains active",
+      "HTTPS verified against existing stored device identity",
+      "Previously queued original offer reached receiver and awaited explicit acceptance"
+    ],
+    "completePhysicalFileTransferPassed": false,
+    "reason": "Laptop became unreachable before isolated file fixtures could start; awaiting current network address",
+    "productionPairingsReset": false,
+    "installedAppsChanged": false,
+    "hundredGBTestRun": false
+  },
+  "packageAudit": {
+    "inputs": 8,
+    "payloads": 1403,
+    "bundleEntries": 919,
+    "managedResources": 2010,
+    "nsisStreams": 4,
+    "findings": 0
+  },
+  "nativeSignatureVerification": "Go manifest and actual Sparkle/NetSparkle/Qt public-only acceptance; wrong-key/content/Windows-architecture negatives refused"
+}
