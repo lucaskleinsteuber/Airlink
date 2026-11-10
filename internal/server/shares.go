@@ -30,6 +30,9 @@ func (s *Server) shareSummaries(owner string) []model.Share {
 	return out
 }
 func (s *Server) shareControl(method string, params json.RawMessage) (any, error) {
+	return s.shareControlContext(s.ctx, method, params)
+}
+func (s *Server) shareControlContext(ctx context.Context, method string, params json.RawMessage) (any, error) {
 	switch method {
 	case "share.list":
 		return s.shareSummaries(""), nil
@@ -38,7 +41,7 @@ func (s *Server) shareControl(method string, params json.RawMessage) (any, error
 		if err := json.Unmarshal(params, &v); err != nil {
 			return nil, err
 		}
-		return s.createShare("local", v)
+		return s.createShareContext(ctx, "local", v)
 	case "share.revoke":
 		var v struct {
 			ID string `json:"id"`
@@ -52,6 +55,12 @@ func (s *Server) shareControl(method string, params json.RawMessage) (any, error
 	}
 }
 func (s *Server) createShare(owner string, input model.ShareCreate) (model.Share, error) {
+	return s.createShareContext(s.ctx, owner, input)
+}
+func (s *Server) createShareContext(ctx context.Context, owner string, input model.ShareCreate) (model.Share, error) {
+	if err := ctx.Err(); err != nil {
+		return model.Share{}, err
+	}
 	if (len(input.Paths) > 0) == (input.TransferID != "") {
 		return model.Share{}, shares.ErrInvalid
 	}
@@ -61,7 +70,7 @@ func (s *Server) createShare(owner string, input model.ShareCreate) (model.Share
 		if owner != "local" {
 			return model.Share{}, shares.ErrInvalid
 		}
-		sources, err = shares.CapturePaths(input.Paths)
+		sources, err = shares.CapturePathsContext(ctx, input.Paths)
 	} else {
 		t, engineErr := s.engine.Get(input.TransferID)
 		if engineErr != nil {
@@ -81,6 +90,9 @@ func (s *Server) createShare(owner string, input model.ShareCreate) (model.Share
 		}
 		mapped := make([]shares.Source, 0, len(t.Files))
 		for _, file := range t.Files {
+			if err := ctx.Err(); err != nil {
+				return model.Share{}, err
+			}
 			if file.Skipped {
 				continue
 			}
@@ -96,7 +108,7 @@ func (s *Server) createShare(owner string, input model.ShareCreate) (model.Share
 				// local creation time, which becomes the share's immutable snapshot.
 				ref.File.Modified = 0
 			} else if !file.Directory {
-				opened, _, openErr := s.engine.OpenDownloadContext(s.ctx, t.ID, file.ID)
+				opened, _, openErr := s.engine.OpenDownloadContext(ctx, t.ID, file.ID)
 				if openErr != nil {
 					return model.Share{}, shares.ErrUnavailable
 				}
@@ -105,9 +117,12 @@ func (s *Server) createShare(owner string, input model.ShareCreate) (model.Share
 			}
 			mapped = append(mapped, ref)
 		}
-		sources, err = shares.CaptureFiles(mapped)
+		sources, err = shares.CaptureFilesContext(ctx, mapped)
 	}
 	if err != nil {
+		return model.Share{}, err
+	}
+	if err := ctx.Err(); err != nil {
 		return model.Share{}, err
 	}
 	created, err := s.shares.Create(owner, input, sources)

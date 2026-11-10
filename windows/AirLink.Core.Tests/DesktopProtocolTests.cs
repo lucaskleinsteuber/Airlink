@@ -17,6 +17,9 @@ internal static class DesktopProtocolTests {
   var merged=DesktopTransferSelection.MergeHistory(history,summary);
   Require(merged.Count==3 && merged.Count(t=>t.IsActive)==2,"Paged history lost a live transfer or kept a stale state");
   Require(DesktopTransferSelection.ForDevice(merged,"chosen").All(t=>t.DeviceId=="chosen"),"Device view exposed another recipient's transfers");
+  var newer=new Transfer{Id="newer",State="completed",UpdatedAt="2026-11-10T00:00:01Z"};
+  var older=ProtocolJson.Clone(newer);older.State="running";older.UpdatedAt="2026-11-10T00:00:00.999999999Z";
+  Require(DesktopTransferSelection.MergeHistory([newer],[older]).Single().State=="completed","A late summary reactivated a newer completed record");
   var sparse=new Transfer{Summary=true,Direction="receive",State="completed",HasContent=false,Files=[new TransferFile{Directory=true,Completed=true,Path="wrapper"}]};
   Require(!sparse.HasReceivedContent,"Summary invented a received result from an empty preview wrapper");
   sparse.HasContent=true;Require(sparse.HasReceivedContent,"Summary hid an authoritative result");

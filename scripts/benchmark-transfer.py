@@ -36,6 +36,7 @@ def inventory(path):
 
 def run(args):
     helper = Path(args.helper).resolve()
+    helper_digest = hashlib.sha256(helper.read_bytes()).hexdigest()
     provided = Path(args.source).resolve() if args.source else None
     expected_files, expected_directories = inventory(provided) if provided else ({}, [])
     size = sum(info[0] for info in expected_files.values()) if provided else args.mib * MIB
@@ -147,7 +148,7 @@ def run(args):
                 independent = hashlib.sha256(json.dumps(expected_files, sort_keys=True).encode()).hexdigest()
                 stop.set()
                 monitor_thread.join(timeout=3)
-                record = {'helperVersion': source.initial['version'], 'helperSHA256': hashlib.sha256(helper.read_bytes()).hexdigest(), 'iteration': iteration + 1,
+                record = {'helperVersion': source.initial['version'], 'helperSHA256': helper_digest, 'iteration': iteration + 1,
                           'bytes': size, 'files': len(expected_files), 'directories': len(expected_directories), 'manifestSHA256': independent, 'timingsSeconds': {k: round(v, 6) for k, v in stages.items()},
                           'MiBPerSecondIncludingPreparation': round(size / MIB / stages['bothComplete'], 3), 'sampledRSSBytes': peaks,
                           'samples': samples, 'scope': 'same-host actual two-service TLS transfer, unlimited rates, non-sparse source, no GUI'}

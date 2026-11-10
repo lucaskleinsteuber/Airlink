@@ -4,6 +4,7 @@
 #include <QJsonDocument>
 #include <QSet>
 #include <QUuid>
+#include <limits>
 
 namespace AirLink {
 DaemonClient::DaemonClient(QObject *parent) : QObject(parent) {
@@ -102,8 +103,12 @@ void DaemonClient::request(const QString &method, const QJsonObject &params,
         "This selection has too many paths. Select its parent folder instead.");
     return;
   }
-  pending.insert(id, Pending{std::move(callback),
-                             QDateTime::currentMSecsSinceEpoch() + 20000});
+  const bool preparing = method == "share.create" || method == "offer" ||
+                         method == "duplicate.resolve";
+  pending.insert(
+      id, Pending{std::move(callback),
+                  preparing ? std::numeric_limits<qint64>::max()
+                            : QDateTime::currentMSecsSinceEpoch() + 20000});
   if (process.write(line) != line.size())
     fail("Could not send a command to the AirLink service.");
 }

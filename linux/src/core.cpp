@@ -180,14 +180,27 @@ QJsonArray visibleTransfers(const QJsonArray &input, const QString &device,
     out.append(finished[i]);
   return out;
 }
+static QString timestampKey(const QString &raw) {
+  if (raw.endsWith('Z') && raw.size() >= 20 &&
+      (raw[19] == '.' || raw[19] == 'Z')) {
+    const auto fraction =
+        raw[19] == '.' ? raw.mid(20, raw.size() - 21) : QString{};
+    return raw.left(19) + fraction.leftJustified(9, '0', true);
+  }
+  return raw;
+}
 QJsonArray mergeHistory(const QJsonArray &history, const QJsonArray &summary) {
   QMap<QString, QJsonObject> values;
   for (const auto &v : history)
     values[v.toObject()["id"].toString()] = v.toObject();
   for (const auto &v : summary) {
     const auto t = v.toObject();
-    if (!terminal(t["state"].toString()) || values.contains(t["id"].toString()))
-      values[t["id"].toString()] = t;
+    const auto id = t["id"].toString();
+    if ((!terminal(t["state"].toString()) || values.contains(id)) &&
+        (!values.contains(id) ||
+         timestampKey(t["updatedAt"].toString()) >=
+             timestampKey(values[id]["updatedAt"].toString())))
+      values[id] = t;
   }
   QList<QJsonObject> ordered = values.values();
   std::sort(ordered.begin(), ordered.end(),
@@ -242,6 +255,27 @@ QJsonObject sendBatch(const QJsonObject &d, const QStringList &paths,
                           ? QUuid::createUuid().toString(QUuid::Id128)
                           : requestId;
   return {{"deviceId", d["id"]}, {"paths", files}, {"requestId", key}};
+}
+QString nativePackageFormat(const QString &osRelease) {
+  QStringList families;
+  for (const auto &line : osRelease.split('\n')) {
+    if (!line.startsWith("ID=") && !line.startsWith("ID_LIKE="))
+      continue;
+    auto value = line.mid(line.indexOf('=') + 1).trimmed();
+    value.remove('"');
+    value.remove('\'');
+    families.append(value.toLower().split(' ', Qt::SkipEmptyParts));
+  }
+  for (const auto &family : families) {
+    if (family == "arch" || family == "manjaro")
+      return "arch";
+    if (family == "debian" || family == "ubuntu")
+      return "deb";
+    if (family == "fedora" || family == "rhel" || family == "suse" ||
+        family.startsWith("opensuse"))
+      return "rpm";
+  }
+  return {};
 }
 QString dataDirectory() {
   return QDir(QStandardPaths::writableLocation(

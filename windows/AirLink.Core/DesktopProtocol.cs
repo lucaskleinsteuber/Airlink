@@ -37,9 +37,10 @@ public static class DesktopTransferSelection {
  }
  public static List<Transfer> MergeHistory(IEnumerable<Transfer> history, IEnumerable<Transfer> summary) {
   var rows = history.ToDictionary(t => t.Id);
-  foreach (var item in summary) if (item.IsActive || rows.ContainsKey(item.Id)) rows[item.Id] = item;
+  foreach (var item in summary) if ((item.IsActive || rows.ContainsKey(item.Id)) && (!rows.TryGetValue(item.Id,out var known) || string.CompareOrdinal(TimestampKey(item.UpdatedAt),TimestampKey(known.UpdatedAt)) >= 0)) rows[item.Id] = item;
   return rows.Values.OrderByDescending(t => t.IsActive).ThenByDescending(t => t.CreatedAt).ThenBy(t => t.Id, StringComparer.Ordinal).ToList();
  }
+ private static string TimestampKey(string raw) => raw.EndsWith('Z') && raw.Length >= 20 && raw[19] is '.' or 'Z' ? raw[..19] + (raw[19] == '.' ? raw[20..^1] : "").PadRight(9,'0')[..9] : raw;
  public static TimeSpan? Remaining(Transfer transfer) {
   if (transfer.State != "running" || !double.IsFinite(transfer.BytesPerSecond) || transfer.BytesPerSecond <= 0) return null;
   var seconds = Math.Ceiling(Math.Max(0, (double)transfer.TotalBytes - transfer.CompletedBytes - transfer.SkippedBytes) / transfer.BytesPerSecond);

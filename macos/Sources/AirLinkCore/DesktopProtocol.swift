@@ -40,6 +40,25 @@ public struct TransferFilePage: Decodable, Sendable {
 }
 
 public enum DesktopTransferSelection {
+    private static func timestampKey(_ raw: String) -> String {
+        guard raw.hasSuffix("Z"), raw.count >= 20 else { return raw }
+        let parts = raw.dropLast().split(separator: ".", maxSplits: 1, omittingEmptySubsequences: false)
+        let fraction = parts.count == 2 ? String(parts[1].prefix(9)) : ""
+        return String(parts[0]) + fraction + String(repeating: "0", count: max(0, 9 - fraction.count))
+    }
+    public static func mergeHistory(_ history: [Transfer], summary: [Transfer]) -> [Transfer] {
+        var rows: [String: Transfer] = [:]
+        for item in history { rows[item.id] = item }
+        for item in summary where item.isActive || rows[item.id] != nil {
+            if let known = rows[item.id], timestampKey(item.updatedAt) < timestampKey(known.updatedAt) { continue }
+            rows[item.id] = item
+        }
+        return rows.values.sorted {
+            if $0.isActive != $1.isActive { return $0.isActive }
+            let left = timestampKey($0.updatedAt), right = timestampKey($1.updatedAt)
+            return left == right ? $0.id > $1.id : left > right
+        }
+    }
     public static func visible(_ transfers: [Transfer], deviceID: String?, recentLimit: Int = 3) -> [Transfer] {
         let matching = transfers.filter { deviceID == nil || $0.deviceId == deviceID }
         let newer: (Transfer, Transfer) -> Bool = { left, right in

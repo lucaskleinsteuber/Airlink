@@ -1,0 +1,101 @@
+name: Native beta candidate packages
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  macos:
+    name: Separate macOS ARM64 and x64 DMGs
+    runs-on: macos-latest
+    timeout-minutes: 40
+    env:
+      GOMAXPROCS: '4'
+      GOFLAGS: '-p=4'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.3'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Build and embed local web assets
+        run: |
+          python3 scripts/check-version.py
+          npm --prefix web ci
+          npm --prefix web run build
+          bash scripts/embed-web.sh
+      - name: Build single-architecture helpers and native apps without launching them
+        run: |
+          mkdir -p build
+          for ARCH in arm64 amd64; do
+            CGO_ENABLED=0 GOOS=darwin GOARCH="$ARCH" go build -buildvcs=false -trimpath -ldflags='-s -w' -o "build/airlink-darwin-$ARCH" ./cmd/airlink
+          done
+          bash scripts/build-macos.sh
+      - name: Verify ad hoc signatures and create audited DMGs
+        run: bash scripts/package-macos.sh
+      - uses: actions/upload-artifact@v6
+        with:
+          name: macos-beta-packages
+          path: dist/*macos*.dmg
+          compression-level: 0
+          retention-days: 14
+  windows:
+    name: Windows x64 and ARM64 Setup
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      GOMAXPROCS: '4'
+      GOFLAGS: '-p=4'
+      DOTNET_PROCESSOR_COUNT: '4'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+      DOTNET_NOLOGO: '1'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.3'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.402'
+      - name: Set the native installer tools
+        shell: pwsh
+        run: |
+          choco install nsis --yes --no-progress
+          "AIRLINK_NSIS=${env:ProgramFiles(x86)}\NSIS\makensis.exe" >> $env:GITHUB_ENV
+          "AIRLINK_7ZIP=$env:ProgramFiles\7-Zip\7z.exe" >> $env:GITHUB_ENV
+      - name: Build helpers, applications and audited Setup packages without launching them
+        run: |
+          python3 scripts/check-version.py
+          npm --prefix web ci
+          npm --prefix web run build
+          bash scripts/embed-web.sh
+          mkdir -p build
+          for ARCH in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=windows GOARCH="$ARCH" go build -buildvcs=false -trimpath -ldflags='-s -w' -o "build/airlink-windows-$ARCH.exe" ./cmd/airlink
+          done
+          bash scripts/build-windows.sh
+      - name: Collect final Setup files
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist > $null
+          $version = (Get-Content VERSION -Raw).Trim()
+          foreach ($arch in @('x64','arm64')) { Copy-Item "build/windows-$arch/AirLink-Setup.exe" "dist/AirLink-$version-windows-$arch-setup.exe" }
+      - uses: actions/upload-artifact@v6
+        with:
+          name: windows-beta-packages
+          path: dist/*setup.exe
+          compression-level: 0
+          retention-days: 14

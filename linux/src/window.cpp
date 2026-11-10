@@ -206,6 +206,8 @@ void MainWindow::activate() {
   showNormal();
   raise();
   activateWindow();
+  if (client.ready())
+    render();
 }
 void MainWindow::closeEvent(QCloseEvent *e) {
   if (quitting)
@@ -2005,13 +2007,14 @@ void MainWindow::checkUpdates(bool automatic) {
                              "You are using the current beta."));
               if (!info.available)
                 return;
+              if (automatic && !client.status()["settings"]
+                                    .toObject()["automaticUpdateChecks"]
+                                    .toBool())
+                return;
               if (automatic) {
-                if (client.status()["settings"]
-                        .toObject()["notifications"]
-                        .toBool())
-                  tray.showMessage("AirLink", text("Neue Beta verfügbar: ",
-                                                   "New beta available: ") +
-                                                  info.version);
+                tray.showMessage("AirLink", text("Neue Beta verfügbar: ",
+                                                 "New beta available: ") +
+                                                info.version);
                 return;
               }
               auto *dialog = new QDialog(this);
@@ -2041,7 +2044,15 @@ void MainWindow::checkUpdates(bool automatic) {
                          "manager. Download the matching verified package and "
                          "install it with your package manager."),
                     dialog));
-                for (const auto &format : QStringList{"arch", "deb", "rpm"})
+                QFile release("/etc/os-release");
+                const auto native = release.open(QIODevice::ReadOnly)
+                                        ? nativePackageFormat(QString::fromUtf8(
+                                              release.read(16384)))
+                                        : QString{};
+                const auto formats = native.isEmpty()
+                                         ? QStringList{"arch", "deb", "rpm"}
+                                         : QStringList{native};
+                for (const auto &format : formats)
                   layout->addWidget(button(
                       format == "arch"  ? "Arch · .pkg.tar.zst"
                       : format == "deb" ? "Debian / Ubuntu · .deb"
@@ -2173,7 +2184,11 @@ void MainWindow::downloadUpdate(const UpdateArtifact &artifact,
           const auto command =
               artifact.type == "arch"  ? QStringLiteral("sudo pacman -U ")
               : artifact.type == "deb" ? QStringLiteral("sudo apt install ")
-                                       : QStringLiteral("sudo rpm -U ");
+              : !QStandardPaths::findExecutable("dnf").isEmpty()
+                  ? QStringLiteral("sudo dnf install ")
+              : !QStandardPaths::findExecutable("zypper").isEmpty()
+                  ? QStringLiteral("sudo zypper install ")
+                  : QStringLiteral("sudo rpm -U ");
           QString quoted = path;
           quoted.replace("'", "'\\''");
           auto *location = new QLineEdit(command + "'" + quoted + "'", dialog);

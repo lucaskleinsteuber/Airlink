@@ -92,6 +92,26 @@ private slots:
         ++active;
     QCOMPARE(active, 2);
   }
+  void lateSummaryCannotReactivateNewerHistory() {
+    const QJsonObject newer{{"id", "same"},
+                            {"state", "completed"},
+                            {"updatedAt", "2026-11-10T00:00:01Z"}};
+    const QJsonObject older{{"id", "same"},
+                            {"state", "running"},
+                            {"updatedAt", "2026-11-10T00:00:00.999999999Z"}};
+    const auto merged = mergeHistory(QJsonArray{newer}, QJsonArray{older});
+    QCOMPARE(merged.size(), 1);
+    QCOMPARE(merged[0].toObject()["state"].toString(), "completed");
+  }
+  void packageSelectionUsesDistributionFamily() {
+    QCOMPARE(nativePackageFormat("ID=arch\n"), "arch");
+    QCOMPARE(nativePackageFormat("ID=ubuntu\nID_LIKE=debian\n"), "deb");
+    QCOMPARE(
+        nativePackageFormat("ID=opensuse-leap\nID_LIKE=\"suse opensuse\"\n"),
+        "rpm");
+    QCOMPARE(nativePackageFormat("ID=derived\nID_LIKE=\"arch\"\n"), "arch");
+    QVERIFY(nativePackageFormat("ID=unknown\n").isEmpty());
+  }
   void betaVersionsSortNumerically() {
     bool valid = false;
     QVERIFY(compareVersions("0.12.0-beta.10", "0.12.0-beta.2", &valid) > 0);

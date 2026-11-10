@@ -291,3 +291,14 @@ func TestSessionLifetimeCannotBeExtendedByCookieReplay(t *testing.T) {
 		t.Fatal("reauthorization didn't issue fresh session", err)
 	}
 }
+
+func TestCancelledSourceCaptureStopsBeforeFilesystemAccess(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := CapturePathsContext(ctx, []string{filepath.Join(t.TempDir(), "unavailable")}); !errors.Is(err, context.Canceled) {
+		t.Fatal("cancelled capture accessed the filesystem", err)
+	}
+	if _, err := CaptureFilesContext(ctx, []Source{{Path: filepath.Join(t.TempDir(), "unavailable"), File: model.File{Path: "file"}}}); !errors.Is(err, context.Canceled) {
+		t.Fatal("cancelled mapping was processed", err)
+	}
+}

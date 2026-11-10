@@ -276,7 +276,7 @@ internal sealed class Controller : INotifyPropertyChanged
     }
     public Task<PairingSession> StartPairingAsync(string url) => RequestAsync<PairingSession>("pairing.start", new { url });
     public async Task ConfirmPairingAsync(string id, bool automaticReceive) { await RequestAsync("pairing.confirm", new { id, automaticReceive }); await RefreshAsync(true); }
-    public void UpdateAvailable(string version) { Notice = T("Neue Beta verfügbar: ", "New beta available: ") + version + T(" · Einstellungen → Updates", " · Settings → Updates"); Changed(); }
+    public void UpdateAvailable(string version) { Notice = T("Neue Beta verfügbar: ", "New beta available: ") + version + T(" · Einstellungen → Updates", " · Settings → Updates"); NoticeRaised?.Invoke(new(DesktopNoticeKind.Update, version, "AirLink", version)); Changed(); }
 
     public async Task SetAutomaticReceiveAsync(string deviceId, bool automatic)
     {

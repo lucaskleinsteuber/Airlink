@@ -60,6 +60,7 @@ internal static class Program
         {
             if (recentNotice?.Kind == DesktopNoticeKind.CompletedTransfer && controller.Status?.Transfers.FirstOrDefault(t => t.Id == recentNotice.Id) is { } transfer)
                 await controller.RunAsync(() => controller.RevealAsync(transfer));
+            else if (recentNotice?.Kind == DesktopNoticeKind.Update) await window.CheckForUpdatesAsync();
             else window.ShowMain();
         });
         controller.NoticeRaised += notice =>
@@ -67,6 +68,7 @@ internal static class Program
             recentNotice = notice;
             var title = notice.Kind switch
             {
+                DesktopNoticeKind.Update => controller.T("Neue AirLink-Beta verfügbar", "New AirLink beta available"),
                 DesktopNoticeKind.Pairing => controller.T("Verbindungsanfrage", "Connection request"),
                 DesktopNoticeKind.IncomingTransfer => controller.T("Dateien warten auf Annahme", "Files waiting for acceptance"),
                 DesktopNoticeKind.DuplicateDecision => controller.T("Duplikat benötigt deine Entscheidung", "Duplicate needs your decision"),

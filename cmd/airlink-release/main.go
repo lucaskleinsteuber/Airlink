@@ -61,7 +61,7 @@ func outsideRepository(directory, repository string) error {
 	}
 	// Resolve the nearest existing ancestor before creating anything. A symlink
 	// pointing into the checkout must not bypass the out-of-repository rule.
-	ancestor, suffix := absolute, ""
+	ancestor := absolute
 	for {
 		if _, err := os.Lstat(ancestor); err == nil {
 			break
@@ -72,32 +72,40 @@ func outsideRepository(directory, repository string) error {
 		if parent == ancestor {
 			return errors.New("private key directory has no existing ancestor")
 		}
-		suffix = filepath.Join(filepath.Base(ancestor), suffix)
 		ancestor = parent
 	}
 	resolvedAncestor, err := filepath.EvalSymlinks(ancestor)
 	if err != nil {
 		return errors.New("private key ancestor cannot be resolved")
 	}
-	// A directory in any Git repository is unsuitable, including another
-	// checkout outside --repository. This read-only probe never changes Git.
+	// Compare actual directory identities rather than path strings: Windows
+	// drive aliases, short paths and extended prefixes can name the same tree.
+	repositoryInfo, err := os.Stat(resolvedRepository)
+	if err != nil {
+		return errors.New("repository directory cannot be inspected")
+	}
+	for current := resolvedAncestor; ; current = filepath.Dir(current) {
+		info, err := os.Stat(current)
+		if err != nil {
+			return errors.New("private key ancestor cannot be inspected")
+		}
+		if os.SameFile(repositoryInfo, info) {
+			return errors.New("private signing keys must stay outside the repository")
+		}
+		if _, err := os.Lstat(filepath.Join(current, ".git")); err == nil {
+			return errors.New("private signing keys must stay outside every Git repository")
+		} else if !os.IsNotExist(err) {
+			return errors.New("private key Git marker cannot be inspected")
+		}
+		if filepath.Dir(current) == current {
+			break
+		}
+	}
+	// Also detect bare repositories, which do not have a .git marker.
 	if _, err := exec.Command("git", "-C", resolvedAncestor, "rev-parse", "--git-dir").Output(); err == nil {
 		return errors.New("private signing keys must stay outside every Git repository")
 	} else if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 128 {
 		return errors.New("private key directory Git context could not be inspected")
-	}
-	resolved := filepath.Join(resolvedAncestor, suffix)
-	// Rel cannot compare Windows paths on different volumes. Both ancestors
-	// have already been resolved and the Git-context check above still applies.
-	if runtime.GOOS == "windows" && !strings.EqualFold(filepath.VolumeName(resolvedRepository), filepath.VolumeName(resolved)) {
-		return nil
-	}
-	relative, err := filepath.Rel(resolvedRepository, resolved)
-	if err != nil {
-		return errors.New("private key directory cannot be compared with repository")
-	}
-	if relative == "." || (relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))) {
-		return errors.New("private signing keys must stay outside the repository")
 	}
 	return nil
 }

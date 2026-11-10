@@ -64,3 +64,11 @@ private func desktopTransfer(id: String, device: String = "arch", state: String 
     #expect(transfer.numberOfFiles == 10000)
     #expect(!transfer.hasReceivedContent)
 }
+
+@Test func lateSummaryCannotReactivateANewerFinishedHistoryEntry() throws {
+    var finished = try desktopTransfer(id: "same", state: "completed")
+    finished.updatedAt = "2026-11-10T00:00:01Z"
+    var older = finished; older.state = "running"; older.updatedAt = "2026-11-10T00:00:00.999999999Z"
+    let rows = DesktopTransferSelection.mergeHistory([finished], summary: [older])
+    #expect(rows.count == 1 && rows[0].state == "completed")
+}

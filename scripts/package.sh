@@ -10,17 +10,8 @@ for ARCH in x64 arm64; do
  cp "build/windows-$ARCH/AirLink-Setup.exe" "$ARTIFACT"; PACKAGES+=("$ARTIFACT")
 done
 if [[ "$(uname -s)" == Darwin ]]; then
- for ARCH in arm64 x64; do
-  STAGE="build/dmg-stage-$ARCH"
-  rm -rf "$STAGE"
-  mkdir -p "$STAGE"
-  ditto "build/macos-$ARCH/AirLink.app" "$STAGE/AirLink.app"
-  ln -s /Applications "$STAGE/Applications"
-  ARTIFACT="dist/AirLink-$VERSION-macos-$ARCH.dmg"
-  hdiutil create -volname AirLink -srcfolder "$STAGE" -ov -format UDZO "$ARTIFACT"
-  hdiutil verify "$ARTIFACT"
-  PACKAGES+=("$ARTIFACT")
- done
+ bash scripts/package-macos.sh
+ for ARCH in arm64 x64; do PACKAGES+=("dist/AirLink-$VERSION-macos-$ARCH.dmg"); done
 fi
 for EXT in AppImage deb rpm pkg.tar.zst; do
  ARTIFACT="AirLink-$VERSION-linux-x64.$EXT"

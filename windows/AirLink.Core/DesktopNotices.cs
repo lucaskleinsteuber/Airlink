@@ -1,6 +1,6 @@
 namespace AirLink.Core;
 
-public enum DesktopNoticeKind { Pairing, IncomingTransfer, DuplicateDecision, CompletedTransfer, Clipboard }
+public enum DesktopNoticeKind { Pairing, IncomingTransfer, DuplicateDecision, CompletedTransfer, Clipboard, Update }
 public sealed record DesktopNotice(DesktopNoticeKind Kind, string Id, string DeviceName, string Title);
 
 /// <summary>Tracks observations, including when notifications are disabled, without replaying old receipts at launch.</summary>

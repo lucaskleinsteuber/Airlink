@@ -266,14 +266,20 @@ func (s *Server) Stdio(in io.Reader, out io.Writer) error {
 			}
 			continue
 		}
-		if req.Method == "offer" {
+		if req.Method == "offer" || req.Method == "share.create" {
 			select {
 			case offerSlots <- struct{}{}:
 				workers.Add(1)
 				go func(req rpcRequest) {
 					defer workers.Done()
 					defer func() { <-offerSlots }()
-					result, err := s.offerControl(ctx, req.Params)
+					var result any
+					var err error
+					if req.Method == "share.create" {
+						result, err = s.shareControlContext(ctx, req.Method, req.Params)
+					} else {
+						result, err = s.offerControl(ctx, req.Params)
+					}
 					reply := map[string]any{"id": req.ID}
 					if err != nil {
 						reply["error"] = err.Error()

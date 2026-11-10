@@ -9,12 +9,7 @@ struct DesktopTransfersView: View {
     @State private var issue: String?
     @State private var generation = UUID()
     private var rows: [Transfer] {
-        let live = model.status?.transfers ?? []
-        let liveIDs = Set(live.map(\.id))
-        return (live + history.filter { !liveIDs.contains($0.id) }).sorted {
-            if $0.isActive != $1.isActive { return $0.isActive }
-            return $0.updatedAt == $1.updatedAt ? $0.id > $1.id : $0.updatedAt > $1.updatedAt
-        }
+        DesktopTransferSelection.mergeHistory(history, summary: model.status?.transfers ?? [])
     }
     var body: some View {
         ScrollView {

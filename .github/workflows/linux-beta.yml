@@ -42,7 +42,7 @@ jobs:
         run: |
           go test -p 4 -race -c -o build/linux-update-tests ./internal/update
           useradd --create-home airlink-test
-          runuser -u airlink-test -- build/linux-update-tests -test.v
+          runuser -u airlink-test -- sh -c 'cd internal/update && ../../build/linux-update-tests -test.v'
       - name: Inspect all package payloads without executing an application
         run: python3 scripts/check-package-privacy.py build/linux-packages/AirLink-*.AppImage build/linux-packages/AirLink-*.deb build/linux-packages/AirLink-*.rpm build/linux-packages/AirLink-*.pkg.tar.zst
       - uses: actions/upload-artifact@v6

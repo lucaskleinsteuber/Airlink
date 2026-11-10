@@ -548,8 +548,14 @@ func safeRelative(p string) bool {
 	return true
 }
 func CapturePaths(paths []string) ([]Source, error) {
+	return CapturePathsContext(context.Background(), paths)
+}
+func CapturePathsContext(ctx context.Context, paths []string) ([]Source, error) {
 	out := []Source{}
 	for _, selected := range paths {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if !filepath.IsAbs(selected) {
 			return nil, ErrInvalid
 		}
@@ -563,6 +569,9 @@ func CapturePaths(paths []string) ([]Source, error) {
 		}
 		base := filepath.Base(selected)
 		err = filepath.WalkDir(selected, func(p string, d fs.DirEntry, walkErr error) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if walkErr != nil {
 				return ErrUnavailable
 			}
@@ -602,8 +611,14 @@ func CapturePaths(paths []string) ([]Source, error) {
 	return validateSources(out)
 }
 func CaptureFiles(sources []Source) ([]Source, error) {
+	return CaptureFilesContext(context.Background(), sources)
+}
+func CaptureFilesContext(ctx context.Context, sources []Source) ([]Source, error) {
 	out := make([]Source, len(sources))
 	for i, src := range sources {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if !safeRelative(src.File.Path) {
 			return nil, ErrInvalid
 		}
