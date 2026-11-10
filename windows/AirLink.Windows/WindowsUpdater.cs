@@ -73,7 +73,7 @@ internal sealed class WindowsUpdater(MainWindow owner, Controller controller) : 
         var channel = WindowsUpdateChannel.Load(RuntimeInformation.OSArchitecture);
         signatures = new StrictUpdateSignatures(channel.PublicKey);
         feed = new WindowsUpdateFeed(channel.Feed);
-        filter = new WindowsUpdateFilter(channel.Architecture);
+        filter = new WindowsUpdateFilter(channel.Architecture, typeof(WindowsUpdater).Assembly.GetName().Version?.ToString(4) ?? throw new InvalidOperationException("The installed numeric build is missing."));
         var ui = new UpdateUI(this)
         {
             HideReleaseNotes = true,

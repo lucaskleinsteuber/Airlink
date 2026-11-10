@@ -7,7 +7,7 @@ param(
     [Parameter(Mandatory = $true)][ValidatePattern('^\d+\.\d+\.\d+(?:-beta\.[1-9]\d*)?$')][string]$ExpectedVersion,
     [Parameter(Mandatory = $true)][string]$BaselineInstallerPath,
     [Parameter(Mandatory = $true)][string]$BaselinePayloadPath,
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$BaselineVersion = '0.0.0',
+    [ValidatePattern('^\d+\.\d+\.\d+(?:-beta\.[1-9]\d*)?$')][string]$BaselineVersion = '0.0.0',
     [string]$ReportPath
 )
 
@@ -20,8 +20,20 @@ if ($env:OS -ne 'Windows_NT') {
 if ($env:GITHUB_ACTIONS -ne 'true' -and $env:AIRLINK_ALLOW_INSTALLER_TEST -ne '1') {
     throw 'Use a disposable Windows CI user. Explicit opt-in requires GITHUB_ACTIONS=true or AIRLINK_ALLOW_INSTALLER_TEST=1.'
 }
-if ([Version]($ExpectedVersion.Split('-')[0]) -le [Version]($BaselineVersion.Split('-')[0])) {
+function Compare-ReleaseVersion([string]$Left, [string]$Right) {
+    $a = $Left.Split('-', 2); $b = $Right.Split('-', 2)
+    $core = ([Version]$a[0]).CompareTo([Version]$b[0])
+    if ($core -ne 0) { return $core }
+    if ($a.Count -eq 1 -and $b.Count -eq 1) { return 0 }
+    if ($a.Count -eq 1) { return 1 }
+    if ($b.Count -eq 1) { return -1 }
+    return ([System.Numerics.BigInteger]::Parse($a[1].Substring(5))).CompareTo([System.Numerics.BigInteger]::Parse($b[1].Substring(5)))
+}
+if ((Compare-ReleaseVersion $ExpectedVersion $BaselineVersion) -le 0) {
     throw 'The release version must be newer than the explicit baseline fixture version.'
+}
+foreach ($pair in @(@('0.12.0-beta.1', '0.12.0-beta.2'), @('0.12.0-beta.2', '0.12.0-beta.10'), @('0.12.0-beta.10', '0.12.0'))) {
+    if ((Compare-ReleaseVersion $pair[0] $pair[1]) -ge 0) { throw 'Installer beta ordering is incorrect.' }
 }
 if (-not [Environment]::Is64BitOperatingSystem) {
     throw 'This acceptance test requires a 64-bit Windows runner.'

@@ -117,12 +117,16 @@ public sealed class WindowsUpdateFeed : IAppCastDataDownloader, IDisposable
     public void Dispose() => http.Dispose();
 }
 
-public sealed class WindowsUpdateFilter(string architecture) : IAppCastFilter
+public sealed class WindowsUpdateFilter(string architecture, string? installedNumericVersion = null) : IAppCastFilter
 {
     private static readonly Regex ReleaseVersion = new(@"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-beta\.([1-9][0-9]*))?$", RegexOptions.CultureInvariant);
     public AppCastItem? Selected { get; private set; }
     public IEnumerable<AppCastItem> GetFilteredAppCastItems(SemVerLike installed, IEnumerable<AppCastItem> items)
     {
+        if (installedNumericVersion is not null) {
+            if (!System.Version.TryParse(installedNumericVersion, out var numeric) || numeric.Revision < 0) { Selected = null; return []; }
+            installed = SemVerLike.Parse(installedNumericVersion);
+        }
         Selected = items.Where(item => Accepts(item) && item.SemVerLikeVersion.CompareTo(installed) > 0).OrderByDescending(item => item.SemVerLikeVersion).FirstOrDefault();
         return Selected is null ? [] : [Selected];
     }

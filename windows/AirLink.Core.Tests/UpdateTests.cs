@@ -57,6 +57,7 @@ internal static class UpdateTests
         var candidates = filter.GetFilteredAppCastItems(SemVerLike.Parse("0.9.0"), [Item("0.8.1", "x64"), Item("0.12.0", "arm64"), Item("0.10.0", "x64"), latest]).ToArray();
         Require(candidates.Length == 1 && ReferenceEquals(candidates[0], latest), "Update selection accepted a downgrade, another architecture or the wrong newest release");
         var beta = Item("0.12.0-beta.1", "x64"); beta.Version = "0.12.0.14"; beta.ShortVersion = "0.12.0-beta.1";
+        Require(!new WindowsUpdateFilter("x64", "0.12.0.14").GetFilteredAppCastItems(SemVerLike.Parse("0.12.0-beta.1"), [beta]).Any(), "The installed beta was offered again when the library reported the informational version");
         Require(filter.Accepts(beta), "A signed native beta with numeric OS version was rejected");
         var beta10 = Item("0.12.0-beta.10", "x64"); beta10.Version = "0.12.0.23"; beta10.ShortVersion = "0.12.0-beta.10";
         var beta2 = Item("0.12.0-beta.2", "x64"); beta2.Version = "0.12.0.15"; beta2.ShortVersion = "0.12.0-beta.2";
