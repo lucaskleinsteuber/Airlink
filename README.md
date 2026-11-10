@@ -6,9 +6,9 @@
 
 AirLink sends files and folders directly between devices on the same local network. Native apps for **macOS, Linux and Windows** manage an embedded transfer service; phones and tablets connect through its web interface. No account, cloud relay or internet connection is needed for local transfers.
 
-**[0.12.0 Beta 1 is available](https://github.com/lucaskleinsteuber/Airlink/releases/tag/v0.12.0-beta.1).** The background and package checks passed. This is beta software: physical Mac↔Arch WLAN, desktop rendering and the new 100-GB acceptance run remain separate, open checks. [Verification records](docs/TESTING.md) distinguish tests, builds, packages and physical devices; [1.0 readiness](docs/RELEASE-READINESS.md) remains a separate gate.
+**[0.12.0 Beta 2 is available](https://github.com/lucaskleinsteuber/Airlink/releases/tag/v0.12.0-beta.2).** The background and package checks passed. This is beta software: physical Mac↔Arch WLAN, desktop rendering and the new 100-GB acceptance run remain separate, open checks. [Verification records](docs/TESTING.md) distinguish tests, builds, packages and physical devices; [1.0 readiness](docs/RELEASE-READINESS.md) remains a separate gate.
 
-The `main` branch is preparing **0.12.0-beta.2** (build 15); the downloads below remain the published Beta 1. See the [changelog](CHANGELOG.md) for development changes.
+Beta 2 (build 15) improves small-file transfers, adds manually saved local diagnostics and clearer recovery actions. See the [changelog](CHANGELOG.md) and the measured results in [TESTING.md](docs/TESTING.md). Upgrading migrates transfer metadata; Beta 1 and older cannot reopen the upgraded transfer database. Pairings, settings, confirmed progress and received files are preserved.
 
 ## Get AirLink
 
@@ -16,14 +16,14 @@ Use the packages from the matching [GitHub beta release](https://github.com/luca
 
 | System | Package | Requirements and limits |
 |---|---|---|
-| Apple Silicon Mac | `AirLink-0.12.0-beta.1-macos-arm64.dmg` | macOS 14 or later; ad hoc signed, not notarized |
-| Intel Mac | `AirLink-0.12.0-beta.1-macos-x64.dmg` | macOS 14 or later; separate x64 executable and helper |
-| Linux x64, portable/user installation | `AirLink-0.12.0-beta.1-linux-x64.AppImage` | glibc 2.36+; bundled Qt and Wayland/X11 plugins |
-| Debian / Ubuntu x64 | `AirLink-0.12.0-beta.1-linux-x64.deb` | Debian 12 / Ubuntu 24.04 or later; system Qt 6.4+ |
-| Fedora / openSUSE x64 | `AirLink-0.12.0-beta.1-linux-x64.rpm` | Compatible supported releases; system Qt 6.4+ and OpenSSL 3 |
-| Arch x64 | `AirLink-0.12.0-beta.1-linux-x64.pkg.tar.zst` | Current Arch; Qt 6 and Wayland packages |
-| Windows Intel/AMD | `AirLink-0.12.0-beta.1-windows-x64-setup.exe` | Self-contained per-user installer |
-| Windows on ARM | `AirLink-0.12.0-beta.1-windows-arm64-setup.exe` | Native ARM64 app and service |
+| Apple Silicon Mac | `AirLink-0.12.0-beta.2-macos-arm64.dmg` | macOS 14 or later; ad hoc signed, not notarized |
+| Intel Mac | `AirLink-0.12.0-beta.2-macos-x64.dmg` | macOS 14 or later; separate x64 executable and helper |
+| Linux x64, portable/user installation | `AirLink-0.12.0-beta.2-linux-x64.AppImage` | glibc 2.36+; bundled Qt and Wayland/X11 plugins |
+| Debian / Ubuntu x64 | `AirLink-0.12.0-beta.2-linux-x64.deb` | Debian 12 / Ubuntu 24.04 or later; system Qt 6.4+ |
+| Fedora / openSUSE x64 | `AirLink-0.12.0-beta.2-linux-x64.rpm` | Compatible supported releases; system Qt 6.4+ and OpenSSL 3 |
+| Arch x64 | `AirLink-0.12.0-beta.2-linux-x64.pkg.tar.zst` | Current Arch; Qt 6 and Wayland packages |
+| Windows Intel/AMD | `AirLink-0.12.0-beta.2-windows-x64-setup.exe` | Self-contained per-user installer |
+| Windows on ARM | `AirLink-0.12.0-beta.2-windows-arm64-setup.exe` | Native ARM64 app and service |
 
 The release includes `SHA256SUMS.txt`, `UPDATE-SIGNATURES.json`, its detached signature and signed update feeds. Verify the downloaded package before installing. Linux ARM and an AUR submission are outside this beta.
 
@@ -37,15 +37,15 @@ These betas are **ad hoc signed and not notarized**. macOS may require an explic
 
 On Arch, use the native `.pkg.tar.zst` package and `pacman -U` below for normal installation with an application-menu entry.
 
-For the AppImage, mark it executable in Dolphin → Properties → Permissions, or run `chmod +x ./AirLink-0.12.0-beta.1-linux-x64.AppImage` in its folder. Start it with `./AirLink-0.12.0-beta.1-linux-x64.AppImage`. Its **Add to application menu** action copies it into the user application directory and adds a launcher. After starting the installed copy successfully, the original download can be removed. A desktop session with a private `XDG_RUNTIME_DIR` is required. On systems without usable FUSE support, the AppImage runtime also supports `--appimage-extract-and-run`.
+For the AppImage, mark it executable in Dolphin → Properties → Permissions, or run `chmod +x ./AirLink-0.12.0-beta.2-linux-x64.AppImage` in its folder. Start it with `./AirLink-0.12.0-beta.2-linux-x64.AppImage`. Its **Add to application menu** action copies it into the user application directory and adds a launcher. After starting the installed copy successfully, the original download can be removed. A desktop session with a private `XDG_RUNTIME_DIR` is required. On systems without usable FUSE support, the AppImage runtime also supports `--appimage-extract-and-run`.
 
 Install the native package using its package manager:
 
 ```sh
-sudo pacman -U ./AirLink-0.12.0-beta.1-linux-x64.pkg.tar.zst
-sudo apt install ./AirLink-0.12.0-beta.1-linux-x64.deb
-sudo dnf install ./AirLink-0.12.0-beta.1-linux-x64.rpm
-# openSUSE: sudo zypper install ./AirLink-0.12.0-beta.1-linux-x64.rpm
+sudo pacman -U ./AirLink-0.12.0-beta.2-linux-x64.pkg.tar.zst
+sudo apt install ./AirLink-0.12.0-beta.2-linux-x64.deb
+sudo dnf install ./AirLink-0.12.0-beta.2-linux-x64.rpm
+# openSUSE: sudo zypper install ./AirLink-0.12.0-beta.2-linux-x64.rpm
 ```
 
 Use only the command for your distribution. The [PKGBUILD](linux/packaging/PKGBUILD) also builds the app from the checked-out source. Packages install the desktop launcher, app and private helper; they do not install a system-wide network service. AirLink runs under your user account and keeps existing Linux service data.

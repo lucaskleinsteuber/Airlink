@@ -1,6 +1,6 @@
 # Current beta: Mac ↔ Arch / KDE Plasma
 
-For `0.12.0-beta.1`, the primary physical targets are macOS and Arch/KDE under Wayland. Background package and logic checks do not establish native rendering, tray integration or Wi-Fi throughput.
+For `0.12.0-beta.2`, the primary physical targets are macOS and Arch/KDE under Wayland. Background package and logic checks do not establish native rendering, tray integration or Wi-Fi throughput.
 
 1. Install the matching beta on both devices. Confirm setup preserves an existing name, receive folder and trusted devices. For a new installation, choose a recognizable name and the actual Downloads folder.
 2. Add the other computer and compare the eight-digit code directly on both displays. Confirm on both; automatic receiving starts off. Enable it explicitly in one direction and verify the opposite direction still requests acceptance.
