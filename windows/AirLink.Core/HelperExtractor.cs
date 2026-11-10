@@ -43,7 +43,7 @@ public static class HelperExtractor
             RejectLink(cacheRoot); RejectLink(directory);
             if (File.Exists(destination)) RejectLink(destination);
             try { File.Move(temporary, destination, overwrite: true); }
-            catch (IOException) when (File.Exists(destination))
+            catch (Exception error) when ((error is IOException or UnauthorizedAccessException) && File.Exists(destination))
             {
                 // Another launch may have installed the same immutable hash.
                 // Reuse only a fully verified winner, never a partial file.
@@ -54,7 +54,7 @@ public static class HelperExtractor
             if (!await MatchesAsync(destination, expected, ct).ConfigureAwait(false)) throw new DaemonException("The AirLink service cache changed during extraction. Retry the app.");
             return destination;
         }
-        finally { try { File.Delete(temporary); } catch (IOException) { } }
+        finally { try { File.Delete(temporary); } catch (Exception error) when (error is IOException or UnauthorizedAccessException) { } }
     }
 
     private static void RejectLink(string path)
@@ -64,7 +64,7 @@ public static class HelperExtractor
 
     private static async Task<bool> MatchesAsync(string path, string expected, CancellationToken ct)
     {
-        await using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        await using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, 64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
         var actual = await SHA256.HashDataAsync(file, ct).ConfigureAwait(false);
         return Convert.ToHexString(actual).Equals(expected, StringComparison.OrdinalIgnoreCase);
     }

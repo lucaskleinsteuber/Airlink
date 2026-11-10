@@ -6,7 +6,7 @@ cd /tmp
 case "$FORMAT" in
  deb)
   apt-get update
-  apt-get install -y --no-install-recommends ca-certificates qt6-wayland libqt6svg6 libssl3 xz-utils zstd
+  apt-get install -y --no-install-recommends ca-certificates qt6-wayland libqt6svg6 libqt6test6 libssl3 xz-utils zstd
   PACKAGE="$(find /AirLink/build/linux-artifacts -name '*.deb' -type f -print -quit)"
   apt-get install -y "$PACKAGE"
   ;;
@@ -16,8 +16,11 @@ case "$FORMAT" in
   pacman -U --noconfirm "$PACKAGE"
   ;;
  rpm)
+  if ! command -v find >/dev/null; then
+    if command -v dnf >/dev/null; then dnf install -y findutils; else zypper --non-interactive install findutils; fi
+  fi
   PACKAGE="$(find /AirLink/build/linux-artifacts -name '*.rpm' -type f -print -quit)"
-  if command -v dnf >/dev/null; then dnf install -y "$PACKAGE" qt6-qtwayland qt6-qtsvg openssl-libs; else zypper --non-interactive --no-gpg-checks install --allow-unsigned-rpm "$PACKAGE" qt6-wayland libQt6Svg6 libopenssl3; fi
+  if command -v dnf >/dev/null; then dnf install -y "$PACKAGE" qt6-qtwayland qt6-qtsvg openssl-libs; else zypper --non-interactive --no-gpg-checks install --allow-unsigned-rpm "$PACKAGE" qt6-wayland libQt6Svg6 libQt6Test6 libopenssl3; fi
   ;;
  *) exit 1;;
 esac

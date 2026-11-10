@@ -13,6 +13,7 @@ spec=importlib.util.spec_from_file_location('airlink_benchmark',Path(__file__).w
 benchmark=importlib.util.module_from_spec(spec);spec.loader.exec_module(benchmark)
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('baseline');parser.add_argument('candidate');parser.add_argument('--output',required=True)
+parser.add_argument('--single-files-only', action='store_true')
 args=parser.parse_args()
 output=Path(args.output).resolve();output.mkdir(parents=True,exist_ok=True)
 if shutil.disk_usage(output).free < 18*1024**3: raise SystemExit('Need fixture/receive space plus a 10 GiB reserve')
@@ -33,14 +34,16 @@ with tempfile.TemporaryDirectory(prefix='fixtures-',dir=output) as directory:
             results.extend(records)
             (output/'results.json').write_text(json.dumps(results,indent=2)+'\n')
         source.unlink()
-    source=fixture/'10000-files';source.mkdir();(source/'Empty').mkdir();(source/'Leerer Ordner').mkdir()
-    for i in range(10000):
-        folder=source/('Grüße-'+str(i//100));folder.mkdir(exist_ok=True)
-        (folder/('Datei-'+str(i)+'.bin')).write_bytes(block[i%100: i%100+8192])
-    for label in ('baseline','candidate'):
-        print(json.dumps({'event':'start','case':'10000-files','helper':label}),flush=True)
-        records=benchmark.run(SimpleNamespace(helper=getattr(args,label),source=str(source),mib=1,repeat=1,timeout=3600,report=str(output/('10000-files-'+label+'.json'))))
-        for row in records: row.update(case='10000-files',role=label)
-        results.extend(records)
-        (output/'results.json').write_text(json.dumps(results,indent=2)+'\n')
+    if not args.single_files_only:
+        source=fixture/'10000-files';source.mkdir();(source/'Empty').mkdir();(source/'Leerer Ordner').mkdir()
+        for i in range(10000):
+            folder=source/('Grüße-'+str(i//100));folder.mkdir(exist_ok=True)
+            (folder/('Datei-'+str(i)+'.bin')).write_bytes(block[i%100: i%100+8192])
+        for label in ('baseline','candidate'):
+            print(json.dumps({'event':'start','case':'10000-files','helper':label}),flush=True)
+            records=benchmark.run(SimpleNamespace(helper=getattr(args,label),source=str(source),mib=1,repeat=1,timeout=3600,report=str(output/('10000-files-'+label+'.json'))))
+            for row in records: row.update(case='10000-files',role=label)
+            results.extend(records)
+            (output/'results.json').write_text(json.dumps(results,indent=2)+'\n')
+
 print(json.dumps({'event':'complete','runs':len(results),'physicalNetworkTested':False}),flush=True)
