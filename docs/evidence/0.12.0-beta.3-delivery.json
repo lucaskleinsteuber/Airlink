@@ -1,0 +1,198 @@
+{
+  "version": "0.12.0-beta.3",
+  "build": 16,
+  "releaseId": 440501322,
+  "releaseURL": "https://github.com/lucaskleinsteuber/Airlink/releases/tag/v0.12.0-beta.3",
+  "publishedAt": "2026-11-10T15:01:32Z",
+  "prerelease": true,
+  "tagCommit": "22f9e4a209109a9829b6503c094583e43a01f498",
+  "applicationSourceCommit": "b857fe73c46cb2895154d3437479d6e55ff77c6a",
+  "liveFeedCommit": "74f472b",
+  "serverLengthsAndSHA256Matched": true,
+  "anonymousDownloads": [
+    {
+      "file": "AirLink-0.12.0-beta.3-linux-x64.AppImage",
+      "length": 47839736,
+      "sha256": "bec205f3c0b00e022a9f90eb2f2f64abd6bacc30045d9da14a4a4b1319de84db",
+      "anonymousDownloadVerified": true
+    },
+    {
+      "file": "AirLink-0.12.0-beta.3-linux-x64.deb",
+      "length": 5056148,
+      "sha256": "71cfc20dc0b38e207d044ffb266c31c5d1d0dd008e93516174cee04ca1a7c47f",
+      "anonymousDownloadVerified": true
+    },
+    {
+      "file": "AirLink-0.12.0-beta.3-linux-x64.pkg.tar.zst",
+      "length": 6529140,
+      "sha256": "d4951a938b57b275db48763a4c157a51e45858b6c8624fa9503b954f04f6743a",
+      "anonymousDownloadVerified": true
+    },
+    {
+      "file": "AirLink-0.12.0-beta.3-linux-x64.rpm",
+      "length": 6435097,
+      "sha256": "cae101f806ac47a97b6ff52bae91a999ab377f761bd839d9fc3ca99217fd83c7",
+      "anonymousDownloadVerified": true
+    },
+    {
+      "file": "AirLink-0.12.0-beta.3-macos-arm64.dmg",
+      "length": 10243799,
+      "sha256": "fa5638fdf3a92322b139c1f31f415d96c7d07e28bfd1d07b865ee67ee6fc95a4",
+      "anonymousDownloadVerified": true
+    },
+    {
+      "file": "AirLink-0.12.0-beta.3-macos-x64.dmg",
+      "length": 10936247,
+      "sha256": "f6057c1614e9bf465d7881ddfabd4ad520c1c187977f7b3ae28de6c6303bf2d0",
+      "anonymousDownloadVerified": true
+    },
+    {
+      "file": "AirLink-0.12.0-beta.3-windows-arm64-setup.exe",
+      "length": 69594736,
+      "sha256": "255d80e2890e961f749748b4942a81d33d0b680e8a54a7673e1b50ae65d359fe",
+      "anonymousDownloadVerified": true
+    },
+    {
+      "file": "AirLink-0.12.0-beta.3-windows-x64-setup.exe",
+      "length": 75473971,
+      "sha256": "6ba6521216281fa2cb2bf557707cd4177bec95f07beb1f85ed1b312af2180f6d",
+      "anonymousDownloadVerified": true
+    },
+    {
+      "file": "SHA256SUMS.txt",
+      "length": 1037,
+      "sha256": "2d0fc103ca71c530e62d36609fde5d08c85ba33ea4ed9bbb2f4ecbc6cf74f427",
+      "anonymousDownloadVerified": true
+    },
+    {
+      "file": "UPDATE-SIGNATURES.json",
+      "length": 3960,
+      "sha256": "ae35a47df53f7316bf6ab3bc9f1a92f8d022855beb7212b472f31d1b94c5ddc5",
+      "anonymousDownloadVerified": true
+    },
+    {
+      "file": "UPDATE-SIGNATURES.json.signature",
+      "length": 89,
+      "sha256": "b5a8043e926df77273a03e7799eb5994357cb210bb1bb0d6379fe95e88512537",
+      "anonymousDownloadVerified": true
+    },
+    {
+      "file": "linux-x64.json",
+      "length": 1949,
+      "sha256": "c3d67def846dcd2e33f8dd3a93c43b6c09a3fb32b4f4e8851dc9f1b3c1346d8f",
+      "anonymousDownloadVerified": true
+    },
+    {
+      "file": "linux-x64.json.signature",
+      "length": 89,
+      "sha256": "70f71d527bc1f1f9ab30f2e091f9f30c582d5d5cab9cac275242cd7e9b15d962",
+      "anonymousDownloadVerified": true
+    },
+    {
+      "file": "macos-arm64.xml",
+      "length": 5336,
+      "sha256": "d59ec2bbc4251a3f10f45ba7396df54d3738c4bc7e884f96fa92f862dc595211",
+      "anonymousDownloadVerified": true
+    },
+    {
+      "file": "macos-x64.xml",
+      "length": 5332,
+      "sha256": "33d6b410675edf2083f85cdbf7b9ae8a3f97f949f5566196d5a12cfebbf287a4",
+      "anonymousDownloadVerified": true
+    },
+    {
+      "file": "windows-arm64.xml",
+      "length": 5139,
+      "sha256": "c729f566ef41b1fffe097396b5b942341cf36c692a36faff325ea322c8336757",
+      "anonymousDownloadVerified": true
+    },
+    {
+      "file": "windows-arm64.xml.signature",
+      "length": 89,
+      "sha256": "4d3b544bd1a9b1cc533cb8d00b52f7d305cf80a2d8e7975e344b04bd46473e86",
+      "anonymousDownloadVerified": true
+    },
+    {
+      "file": "windows-x64.xml",
+      "length": 5135,
+      "sha256": "7010e5d9bca606cb69864cd77ca97f69188424d3927935509320a63a072cae04",
+      "anonymousDownloadVerified": true
+    },
+    {
+      "file": "windows-x64.xml.signature",
+      "length": 89,
+      "sha256": "d909252a1e528c43d083aad0ebd92c3449e657d3c4da3554c2a55a489408f8d6",
+      "anonymousDownloadVerified": true
+    }
+  ],
+  "liveFeeds": [
+    {
+      "file": "windows-arm64.xml",
+      "length": 5139,
+      "sha256": "c729f566ef41b1fffe097396b5b942341cf36c692a36faff325ea322c8336757",
+      "canonicalURL": "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/windows-arm64.xml",
+      "anonymous": true
+    },
+    {
+      "file": "windows-x64.xml",
+      "length": 5135,
+      "sha256": "7010e5d9bca606cb69864cd77ca97f69188424d3927935509320a63a072cae04",
+      "canonicalURL": "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/windows-x64.xml",
+      "anonymous": true
+    },
+    {
+      "file": "linux-x64.json",
+      "length": 1949,
+      "sha256": "c3d67def846dcd2e33f8dd3a93c43b6c09a3fb32b4f4e8851dc9f1b3c1346d8f",
+      "canonicalURL": "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/linux-x64.json",
+      "anonymous": true
+    },
+    {
+      "file": "macos-x64.xml",
+      "length": 5332,
+      "sha256": "33d6b410675edf2083f85cdbf7b9ae8a3f97f949f5566196d5a12cfebbf287a4",
+      "canonicalURL": "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/macos-x64.xml",
+      "anonymous": true
+    },
+    {
+      "file": "windows-arm64.xml.signature",
+      "length": 89,
+      "sha256": "4d3b544bd1a9b1cc533cb8d00b52f7d305cf80a2d8e7975e344b04bd46473e86",
+      "canonicalURL": "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/windows-arm64.xml.signature",
+      "anonymous": true
+    },
+    {
+      "file": "linux-x64.json.signature",
+      "length": 89,
+      "sha256": "70f71d527bc1f1f9ab30f2e091f9f30c582d5d5cab9cac275242cd7e9b15d962",
+      "canonicalURL": "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/linux-x64.json.signature",
+      "anonymous": true
+    },
+    {
+      "file": "macos-arm64.xml",
+      "length": 5336,
+      "sha256": "d59ec2bbc4251a3f10f45ba7396df54d3738c4bc7e884f96fa92f862dc595211",
+      "canonicalURL": "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/macos-arm64.xml",
+      "anonymous": true
+    },
+    {
+      "file": "windows-x64.xml.signature",
+      "length": 89,
+      "sha256": "d909252a1e528c43d083aad0ebd92c3449e657d3c4da3554c2a55a489408f8d6",
+      "canonicalURL": "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/windows-x64.xml.signature",
+      "anonymous": true
+    },
+    {
+      "file": "public-keys.json",
+      "length": 782,
+      "sha256": "eb2e25232d0e14a635a1fbf42179ee33e4025002a625501fdd2126e500ec9139",
+      "canonicalURL": "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/public-keys.json",
+      "anonymous": true
+    }
+  ],
+  "publicOnlyVerification": "Go plus actual Sparkle, NetSparkle and Qt passed using downloaded packages and canonical live feeds",
+  "publicKeyRotated": false,
+  "installedAppsChanged": false,
+  "completePhysicalFileTransferPassed": false,
+  "hundredGBTestRun": false
+}
