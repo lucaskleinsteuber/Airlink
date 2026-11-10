@@ -1,0 +1,217 @@
+{
+  "version": "0.12.0-beta.1",
+  "build": 14,
+  "releaseId": 439891987,
+  "releaseURL": "https://github.com/lucaskleinsteuber/Airlink/releases/tag/v0.12.0-beta.1",
+  "prerelease": true,
+  "packagingSource": "b52dca9b25f23fee09dcf949b1234d7e0ee0adfa",
+  "tagAndFinalTestSource": "95d19a61ec02d39e795596e9fbca59c2a437bdd5",
+  "finalBackgroundChecks": "https://github.com/lucaskleinsteuber/Airlink/actions/runs/42743867667",
+  "tagChecksPassedAfterMacFixtureTimingRetry": "https://github.com/lucaskleinsteuber/Airlink/actions/runs/42745873181",
+  "packagesBuilt": "https://github.com/lucaskleinsteuber/Airlink/actions/runs/42741926985",
+  "feedCommit": "f4eee17",
+  "releaseAssetCount": 19,
+  "publicDownloads": {
+    "releaseId": 439891987,
+    "tag": "v0.12.0-beta.1",
+    "authenticated": false,
+    "files": [
+      {
+        "name": "AirLink-0.12.0-beta.1-linux-x64.AppImage",
+        "bytes": 47819256,
+        "sha256": "ad1800e285a0cc1eb170ec4ff24fd56d0d2ed24f1bea908f82ab19eec47a45dd"
+      },
+      {
+        "name": "AirLink-0.12.0-beta.1-linux-x64.deb",
+        "bytes": 5039944,
+        "sha256": "df97770f607514cd018b1d71ea00d690d9051802efdc075873378ce670a4a03c"
+      },
+      {
+        "name": "AirLink-0.12.0-beta.1-linux-x64.pkg.tar.zst",
+        "bytes": 6503513,
+        "sha256": "b24b94362e42c642e9fe20b3175b17d685193db60c4b9e698801e4ec1d7d5a96"
+      },
+      {
+        "name": "AirLink-0.12.0-beta.1-linux-x64.rpm",
+        "bytes": 6411187,
+        "sha256": "e8176f47eec6bee17688dc1102ceb86608d967dfd53cec47e063213514c6f28b"
+      },
+      {
+        "name": "AirLink-0.12.0-beta.1-macos-arm64.dmg",
+        "bytes": 10220809,
+        "sha256": "cc53e9990f88d0bf9a08067e35e218813c55eee3a9a00f47b6406c921f62ece8"
+      },
+      {
+        "name": "AirLink-0.12.0-beta.1-macos-x64.dmg",
+        "bytes": 10894217,
+        "sha256": "267377bb4a56f7c33e7c9c31f3395b7ce6ef7d647fb22a6026871be08a408300"
+      },
+      {
+        "name": "AirLink-0.12.0-beta.1-windows-arm64-setup.exe",
+        "bytes": 69557933,
+        "sha256": "dd5a1434855ecee7e743e17a53354418baba694ceda045c3119bd3fc89aed34a"
+      },
+      {
+        "name": "AirLink-0.12.0-beta.1-windows-x64-setup.exe",
+        "bytes": 75432747,
+        "sha256": "3ef03e29ab308b0460ac92558129db2ae7c9833876ee237e03f0f171e6ca2da1"
+      },
+      {
+        "name": "linux-x64.json",
+        "bytes": 1949,
+        "sha256": "af502038c4ff412ab12530157d2167898742eccbbcf537fc918e049488207fa5"
+      },
+      {
+        "name": "linux-x64.json.signature",
+        "bytes": 89,
+        "sha256": "85a84442a5af7e838f7e88cb48ee80737a9fdc4cce2a176b4c4851d33c1bc1b5"
+      },
+      {
+        "name": "macos-arm64.xml",
+        "bytes": 7028,
+        "sha256": "d4781a0e26038b17b773dff8c8c2d9a1d1866a638ba7d3a4c65cb5ed4cd8b9cc"
+      },
+      {
+        "name": "macos-x64.xml",
+        "bytes": 7024,
+        "sha256": "f0c2c18aa2c33bfc1cf74b8174bdf8a1b050f9873c8ab2965629b4fd2af65dc3"
+      },
+      {
+        "name": "SHA256SUMS.txt",
+        "bytes": 1037,
+        "sha256": "5b1febab31e2490342e1d8c04d18337e8c3bc94b78d29f1594e38358443ed674"
+      },
+      {
+        "name": "UPDATE-SIGNATURES.json",
+        "bytes": 3960,
+        "sha256": "35708cb98a966edf3ae22098c7d727758e04fb228e504618ecb789267bd65f0f"
+      },
+      {
+        "name": "UPDATE-SIGNATURES.json.signature",
+        "bytes": 89,
+        "sha256": "066a9cea6848ca4069a5b91c76bf31bad3b61630be919a2ad4ff0ed95b68988c"
+      },
+      {
+        "name": "windows-arm64.xml",
+        "bytes": 6831,
+        "sha256": "0a3377287cb91e6ff16d0ce990add38d791da82bc4d8882e080291590f804000"
+      },
+      {
+        "name": "windows-arm64.xml.signature",
+        "bytes": 89,
+        "sha256": "9c1d22edf29743f5c2cdfab8ae8a485df91377355bd0e39fe73c42354aa0848a"
+      },
+      {
+        "name": "windows-x64.xml",
+        "bytes": 6827,
+        "sha256": "78a730c490e8976550961af73c69f8ee2d1ba1b00c66979c5ac5a3b1f7c08fe5"
+      },
+      {
+        "name": "windows-x64.xml.signature",
+        "bytes": 89,
+        "sha256": "7dcec31d28b77a6d1beeb972d4c4678865b4f1eed0295e99e3a2d86bd4739b47"
+      }
+    ]
+  },
+  "publicFeedsAndConfiguration": {
+    "commit": "f4eee17",
+    "authenticated": false,
+    "files": [
+      {
+        "name": "windows-arm64.xml",
+        "url": "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/windows-arm64.xml",
+        "sha256": "0a3377287cb91e6ff16d0ce990add38d791da82bc4d8882e080291590f804000",
+        "bytes": 6831
+      },
+      {
+        "name": "windows-x64.xml",
+        "url": "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/windows-x64.xml",
+        "sha256": "78a730c490e8976550961af73c69f8ee2d1ba1b00c66979c5ac5a3b1f7c08fe5",
+        "bytes": 6827
+      },
+      {
+        "name": "linux-x64.json",
+        "url": "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/linux-x64.json",
+        "sha256": "af502038c4ff412ab12530157d2167898742eccbbcf537fc918e049488207fa5",
+        "bytes": 1949
+      },
+      {
+        "name": "macos-x64.xml",
+        "url": "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/macos-x64.xml",
+        "sha256": "f0c2c18aa2c33bfc1cf74b8174bdf8a1b050f9873c8ab2965629b4fd2af65dc3",
+        "bytes": 7024
+      },
+      {
+        "name": "windows-arm64.xml.signature",
+        "url": "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/windows-arm64.xml.signature",
+        "sha256": "9c1d22edf29743f5c2cdfab8ae8a485df91377355bd0e39fe73c42354aa0848a",
+        "bytes": 89
+      },
+      {
+        "name": "linux-x64.json.signature",
+        "url": "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/linux-x64.json.signature",
+        "sha256": "85a84442a5af7e838f7e88cb48ee80737a9fdc4cce2a176b4c4851d33c1bc1b5",
+        "bytes": 89
+      },
+      {
+        "name": "macos-arm64.xml",
+        "url": "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/macos-arm64.xml",
+        "sha256": "d4781a0e26038b17b773dff8c8c2d9a1d1866a638ba7d3a4c65cb5ed4cd8b9cc",
+        "bytes": 7028
+      },
+      {
+        "name": "windows-x64.xml.signature",
+        "url": "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/windows-x64.xml.signature",
+        "sha256": "7dcec31d28b77a6d1beeb972d4c4678865b4f1eed0295e99e3a2d86bd4739b47",
+        "bytes": 89
+      },
+      {
+        "name": "public-keys.json",
+        "url": "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/public-keys.json",
+        "sha256": "eb2e25232d0e14a635a1fbf42179ee33e4025002a625501fdd2126e500ec9139",
+        "bytes": 782
+      }
+    ]
+  },
+  "signatures": {
+    "algorithm": "Ed25519",
+    "keyRotation": false,
+    "publicKey": "Qv0ebRzPio5qS8peZP0RnKqPe+J8mcE0LO3haWpcEjg=",
+    "publicOnlyGoVerificationOfDownloadedPackagesAndLiveFeeds": true,
+    "actualSparkleNetSparkleQtVerifiersPassed": true,
+    "wrongKeyWrongArchitectureAndChangedPayloadRejected": true
+  },
+  "repository": {
+    "activeId": 1433237767,
+    "public": true,
+    "archiveId": 1431646266,
+    "archivePrivate": true,
+    "archiveArchived": true,
+    "onlyDevelopmentBranch": "main"
+  },
+  "audits": {
+    "anonymousSourceCommit": "95d19a61ec02d39e795596e9fbca59c2a437bdd5",
+    "sourceInputs": 315,
+    "reachableCommits": 40,
+    "tags": 13,
+    "historyBlobs": 933,
+    "sourceFindings": 0,
+    "packages": 8,
+    "payloads": 1403,
+    "bundleEntries": 919,
+    "managedResources": 2010,
+    "nsisStreams": 4,
+    "packageFindings": 0,
+    "historicalReleaseAssetIdentitiesSizesAndDigestsUnchanged": true
+  },
+  "openDeviceEvidence": [
+    "Physical Mac to Arch WLAN",
+    "Native desktop rendering/interaction",
+    "Windows ARM64 runtime",
+    "New 100 GB acceptance"
+  ],
+  "macosSigning": "ad hoc, not notarized",
+  "windowsSigning": "Ed25519 update integrity; no Authenticode",
+  "guiAutomation": false,
+  "localAppInstallation": false
+}

@@ -40,6 +40,8 @@ Layout: readable resizable devices sidebar; recipient and one send surface; comp
 
 ## Evidence and limits
 
+The final [delivery record](evidence/0.12.0-beta.1-delivery.json) records anonymous byte/hash checks for all 19 release files and the live update feeds. Existing release titles now explicitly say Beta; their exact asset identities, hashes, sizes and tags were preserved. The active repository is public; repository ID 1431646266 remains private and archived. All development remains on `main`.
+
 Record actual test/build/benchmark results below as they complete. Physical Mac/Arch WLAN, native window integration and a new 100 GB run require separate evidence. They must not be inferred from builds or same-host tests. The available Mac disk space at planning was insufficient for a two-copy 100 GB fixture; do not fill the user's disk to attempt it.
 
 ### Work in progress, 2026-11-10
