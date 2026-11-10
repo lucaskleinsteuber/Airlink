@@ -28,11 +28,11 @@ Layout: readable resizable devices sidebar; recipient and one send surface; comp
 - [x] Core compact status / paged history and file details; desktop consumers still need final integration.
 - [x] Core cancellable preparation and responsive control pipe.
 - [x] Core TLS-bound mutual pairing and compatibility; native presentation integration still in progress.
-- [ ] Bounded prefetch and comparable measurements.
-- [ ] macOS navigation, setup, settings and native model tests.
-- [ ] Linux desktop and Qt Core tests.
-- [ ] Windows compatibility, pairing and updater tests.
-- [ ] Beta versioning, split Mac builds, Linux packages and CI matrix.
+- [x] Bounded prefetch and comparable measurements.
+- [x] macOS navigation, setup, settings and native model tests.
+- [x] Linux desktop and Qt Core tests.
+- [x] Windows compatibility, pairing and updater tests.
+- [x] Beta versioning, split Mac builds, Linux packages and CI matrix.
 - [ ] Signed native updates / AppImage update / package-manager guidance.
 - [ ] Source/history/package privacy and license review.
 - [ ] Final background test/build/package/signature checks.
@@ -66,3 +66,8 @@ Record actual test/build/benchmark results below as they complete. Physical Mac/
 - The hosted Linux builder now produces all four packages. Actual non-root signed AppImage handoff/relaunch (harmless CLI fixture) and refused-readiness preservation pass. The canonical public-key test needed the test binary to run from its package working directory; this runner fix is being applied.
 - Repeated 300-MiB/4-GiB loopback comparisons show lower elapsed time for the prefetched helper and sampled RSS below 60 MiB. These are preliminary helper-hash-specific results. A final helper was rebuilt after the share-capture control fix; the large-manifest run uses that helper, and its single-file comparison must be repeated for final reporting.
 - The 10,000-file baseline completed. Its matched candidate is running with the same dense fixtures, Unicode names, empty subfolders and independent destination/source hash checks. It is a control-polling stress workload, not a WLAN/native GUI speed claim.
+
+### Completed transfer measurements
+
+- Final repeated 300-MiB and 4-GiB comparisons and the matched 10,000-file case passed independent file/directory/size/SHA-256 checks. The candidate helper hash, raw per-run phase values and memory observations are retained in `docs/evidence/0.12.0-beta.1-performance.json`. Many-small-file performance remains slow; no significant improvement is claimed for that case.
+- A new 4-GiB recovery check passed pause/resume and abrupt receiver/sender restarts without losing confirmed progress, ending in an independent full hash match. A separate simultaneous 300-MiB-per-direction check observed overlap and verified both outputs with a configured 64-MiB/s sending limit. Temporary state/fixtures were removed; no application or user state was installed or changed.

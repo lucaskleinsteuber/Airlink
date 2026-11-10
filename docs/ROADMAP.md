@@ -1,6 +1,16 @@
 # AirLink roadmap
 
-This roadmap separates the established 0.1/0.2 baseline, implemented 0.3/0.4 preview capabilities, the 0.5 stabilization work, the 0.6 native Windows workflow, the 0.7 usability work, and future acceptance. Milestones are capability boundaries, not release dates. Version numbers use MAJOR.MINOR.PATCH; patch releases fix the current minor release without claiming a later milestone is complete. Source implementation, final automated verification, private release packaging, and physical acceptance are separate states.
+Milestones are capability boundaries, not release dates. New development releases use MAJOR.MINOR.PATCH-beta.N. Source implementation, background verification, package publication and physical acceptance are separate states.
+
+## 0.12 Beta — Linux desktop and stabilization
+
+- Native Qt 6.4+ Linux desktop, prioritizing Arch/KDE Plasma under Wayland; x64 AppImage, DEB, RPM and Arch package. macOS retains its native SwiftUI interface, with separate ARM64 and Intel packages. Windows retains native x64 and ARM64 Setup packages.
+- Recipient-focused navigation, clear setup/settings drafts, compact status, paged history/file details, cancellable preparation and bounded one-block prefetch.
+- TLS-bound mutual eight-digit comparison pairing, preserved existing trust and explicit directional automatic-receive permission.
+- Opt-in daily beta notices and manual installation with the retained Ed25519 key, architecture-specific feeds and package-manager guidance.
+- Final background suites, isolated distro package upgrade/removal, artifact/privacy audits and verified public beta delivery. See [the current verification record](TESTING.md) for actual completion status.
+
+Before 1.0: physical Mac↔Arch WLAN and desktop acceptance, the new 100-GB acceptance, remaining platform/device checks and investigation of many-small-file metadata overhead. A successful local benchmark does not close these gates.
 
 ## 0.1 — Local transfer foundation
 

@@ -7,6 +7,7 @@ param(
     [Parameter(Mandatory = $true)][ValidatePattern('^\d+\.\d+\.\d+(?:-beta\.[1-9]\d*)?$')][string]$ExpectedVersion,
     [Parameter(Mandatory = $true)][string]$BaselineInstallerPath,
     [Parameter(Mandatory = $true)][string]$BaselinePayloadPath,
+    [string]$Arm64InstallerPath,
     [ValidatePattern('^\d+\.\d+\.\d+(?:-beta\.[1-9]\d*)?$')][string]$BaselineVersion = '0.0.0',
     [string]$ReportPath
 )
@@ -184,6 +185,9 @@ $InstallerPath = Resolve-InputFile $InstallerPath
 $PayloadPath = Resolve-InputFile $PayloadPath
 $BaselineInstallerPath = Resolve-InputFile $BaselineInstallerPath
 $BaselinePayloadPath = Resolve-InputFile $BaselinePayloadPath
+if (-not [string]::IsNullOrWhiteSpace($Arm64InstallerPath)) {
+    $Arm64InstallerPath = Resolve-InputFile $Arm64InstallerPath
+}
 $releaseHash = (Get-FileHash -LiteralPath $PayloadPath -Algorithm SHA256).Hash
 $baselineHash = (Get-FileHash -LiteralPath $BaselinePayloadPath -Algorithm SHA256).Hash
 Assert-True ($releaseHash -ne $baselineHash) 'The baseline fixture and release payload must differ to prove replacement.'
@@ -237,6 +241,12 @@ try {
         $script:Markers.Add(@{ path = $marker; label = $item.label; hash = (Get-FileHash -LiteralPath $marker -Algorithm SHA256).Hash })
     }
 
+    if (-not [string]::IsNullOrWhiteSpace($Arm64InstallerPath)) {
+        Invoke-SilentExecutable $Arm64InstallerPath 1633 'reject ARM64 installer on native x64 Windows'
+        Assert-True (-not (Test-Path -LiteralPath $script:InstallDirectory)) 'Wrong-architecture setup created the application directory.'
+        Assert-True ($null -eq (Read-UninstallEntry ([Microsoft.Win32.RegistryHive]::CurrentUser))) 'Wrong-architecture setup registered an app.'
+        Assert-Markers
+    }
     Invoke-SilentExecutable $BaselineInstallerPath 0 'install synthetic baseline'
     Assert-Installation $BaselineVersion $baselineHash
 

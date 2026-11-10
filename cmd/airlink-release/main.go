@@ -244,7 +244,7 @@ func run(arguments []string) error {
 	repository := flags.String("repository", ".", "repository directory (private keys are rejected inside it)")
 	dist := flags.String("dist", "dist", "final immutable release packages directory")
 	updates := flags.String("updates", "updates", "output or verification directory for native update feeds")
-	version := flags.String("version", "", "release version in Major.Minor.Patch form")
+	version := flags.String("version", "", "release version, optionally with -beta.N")
 	build := flags.String("build", "", "macOS CFBundleVersion of the packaged app")
 	published := flags.String("published", "", "publication timestamp in RFC3339 (sign defaults to current UTC time)")
 	notesFile := flags.String("notes-file", "", "UTF-8 text release notes embedded in the signed feed")
@@ -284,12 +284,20 @@ func run(arguments []string) error {
 		if err := signRelease(options); err != nil {
 			return err
 		}
-		fmt.Println("Signed and verified three native packages and three update feeds; release checksums include the signature manifest.")
+		if modernRelease(options.Version) {
+			fmt.Println("Signed and verified eight application packages and five update feeds; release checksums include the signature manifest.")
+		} else {
+			fmt.Println("Signed and verified three native packages and three update feeds; release checksums include the signature manifest.")
+		}
 	case "verify":
 		if err := verifyRelease(options); err != nil {
 			return err
 		}
-		fmt.Println("Verified three native packages, three signed update feeds, and final release checksums using the public key only.")
+		if modernRelease(options.Version) {
+			fmt.Println("Verified eight application packages, five signed update feeds, and final release checksums using the public key only.")
+		} else {
+			fmt.Println("Verified three native packages, three signed update feeds, and final release checksums using the public key only.")
+		}
 	case "native-only":
 		if err := nativeOnly(options); err != nil {
 			return err

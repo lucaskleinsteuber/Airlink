@@ -10,6 +10,7 @@ SetDatablockOptimize on
 
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
+!include "x64.nsh"
 
 !ifndef AIRLINK_VERSION
   !error "AIRLINK_VERSION is required"
@@ -137,15 +138,10 @@ FunctionEnd
 !insertmacro MutexFunctions "un."
 
 Function CheckArchitecture
-  ; IsWow64Process2 reports the true OS architecture even for this x86 bootstrap
-  ; under ARM64/x64 emulation. The native payload must match that architecture.
-  System::Call 'kernel32::GetModuleHandleW(w "kernel32.dll") p.r0'
-  System::Call 'kernel32::GetProcAddress(p r0, m "IsWow64Process2") p.r1'
-  StrCmp $1 0 unsupported
-  System::Call '::$1(p -1, *i 0.r2, *i 0.r3) i.r4'
-  StrCmp $4 0 unsupported
-  IntOp $3 $3 & 0xffff
-  IntCmp $3 ${AIRLINK_MACHINE} supported unsupported unsupported
+  ; Use NSIS's native-machine helper, including its tested WOW64 handling.
+  ; The bootstrap is x86; its own process architecture is not the target OS.
+  ${GetNativeMachineArchitecture} $0
+  IntCmp $0 ${AIRLINK_MACHINE} supported unsupported unsupported
   unsupported:
     IfSilent +2
       MessageBox MB_OK|MB_ICONSTOP "$(ArchitectureText)"

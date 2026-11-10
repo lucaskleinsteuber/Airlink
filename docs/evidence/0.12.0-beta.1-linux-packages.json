@@ -1,0 +1,58 @@
+{
+  "date": "2026-11-10",
+  "sourceCommit": "c88f9329bee7719216486876bf3f39c477fbbd0d",
+  "workflow": "https://github.com/lucaskleinsteuber/Airlink/actions/runs/42740216169",
+  "architecture": "x86_64",
+  "builder": "Debian 12 / Qt 6.4.2",
+  "tests": "Native package install, synthetic successor upgrade, Qt Core actual helper, AppImage extract-and-run --version, Beta version ordering, uninstall and preserved state/received fixtures. No desktop session.",
+  "matrix": [
+    {
+      "job": 129580538873,
+      "name": "Debian 12",
+      "image": "debian:12",
+      "qt": "6.4.2",
+      "digest": "sha256:15a94572598c0331834d7363b842a8b412d67f52f9b7cbd65ab41e60eedca13d",
+      "passed": true
+    },
+    {
+      "job": 129580538781,
+      "name": "Ubuntu 24.04",
+      "image": "ubuntu:24.04",
+      "qt": "6.4.2",
+      "digest": "sha256:15a94572598c0331834d7363b842a8b412d67f52f9b7cbd65ab41e60eedca13d",
+      "passed": true
+    },
+    {
+      "job": 129580538684,
+      "name": "Arch rolling",
+      "image": "archlinux:base-devel",
+      "qt": "system package on recorded date",
+      "digest": "sha256:15a94572598c0331834d7363b842a8b412d67f52f9b7cbd65ab41e60eedca13d",
+      "passed": true
+    },
+    {
+      "job": 129580538746,
+      "name": "Fedora 45",
+      "image": "fedora:latest",
+      "qt": "6.11.2",
+      "digest": "sha256:15a94572598c0331834d7363b842a8b412d67f52f9b7cbd65ab41e60eedca13d",
+      "passed": true
+    },
+    {
+      "job": 129580538838,
+      "name": "openSUSE Leap 16.0",
+      "image": "opensuse/leap:16.0",
+      "qt": "6.9.1",
+      "digest": "sha256:15a94572598c0331834d7363b842a8b412d67f52f9b7cbd65ab41e60eedca13d",
+      "passed": true
+    },
+    {
+      "job": 129580538803,
+      "name": "openSUSE Tumbleweed",
+      "image": "opensuse/tumbleweed:latest",
+      "qt": "6.12.0",
+      "digest": "sha256:15a94572598c0331834d7363b842a8b412d67f52f9b7cbd65ab41e60eedca13d",
+      "passed": true
+    }
+  ]
+}

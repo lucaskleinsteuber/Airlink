@@ -2,6 +2,34 @@
 
 AirLink uses background unit, protocol, subprocess, filesystem, and HTTPS integration tests. The test suite does not automate Finder, click application windows, launch a simulator, or take control of the user's desktop. Interactive runtime acceptance is recorded separately from automated test results.
 
+## 0.12.0 Beta 1 — stabilization evidence, 2026-11-10
+
+The application/helper source candidate is `c88f932`. Publication, final package verification and the remaining hosted checks are still in progress. The following measurements have completed against helper SHA-256 `ea512c5ee02d50eed48d11c5021478926533d322e03ae3574bff26da490dffca`.
+
+| Same-host transfer case | 0.11.0 | 0.12.0-beta.1 | Scope |
+| --- | --- | --- | --- |
+| Dense 300 MiB single file, median of three runs each | 0.935 s | 0.785 s | Identical source, alternating helper order, actual TLS payload |
+| Dense 4 GiB single file, median of three runs each | 12.907 s | 10.206 s | Independent destination size/SHA-256 and unchanged-source check on every run |
+| 10,000 small files, Unicode folders and two empty subfolders | 1,148.020 s | 1,137.358 s | One matched run each; heavy control polling; no significant speedup claimed |
+| Highest sampled process RSS across these cases | 112.31 MiB | 112.73 MiB | 100 ms sampling of both processes; below the 256 MiB target |
+
+These are macOS ARM64 loopback measurements. They do not establish WLAN throughput, Windows storage performance or Arch desktop behavior. The many-small-file case remains slow and is a known performance limitation; it receives no unmeasured improvement claim. Phase timestamps, source/helper identities, all individual runs and memory samples' maxima are in the [machine-readable evidence](evidence/0.12.0-beta.1-performance.json).
+
+Additional actual-service acceptance passed with isolated temporary data:
+
+- One **4 GiB file**: pause/resume, abrupt receiver termination, receiver restart at the same identity/address, abrupt sender termination, sender restart, durable confirmed offsets, completed destination and independent full SHA-256. Sampled RSS peaked at 55.91 MiB for the sender and 49.22 MiB for the receiver. This is a new 4-GiB check, not the separate 100-GB acceptance.
+- **300 MiB in each direction simultaneously**: overlapping sending/receiving progress observed, both final SHA-256/size checks and original-source checks passed. This concurrency check uses an explicit 64-MiB/s send limit on each host so snapshots can observe overlap; it is not an unlimited-speed benchmark. Sampled RSS stayed below 91 MiB per process.
+
+Reproduce without launching a desktop application:
+
+```sh
+python3 scripts/benchmark-comparison.py /path/to/0.11-helper /path/to/candidate-helper --output build/comparison
+python3 scripts/acceptance-single-file.py /path/to/candidate-helper --gib 4 --expect-version 0.12.0-beta.1 --report build/recovery.json
+python3 scripts/acceptance-bidirectional.py /path/to/candidate-helper --expect-version 0.12.0-beta.1 --report build/bidirectional.json
+```
+
+Temporary fixture/state/receive directories are removed by the harnesses. A physical Mac↔Arch WLAN run, native window rendering and a new 100-GB transfer remain open device checks. No test installed the app or changed the user's AirLink state.
+
 ## Run the checks
 
 Install the development dependencies described in [README.md](../README.md), then run from the repository root:
@@ -79,7 +107,7 @@ Ignored logs/reports include `build/go-tests-0.11.jsonl`, `swift-tests-0.11.log`
 
 The active repository remains private, with manual GitHub release downloads. One existing fake-helper timeout case initially exceeded its 400 ms scheduling budget during concurrent package inspection. The fixture now warms up its helper and uses a 1.5 s budget while still asserting a real unanswered-request timeout followed by a usable live connection; the final full Swift run passes. The production timeout was not changed. Logs are ignored under `build/go-tests-0.10.jsonl`, `go-vet-0.10.log`, `swift-tests-0.10.log`, `windows-experience-core-tests-0.10.0.log`, `web-tests-0.10.log`, `web-build-0.10.log`, `go-platform-build-0.10.log`, `macos-build-0.10.log`, `windows-publish-0.10.log`, `package-0.10.log`, `native-update-verification-0.10.log` and `smoke-*-0.10.log`. No UI automation, installed-app replacement, new 100 GiB run or physical WLAN throughput result is implied.
 
-## Current private development distribution — 2026-10-25
+## Historical private development distribution — 2026-10-25
 
 After the public-delivery checks below, the owner returned the active repository to private visibility and chose manual download/installation of development versions from GitHub Releases. Current API checks confirm active repository ID 1433237767 is private and unarchived; the earlier repository ID 1431646266 remains private and archived. The existing unauthenticated updater cannot access private GitHub feeds/downloads. A later public release requires a new owner decision. Linux binaries remain withdrawn. This documentation update does not rebuild or replace packages, alter signed feeds, install an app or rerun product acceptance tests.
 
