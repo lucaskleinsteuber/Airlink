@@ -225,6 +225,11 @@ func TestRelayRealHTTPSRequiresReceiverApprovalAndStreamsWithoutDiskPayload(t *t
 		if d.IsDir() {
 			return nil
 		}
+		// The service owns an exclusive Windows lock on this metadata file.
+		// It cannot be a relay payload destination.
+		if p == filepath.Join(s.opts.DataDir, "daemon.lock") {
+			return nil
+		}
 		b, err := os.ReadFile(p)
 		if err != nil {
 			return err

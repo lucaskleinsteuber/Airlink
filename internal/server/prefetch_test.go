@@ -31,10 +31,19 @@ func TestPrefetchIsBoundedOrderedAndCancelsUnconsumedRead(t *testing.T) {
 		t.Fatal("more than one block prefetched", count.Load())
 	}
 	cancel()
+	// A handoff already in the select may win the cancellation race. It may
+	// deliver the one prepared block, but must never start another read.
 	select {
 	case _, ok := <-blocks:
 		if ok {
-			t.Fatal("cancel delivered a speculative block")
+			select {
+			case _, more := <-blocks:
+				if more {
+					t.Fatal("continued reading after cancellation")
+				}
+			case <-time.After(time.Second):
+				t.Fatal("producer did not stop")
+			}
 		}
 	case <-time.After(time.Second):
 		t.Fatal("producer did not stop")

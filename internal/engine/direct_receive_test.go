@@ -280,8 +280,13 @@ func TestLegacyReceiveRecordKeepsItsHistoricalFolderAndContents(t *testing.T) {
 	defer next.Close()
 	result, err := next.ReceivedItems(transfer.ID)
 	expected, _ := filepath.EvalSymlinks(filepath.Join(legacyFolder, "legacy.txt"))
-	if err != nil || len(result.Items) != 1 || result.Items[0].Path != expected {
+	if err != nil || len(result.Items) != 1 {
 		t.Fatal("legacy file was moved or hidden", result, err)
+	}
+	actualInfo, actualErr := os.Stat(result.Items[0].Path)
+	expectedInfo, expectedErr := os.Stat(expected)
+	if actualErr != nil || expectedErr != nil || !os.SameFile(actualInfo, expectedInfo) {
+		t.Fatal("legacy file identity changed", result, actualErr, expectedErr)
 	}
 	if _, err := os.Stat(filepath.Join(receive, "legacy.txt")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("legacy data was migrated implicitly", err)

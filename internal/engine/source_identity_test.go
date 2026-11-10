@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -110,7 +111,19 @@ func TestSourceIdentityChecksOpenedFileAndCurrentPath(t *testing.T) {
 			}
 			defer file.Close()
 			if mutation == "replacement-identical-bytes" {
+				// Go opens Windows files without delete-sharing. Verify the
+				// replacement after closing that handle; open-handle edits are
+				// exercised separately below on all operating systems.
+				if runtime.GOOS == "windows" {
+					file.Close()
+				}
 				replaceSourcePreservingMetadata(t, p, body)
+				if runtime.GOOS == "windows" {
+					if _, _, err = e.OpenDownloadContext(context.Background(), offer.ID, id); !errors.Is(err, ErrSourceChanged) {
+						t.Fatal("replacement accepted", err)
+					}
+					return
+				}
 			} else {
 				if err = os.WriteFile(p, []byte("modified"), 0600); err != nil {
 					t.Fatal(err)

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"crypto/tls"
@@ -23,57 +24,84 @@ func TestChangedSourcesAreRecheckedAfterDownloadLimiterWait(t *testing.T) {
 	for _, mode := range []string{"download", "archive"} {
 		t.Run(mode, func(t *testing.T) {
 			s := integrationHost(t)
-			d, token := integrationDevice(t, s, false)
+			d, _ := integrationDevice(t, s, false)
 			path := filepath.Join(t.TempDir(), "original.bin")
 			data := bytes.Repeat([]byte("ORIGINAL-PRIVATE-CONTENT!"), 4096)
-			if e := os.WriteFile(path, data, 0600); e != nil {
-				t.Fatal(e)
+			if err := os.WriteFile(path, data, 0600); err != nil {
+				t.Fatal(err)
 			}
-			info, _ := os.Stat(path)
-			tr, e := s.engine.Offer(d, []string{path})
-			if e != nil {
-				t.Fatal(e)
+			tr, err := s.engine.Offer(d, []string{path})
+			if err != nil {
+				t.Fatal(err)
 			}
-			if e = s.traffic.SetLimits(8192, 0); e != nil {
-				t.Fatal(e)
+			file, _, err := s.engine.OpenDownloadContext(context.Background(), tr.ID, tr.Files[0].ID)
+			if err != nil {
+				t.Fatal(err)
 			}
-			changed := make(chan error, 1)
-			go func() {
-				time.Sleep(100 * time.Millisecond)
-				temp := path + ".replacement"
-				err := os.WriteFile(temp, bytes.Repeat([]byte("x"), len(data)), 0600)
-				if err == nil {
-					err = os.Chtimes(temp, info.ModTime(), info.ModTime())
-				}
-				if err == nil {
-					err = os.Rename(temp, path)
-				}
-				changed <- err
-			}()
-			route := "/api/v1/transfers/" + tr.ID + "/archive"
-			if mode == "download" {
-				route = "/api/v1/transfers/" + tr.ID + "/files/" + tr.Files[0].ID + "/download"
+			defer file.Close()
+			// Buffer bytes while the source is valid, as ServeContent/ZIP do before a
+			// throttled write. The policy must revalidate these already-buffered bytes.
+			reader := &sourceReader{Context: context.Background(), File: file, server: s, transferID: tr.ID, fileID: tr.Files[0].ID}
+			buffered, err := io.ReadAll(reader)
+			if err != nil {
+				t.Fatal(err)
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+			if err = s.traffic.SetLimits(1024, 0); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			req, _ := http.NewRequestWithContext(ctx, "GET", hostURL(s)+route, nil)
-			req.Header.Set("Authorization", "Bearer "+token)
-			res, requestErr := pinnedClient(s.fingerprint).Do(req)
-			if requestErr == nil {
-				body, readErr := io.ReadAll(res.Body)
-				res.Body.Close()
-				if res.StatusCode == 200 && readErr == nil {
-					t.Fatal("changed source produced a successful download/archive")
+			response := httptest.NewRecorder()
+			var validations atomic.Int32
+			policy := &sourcePolicyWriter{ResponseWriter: response, ctx: ctx, validate: func() error {
+				validations.Add(1)
+				return s.engine.ValidateSource(tr.ID, tr.Files[0].ID, file)
+			}}
+			writer := s.traffic.WrapWriter(ctx, policy, "send")
+			entered, finished := make(chan struct{}), make(chan error, 1)
+			go func() {
+				close(entered)
+				if mode == "download" {
+					_, e := writer.Write(buffered)
+					finished <- e
+					return
 				}
-				if bytes.Contains(body, []byte("ORIGINAL-PRIVATE-CONTENT!")) {
-					t.Fatal("limiter released invalidated source payload")
+				archive := zip.NewWriter(writer)
+				entry, e := archive.CreateHeader(&zip.FileHeader{Name: "original.bin", Method: zip.Store})
+				if e == nil {
+					_, e = entry.Write(buffered)
 				}
+				if e == nil {
+					e = archive.Close()
+				}
+				finished <- e
+			}()
+			<-entered
+			// An in-place edit works even while a Windows handle prevents replacement.
+			// Keep the byte count, and force a different timestamp on coarse filesystems.
+			info, _ := os.Stat(path)
+			if err = os.WriteFile(path, bytes.Repeat([]byte("x"), len(data)), 0600); err != nil {
+				t.Fatal(err)
 			}
-			if e := <-changed; e != nil {
-				t.Fatal(e)
+			if err = os.Chtimes(path, info.ModTime(), info.ModTime().Add(2*time.Second)); err != nil {
+				t.Fatal(err)
 			}
-			if s.traffic.Snapshot().SentBytes != 0 {
-				t.Fatal("invalidated source bytes counted/delivered", s.traffic.Snapshot())
+			if err = s.traffic.SetLimits(0, 0); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case err = <-finished:
+				if err == nil {
+					t.Fatal("changed source produced a successful write")
+				}
+			case <-ctx.Done():
+				t.Fatal("write did not finish", ctx.Err())
+			}
+			if validations.Load() == 0 {
+				t.Fatal("source was not checked after the limiter")
+			}
+			if response.Body.Len() != 0 || s.traffic.Snapshot().SentBytes != 0 {
+				t.Fatal("invalidated buffered payload was delivered", response.Body.Len(), s.traffic.Snapshot())
 			}
 		})
 	}

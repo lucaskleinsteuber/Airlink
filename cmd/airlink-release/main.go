@@ -87,6 +87,11 @@ func outsideRepository(directory, repository string) error {
 		return errors.New("private key directory Git context could not be inspected")
 	}
 	resolved := filepath.Join(resolvedAncestor, suffix)
+	// Rel cannot compare Windows paths on different volumes. Both ancestors
+	// have already been resolved and the Git-context check above still applies.
+	if runtime.GOOS == "windows" && !strings.EqualFold(filepath.VolumeName(resolvedRepository), filepath.VolumeName(resolved)) {
+		return nil
+	}
 	relative, err := filepath.Rel(resolvedRepository, resolved)
 	if err != nil {
 		return errors.New("private key directory cannot be compared with repository")
