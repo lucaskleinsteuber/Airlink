@@ -80,7 +80,8 @@ internal sealed class PairingWindow : Window
             var session = await c.StartPairingAsync(device.Address ?? "");
             new CodePairingWindow(IsVisible ? this : Owner!, c, session.Id).ShowDialog();
             busy = false;
-            if (c.Status?.Devices.Any(d => d.Id == session.PeerId && d.Paired) == true) Close();
+            var final = await c.RequestAsync<PairingSession>("pairing.status", new { id = session.Id });
+            if (final.State == "paired") Close();
         } catch (Exception e) { error.Text = e.Message + c.T(" Nutze bei einer älteren App den manuellen Fingerabdruck-Vergleich.", " For an older app, use the manual fingerprint comparison."); }
         finally { busy = false; UpdateButtons(); }
     }

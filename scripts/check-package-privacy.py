@@ -276,7 +276,7 @@ def third_party_sparkle(name):
 def first_party_document(name):
     if third_party_sparkle(name): return False
     name = name.replace('\\', '/').rsplit('/', 1)[-1].lower()
-    return name in {'readme', 'readme.md', 'readme.txt', 'license', 'license.md', 'license.txt'}
+    return name in {'readme', 'readme.md', 'readme.txt', 'license', 'license.md', 'license.txt', '.pkginfo', 'control'}
 
 
 def checked_slice(data, offset, size):
@@ -445,7 +445,7 @@ def rpm_payload(data):
         return end
     end = header(96)
     end = header((end + 7) & ~7)
-    return bounded_uncompress(data[end:])
+    return data[:end], bounded_uncompress(data[end:])
 
 
 class Audit:
@@ -530,6 +530,7 @@ class Audit:
                     for finding in content_findings(info[key].encode(), not third_party_sparkle(label)): self.issue(label + ' [' + key + ']', finding)
 
     def path(self, path):
+        if path.is_file() and path.stat().st_size > LIMIT: raise ValueError("package input exceeds its bound")
         if path.is_dir():
             if path.suffix.lower() == '.app': self.app_signature(path, path.name)
             for item in sorted(path.rglob('*')):
@@ -576,7 +577,8 @@ class Audit:
                 self.payload(label+'!/'+name, archive.extractfile(item).read(), first_party_document(name))
 
     def native_rpm(self, data, label):
-        payload = rpm_payload(data); at = 0; count = 0; total = 0
+        metadata, payload = rpm_payload(data); at = 0; count = 0; total = 0
+        self.payload(label + " [RPM metadata]", metadata, True)
         while at < len(payload):
             raw = checked_slice(payload, at, 110)
             if raw[:6] not in (b'070701', b'070702'): raise ValueError('unsupported RPM cpio payload')
@@ -604,6 +606,7 @@ class Audit:
             header=checked_slice(data,at,60)
             if header[-2:] != b'`\n': raise ValueError('invalid ar header')
             name=header[:16].decode('ascii').strip().rstrip('/');size=int(header[48:58]);at+=60
+            if int(header[28:34]) or int(header[34:40]): self.issue(label, 'non-neutral archive owner metadata')
             content=checked_slice(data,at,size);at+=size+(size%2)
             if name in seen: raise ValueError('duplicate DEB member')
             seen.add(name)
@@ -626,6 +629,7 @@ class Audit:
                 if major==4 and 4096<=block<=1048576 and block&(block-1)==0 and 96<=used<=len(data)-at: candidates.append(at)
             at+=4
         if len(candidates)!=1: raise ValueError('ambiguous AppImage filesystem')
+        self.payload(label + ' [AppImage runtime]', data[:candidates[0]])
         with tempfile.TemporaryDirectory(prefix='airlink-appimage-audit-') as temporary:
             owned=Path(temporary); archive=owned/'payload.squashfs'; output=owned/'payload'
             archive.write_bytes(data[candidates[0]:]); output.mkdir()
@@ -715,6 +719,38 @@ class GuardTests(unittest.TestCase):
              mock.patch(__name__ + '.seven_zip', side_effect=extract):
             audit.payload('fixture.exe', image)
         return audit
+
+    def test_linux_native_archives_are_inspected_and_boundaries_rejected(self):
+        payload=b'/Users/' + b'private-person/secret'
+        def tarbody(name, body):
+            stream=io.BytesIO()
+            with tarfile.open(fileobj=stream,mode='w') as archive:
+                info=tarfile.TarInfo(name);info.size=len(body);info.uid=info.gid=0;archive.addfile(info,io.BytesIO(body))
+            return stream.getvalue()
+        control=tarbody('control',b'Package: airlink\nMaintainer: '+COMMIT_EMAIL.encode()+b'\n')
+        def ar(name,body):
+            header=f'{name+"/":<16}{0:<12}{0:<6}{0:<6}{100644:<8}{len(body):<10}`\n'.encode()
+            return header+body+(b'\n' if len(body)%2 else b'')
+        deb=b'!<arch>\n'+ar('debian-binary',b'2.0\n')+ar('control.tar.xz',lzma.compress(control))+ar('data.tar.xz',lzma.compress(tarbody('usr/bin/airlink',payload)))
+        audit=Audit();audit.native_deb(deb,'fixture.deb')
+        self.assertTrue(any(category=='personal home path' for _,category in audit.issues))
+        with self.assertRaises(ValueError): Audit().native_tar(tarbody('../escape',b'x'),'fixture.tar')
+        with self.assertRaises(ValueError): Audit().native_deb(deb[:-10],'truncated.deb')
+
+    def test_linux_rpm_payload_and_owner_metadata_are_inspected(self):
+        def cpio(name,body,uid=0):
+            raw=name.encode()+b'\0';fields=[1,0o100644,uid,0,1,0,len(body),0,0,0,0,len(raw),0]
+            head=b'070701'+''.join(f'{x:08x}' for x in fields).encode()+raw
+            head+=b'\0'*(-len(head)%4)
+            return head+body+b'\0'*(-len(body)%4)
+        payload=cpio('usr/bin/airlink',b'/Users/'+b'private-person/secret',7)+cpio('TRAILER!!!',b'')
+        lead=b'\xed\xab\xee\xdb'+b'\0'*92
+        header=b'\x8e\xad\xe8\x01'+b'\0'*12
+        audit=Audit();audit.native_rpm(lead+header+header+gzip.compress(payload),'fixture.rpm')
+        categories={category for _,category in audit.issues}
+        self.assertIn('personal home path',categories)
+        self.assertIn('non-neutral archive owner metadata',categories)
+        with self.assertRaises(ValueError): Audit().native_rpm(b'invalid','bad.rpm')
 
     def test_binary_paths_and_neutral_text(self):
         personal = '/Users/' + 'private-person/build/Core.pdb'

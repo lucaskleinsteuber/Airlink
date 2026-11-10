@@ -14,7 +14,7 @@ internal sealed class CodePairingWindow : Window
     private readonly string id;
     private readonly TextBlock peer, code, state;
     private readonly CheckBox automatic, matches;
-    private readonly Button confirm;
+    private readonly Button confirm, cancel, close;
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMilliseconds(700) };
     private bool fetching, closed;
     public CodePairingWindow(Window owner, Controller controller, string sessionId)
@@ -32,8 +32,8 @@ internal sealed class CodePairingWindow : Window
         var actions = new WrapPanel { Margin = new Thickness(0, 20, 0, 0) };
         confirm = Theme.Button(c.T("Code bestätigen", "Confirm code"), () => _ = Confirm(), true); confirm.IsEnabled = false;
         actions.Children.Add(confirm);
-        actions.Children.Add(Theme.Button(c.T("Kopplung abbrechen", "Cancel pairing"), () => _ = c.RunAsync(async () => { await c.CommandAsync("pairing.cancel", id); Close(); })));
-        actions.Children.Add(Theme.Button(c.T("Schließen", "Close"), Close)); body.Children.Add(actions);
+        cancel = Theme.Button(c.T("Kopplung abbrechen", "Cancel pairing"), () => _ = c.RunAsync(async () => { await c.CommandAsync("pairing.cancel", id); Close(); })); actions.Children.Add(cancel);
+        close = Theme.Button(c.T("Schließen", "Close"), Close); actions.Children.Add(close); body.Children.Add(actions);
         Content = body;
         matches.Checked += (_, _) => _ = Refresh(); matches.Unchecked += (_, _) => confirm.IsEnabled = false;
         timer.Tick += async (_, _) => await Refresh();
@@ -50,6 +50,8 @@ internal sealed class CodePairingWindow : Window
             confirm.IsEnabled = session.CanConfirm && matches.IsChecked == true;
             automatic.IsEnabled = matches.IsEnabled = !session.LocalConfirmed && session.State == "comparing";
             state.Text = session.Error ?? (session.State == "paired" ? c.T("Gerät verbunden. Du kannst Dateien senden.", "Device paired. You can send files.") : session.State is "cancelled" or "denied" or "expired" ? c.T("Die Kopplung wurde beendet. Starte sie bei Bedarf erneut.", "Pairing ended. Start again if needed.") : session.LocalConfirmed ? c.T("Warte auf die Bestätigung am anderen Computer …", "Waiting for confirmation on the other computer …") : c.T("Bestätigung ist auf beiden Computern erforderlich.", "Confirmation is required on both computers."));
+            confirm.Visibility = cancel.Visibility = session.State == "paired" ? Visibility.Collapsed : Visibility.Visible;
+            close.Content = session.State == "paired" ? c.T("Fertig", "Done") : c.T("Schließen", "Close");
             if (session.State == "paired") { c.SelectedDeviceId = session.PeerId; timer.Stop(); await c.RefreshAsync(true); }
         } catch (Exception e) { if (!closed) state.Text = e.Message; }
         finally { fetching = false; }

@@ -2,6 +2,17 @@
 
 AirLink uses MAJOR.MINOR.PATCH versions. Entries describe implemented changes; distribution and verification status are recorded separately.
 
+## 0.12.0-beta.1 — candidate, 2026-11-10
+
+- Add a native Qt 6.4+ Linux desktop with setup, device sidebar, direct sends, cancellable preparation, paged transfers, shares, clipboard, browser setup, notifications, single instance and tray operation. Provide AppImage, DEB, RPM and Arch packaging with a tracked PKGBUILD.
+- Reorganize macOS around the selected recipient, active transfers and three recent results. Keep tools separate, drafts intact and file details/history paged. Apply Linux saved language/appearance and avoid rebuilding unchanged transfer actions.
+- Add TLS-exporter-bound eight-digit desktop pairing with independently derived displays, mutual confirmation, expiry, request limits, durable handoff and explicitly directional automatic-receive consent. Preserve the verified manual legacy flow.
+- Add compact status and lazy tooling, asynchronous cancellable preparation and bounded one-block sender prefetch. Reject stale native snapshots after mutations.
+- Add optional daily update notices, separate Mac architecture packages, numeric OS build 14, signed Linux updates and an independently signed release manifest. Keep the existing public signing key.
+- Correct Windows cross-volume path checks and platform-sensitive filesystem test fixtures without relaxing source/integrity or publishing-key boundaries.
+
+Candidate checks and distribution are recorded in [TESTING.md](docs/TESTING.md). Physical desktop rendering, Mac↔Arch WLAN and a new 100-GB run remain open.
+
 ## 0.11.0 — 2026-10-26
 
 - Replace growing chunk buffers with exact-sized bounded reads and retain oversize/error/cancellation checks. Reuse no mutable sender buffer across HTTP requests. Skip redundant SQLite saves only for identical already-durable sender offset/hash values; keep fresh in-memory speed samples after resume.

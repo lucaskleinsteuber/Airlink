@@ -1,3 +1,19 @@
+# Current beta: Mac ↔ Arch / KDE Plasma
+
+For `0.12.0-beta.1`, the primary physical targets are macOS and Arch/KDE under Wayland. Background package and logic checks do not establish native rendering, tray integration or Wi-Fi throughput.
+
+1. Install the matching beta on both devices. Confirm setup preserves an existing name, receive folder and trusted devices. For a new installation, choose a recognizable name and the actual Downloads folder.
+2. Add the other computer and compare the eight-digit code directly on both displays. Confirm on both; automatic receiving starts off. Enable it explicitly in one direction and verify the opposite direction still requests acceptance.
+3. Send a file and a folder with Unicode names and an empty subfolder in both directions. Check Show file/Open folder and compare SHA-256. Send a colliding name and confirm the original remains unchanged.
+4. With a larger file, record preparation, transfer and verification separately. Interrupt the connection, return, and verify resumed progress and the final SHA-256. Close the main window and check continued tray/menu-bar transfer operation.
+5. Check saved language/appearance, draft preservation, signed manual updates and only the current app after replacement. A real updater/native-window test is manual; automated suites never operate the desktop.
+
+Record candidate hash, architectures, OS/desktop versions, WLAN/LAN conditions, file sizes, timing and independent hashes. Keep the 100-GB acceptance as a separate run with enough storage; do not infer it from several-GiB tests.
+
+The earlier Mac/Windows/iPhone/iPad guide follows as a historical checklist. Its version-specific instructions are not the current beta download names.
+
+---
+
 # Manueller Gerätetest: Mac, Windows, iPhone und iPad
 
 Dieser Leitfaden ist für deinen Mac, den Windows-Laptop, dein iPhone und dein iPad. Der erste Mac→Windows-Transfer mit 0.5 wurde von dir als erfolgreich und schnell gemeldet. Die Bedienung mit Konsole, Link, Bestätigungen und schwer auffindbarem Empfangsordner war dabei unzureichend. Größe, exakte Prüfsummen und Wiederaufnahme wurden für diesen Lauf nicht dokumentiert. Die folgenden Fälle, besonders der vereinfachte native Desktop-Ablauf von 0.7, sind **noch nicht als abgeschlossen dokumentiert**. Du bedienst die Geräte selbst; es gibt keine UI-Automation. Verwende zunächst kleine, eigens angelegte Testdateien. Große Dateien im echten WLAN/LAN folgen danach.

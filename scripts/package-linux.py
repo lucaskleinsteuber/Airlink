@@ -157,7 +157,7 @@ if not runtime.exists() or hashlib.sha256(runtime.read_bytes()).hexdigest()!=loc
     if len(data)>4*1024*1024 or hashlib.sha256(data).hexdigest()!=lock['sha256']: raise SystemExit('AppImage runtime checksum differs from the pinned toolchain')
     runtime.write_bytes(data)
 squash=output/'appimage.squashfs'
-run('mksquashfs',str(appdir),str(squash),'-noappend','-root-owned','-comp','gzip','-b','1048576','-processors','4','-mkfs-time',os.environ['SOURCE_DATE_EPOCH'],'-all-time',os.environ['SOURCE_DATE_EPOCH'])
+run('mksquashfs',str(appdir),str(squash),'-noappend','-root-owned','-comp','gzip','-b','1048576','-processors','4','-mkfs-time',os.environ['SOURCE_DATE_EPOCH'],'-all-time',os.environ['SOURCE_DATE_EPOCH'],env={key:value for key,value in os.environ.items() if key!='SOURCE_DATE_EPOCH'})
 image=output/(prefix+'.AppImage')
 with image.open('wb') as target:
     target.write(runtime.read_bytes())
