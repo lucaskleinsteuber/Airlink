@@ -3,39 +3,39 @@
   "channel": "beta",
   "platform": "linux",
   "architecture": "x64",
-  "version": "0.12.0-beta.2",
+  "version": "0.12.0-beta.3",
   "packages": [
     {
       "type": "appimage",
-      "file": "AirLink-0.12.0-beta.2-linux-x64.AppImage",
-      "url": "https://github.com/lucaskleinsteuber/Airlink/releases/download/v0.12.0-beta.2/AirLink-0.12.0-beta.2-linux-x64.AppImage",
+      "file": "AirLink-0.12.0-beta.3-linux-x64.AppImage",
+      "url": "https://github.com/lucaskleinsteuber/Airlink/releases/download/v0.12.0-beta.3/AirLink-0.12.0-beta.3-linux-x64.AppImage",
       "length": 47839736,
-      "sha256": "41840fa3a7b81fa90cd3154a1e6cc8632243557ac89a7460f168c0819737dbe9",
-      "ed25519Signature": "mK59XplSnXemcfE0E6miAMQVM78EpzzAj99k/OI508C9qscH385CtbkRB3nqJR2qKAXzaWkvWqlD2zJz9hPNAA=="
+      "sha256": "bec205f3c0b00e022a9f90eb2f2f64abd6bacc30045d9da14a4a4b1319de84db",
+      "ed25519Signature": "a03x/AoR2rTDpf5j8fm/et8G8sOvfc5W+s8vBIjIzT8C9sPvizVkqeowrXLVPqTsEpKmT1ZUxn44Kb+XeydCAA=="
     },
     {
       "type": "deb",
-      "file": "AirLink-0.12.0-beta.2-linux-x64.deb",
-      "url": "https://github.com/lucaskleinsteuber/Airlink/releases/download/v0.12.0-beta.2/AirLink-0.12.0-beta.2-linux-x64.deb",
-      "length": 5055580,
-      "sha256": "2445c1009dec3a0c4e75d7a87ed180970bac3219d697568aaa356b7396d84bce",
-      "ed25519Signature": "T+4GuNWwJDMjMnvGJL4r0Znrpw5fkw50Dsgr7+uZxlFJjnNwDrCZ7F+gKPdYwZyg1pLkFOpECXjGrXkbjS25AA=="
+      "file": "AirLink-0.12.0-beta.3-linux-x64.deb",
+      "url": "https://github.com/lucaskleinsteuber/Airlink/releases/download/v0.12.0-beta.3/AirLink-0.12.0-beta.3-linux-x64.deb",
+      "length": 5056148,
+      "sha256": "71cfc20dc0b38e207d044ffb266c31c5d1d0dd008e93516174cee04ca1a7c47f",
+      "ed25519Signature": "EA+cd1yXS95BqUIsYSy8dAxC0b89bbtC+ez7NOrB54Jv22oFj1w2sRAVyvFHiHLhIwoiXRHdwhuKGba4UsHaCA=="
     },
     {
       "type": "rpm",
-      "file": "AirLink-0.12.0-beta.2-linux-x64.rpm",
-      "url": "https://github.com/lucaskleinsteuber/Airlink/releases/download/v0.12.0-beta.2/AirLink-0.12.0-beta.2-linux-x64.rpm",
-      "length": 6434678,
-      "sha256": "155935c646363ea10b9432271fa657434fff103946c981a575f49bb30ba91427",
-      "ed25519Signature": "fp+J5rydtD1oeK8Gxe/OxZwabMw1SMZhbZUQLGmsLaT5K8c/cUWzLCRIpRUufuKjhqkOjXUSBXoE7bjL0CN7Bw=="
+      "file": "AirLink-0.12.0-beta.3-linux-x64.rpm",
+      "url": "https://github.com/lucaskleinsteuber/Airlink/releases/download/v0.12.0-beta.3/AirLink-0.12.0-beta.3-linux-x64.rpm",
+      "length": 6435097,
+      "sha256": "cae101f806ac47a97b6ff52bae91a999ab377f761bd839d9fc3ca99217fd83c7",
+      "ed25519Signature": "ukgsw9lK+R97SMTm6qeqUnHGnzzD1R6jmuzwVCT6hFneFfvl2vHnSWPciF+YA+t+NzDBl27daU00HMPq9+HDCg=="
     },
     {
       "type": "arch",
-      "file": "AirLink-0.12.0-beta.2-linux-x64.pkg.tar.zst",
-      "url": "https://github.com/lucaskleinsteuber/Airlink/releases/download/v0.12.0-beta.2/AirLink-0.12.0-beta.2-linux-x64.pkg.tar.zst",
-      "length": 6528469,
-      "sha256": "73dd6df1f1fe443ed66d60f8e3c02f8a1a68661c2a9fc62376a30b1dcf02b46f",
-      "ed25519Signature": "G1FcEj7BIIAOMwU1dsUkOiFDFrTfGhN61oiQGIKfgr5ijTIihc9RKac/LywWW8xYSwuXVd5MkjQ5fimiUKskAw=="
+      "file": "AirLink-0.12.0-beta.3-linux-x64.pkg.tar.zst",
+      "url": "https://github.com/lucaskleinsteuber/Airlink/releases/download/v0.12.0-beta.3/AirLink-0.12.0-beta.3-linux-x64.pkg.tar.zst",
+      "length": 6529140,
+      "sha256": "d4951a938b57b275db48763a4c157a51e45858b6c8624fa9503b954f04f6743a",
+      "ed25519Signature": "apoAmJlL9DOgSpq16AE/VDMC3AUzAqdCo55lJiPLV4+Ds/ESNYwsFkLKCZ9oK31mrCUlW0nftxEW1SvKVb9PAw=="
     }
   ]
 }

@@ -18,7 +18,7 @@ Native Linux packages remain under package-manager control. AirLink downloads an
 
 `VERSION` is `Major.Minor.Patch-beta.N`; `BUILD_NUMBER` increases across OS builds. macOS short version stays numeric and displays the beta separately; Windows executable/installer numerical fields use `Major.Minor.Patch.Build`. The signed feeds bind those fields to the displayed release. The read-only `scripts/check-version.py` checks the source representations agree.
 
-For Beta 2, DEB uses `0.12.0~beta.2-1`, RPM `0.12.0~beta.2-1`, and Arch `0.12.0beta2-1`. Package-tool tests check beta 1 < beta 2 < beta 10 < the final version. Lifecycle tests derive an actually newer synthetic beta from the current candidate instead of reinstalling the same version. No epoch is introduced.
+For Beta 3, DEB uses `0.12.0~beta.3-1`, RPM `0.12.0~beta.3-1`, and Arch `0.12.0beta3-1`. Package-tool tests check beta 1 < beta 2 < beta 10 < the final version. Lifecycle tests derive an actually newer synthetic beta from the current candidate instead of reinstalling the same version. No epoch is introduced.
 
 New catalogs describe exactly eight app packages and five feeds. The schema-2 `UPDATE-SIGNATURES.json` records exact package/feed hashes, lengths and signatures; its detached `.signature` signs the whole manifest. `SHA256SUMS.txt` covers every app package, the manifest and its signature. Mac feed signatures are embedded using Sparkle's signed-feed format; Windows and Linux use detached `.signature` files. The historical three-package schema-1 tests and public-only metadata curation remain separate; old tags/assets are never rewritten by beta publication.
 

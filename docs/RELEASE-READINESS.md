@@ -1,6 +1,6 @@
 # Release readiness
 
-AirLink 0.12.0-beta.2 is published as a beta. The active repository is public after the authorized source/history/package checks; the older archive stays private and archived. This document defines the separate 1.0 acceptance gates. Background tests, compilation, packaging, physical device acceptance and publication are distinct evidence. The beta does not assign a 1.0 date.
+AirLink 0.12.0-beta.3 is published as a beta. The active repository is public after the authorized source/history/package checks; the older archive stays private and archived. This document defines the separate 1.0 acceptance gates. Background tests, compilation, packaging, physical device acceptance and publication are distinct evidence. The beta does not assign a 1.0 date.
 
 [TESTING.md](TESTING.md) is the record of actual completed runs, their logs and their limits. Historical results retain their original version and scope. A build or cross-compilation does not prove a platform role works at runtime. The historical aggregate 100 GiB run does not prove one 100 GB file. The separate 0.5 single-file 100 GiB background run is version-specific evidence, and a local two-helper loopback run does not prove physical LAN or browser download behavior. Hosted CI must actually execute successfully before being reported as passed; historical runs without executed jobs remain unverified hosted observations.
 
