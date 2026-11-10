@@ -1,6 +1,6 @@
 # AirLink 0.12.0 Beta 1 implementation record
 
-Target: `0.12.0-beta.1`. This is a work record, not a release or acceptance claim.
+Delivered: `0.12.0-beta.1`, published as a GitHub prerelease. This work record retains historical checkpoints below; the current evidence is in [TESTING.md](TESTING.md). Physical desktop/WLAN and new 100-GB acceptance remain open before 1.0.
 
 Repository workflow: the owner requested a single branch. Continue directly on
 `main`; the temporary beta branch is merged and removed. Tags retain released
@@ -25,18 +25,18 @@ Layout: readable resizable devices sidebar; recipient and one send surface; comp
 
 ## Implementation checkpoints
 
-- [x] Core compact status / paged history and file details; desktop consumers still need final integration.
+- [x] Core compact status / paged history and file details with desktop consumers integrated.
 - [x] Core cancellable preparation and responsive control pipe.
-- [x] Core TLS-bound mutual pairing and compatibility; native presentation integration still in progress.
+- [x] Core TLS-bound mutual pairing and compatibility with native presentation.
 - [x] Bounded prefetch and comparable measurements.
 - [x] macOS navigation, setup, settings and native model tests.
 - [x] Linux desktop and Qt Core tests.
 - [x] Windows compatibility, pairing and updater tests.
 - [x] Beta versioning, split Mac builds, Linux packages and CI matrix.
-- [ ] Signed native updates / AppImage update / package-manager guidance.
-- [ ] Source/history/package privacy and license review.
-- [ ] Final background test/build/package/signature checks.
-- [ ] Git/tag, verified public beta publication and asset checks.
+- [x] Signed native updates / AppImage update / package-manager guidance.
+- [x] Source/history/package privacy and license review.
+- [x] Final background test/build/package/signature checks.
+- [x] Git/tag, verified public beta publication and asset checks.
 
 ## Evidence and limits
 

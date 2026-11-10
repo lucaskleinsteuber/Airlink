@@ -469,5 +469,96 @@
     "One 10000-file run per helper; no significance claim",
     "Sampled RSS is not a continuous allocation maximum",
     "New 100 GB acceptance remains open"
-  ]
+  ],
+  "packagedMacArm64Helper": {
+    "origin": "Extracted read-only from final b52dca9 ARM64 DMG; desktop app was not launched",
+    "recovery": {
+      "helperSHA256": "c752b9faae50fe81a3459127ae5fc5ea7e7956be29e96e61b47548a8ab60d366",
+      "version": "0.12.0-beta.1",
+      "bytes": 4294967296,
+      "singleFile": true,
+      "transport": "native service to service, TLS 1.3, same-host loopback",
+      "transferAndRecoverySeconds": 14.18,
+      "totalSeconds": 17.36,
+      "sha256": "662c437ba3c1a8d6f1e4bd5bc129133e62113ffd4f3b6d052deb1e6480bd3a46",
+      "peakRSSBytes": {
+        "source": 57802752,
+        "receiver": 48365568
+      },
+      "rssSamplingSeconds": 0.5,
+      "sourcePayloadCounter": 3865214976,
+      "receiverPayloadCounter": 3948036096,
+      "counterNote": "Lifetime counters checkpoint periodically; abrupt process kills may lose recent counter samples, not confirmed file receipts.",
+      "events": [
+        {
+          "event": "offered",
+          "seconds": 1.46,
+          "bytes": 4294967296,
+          "fixture": "sparse source with nonzero markers; all bytes transferred"
+        },
+        {
+          "event": "progress",
+          "seconds": 1.46,
+          "confirmedBytes": 0,
+          "sourceState": "offered",
+          "receiverState": "waiting",
+          "peakRSSBytes": {
+            "source": 21397504,
+            "receiver": 19677184
+          }
+        },
+        {
+          "event": "paused",
+          "seconds": 3.49,
+          "confirmedBytes": 251658240
+        },
+        {
+          "event": "receiver-crash-recovered",
+          "seconds": 6.04,
+          "confirmedBytes": 1694498816
+        },
+        {
+          "event": "source-crash-recovered",
+          "seconds": 9.11,
+          "confirmedBytes": 2868903936
+        },
+        {
+          "event": "progress",
+          "seconds": 11.63,
+          "confirmedBytes": 3758096384,
+          "sourceState": "running",
+          "receiverState": "running",
+          "peakRSSBytes": {
+            "source": 57802752,
+            "receiver": 48365568
+          }
+        },
+        {
+          "event": "transfer-completed",
+          "seconds": 14.18,
+          "confirmedBytes": 4294967296
+        }
+      ],
+      "physicalDevicesTested": false,
+      "guiAutomation": false
+    },
+    "bidirectional": {
+      "version": "0.12.0-beta.1",
+      "helperSHA256": "c752b9faae50fe81a3459127ae5fc5ea7e7956be29e96e61b47548a8ab60d366",
+      "bytesPerDirection": 314572800,
+      "seconds": 14.051563,
+      "simultaneousProgressObserved": true,
+      "sendLimitMiBPerSecondPerHost": 64,
+      "sampledRSSBytes": {
+        "left": 86310912,
+        "right": 85639168
+      },
+      "sha256": {
+        "left": "dfc5ad17c349c9606a6564fe4f89287342936a2e0abca79d68f55a46586b8a42",
+        "right": "9e308dfa79d2bca49cdabc2a86fcdfebf621af252afb01cc260b4775db1111a2"
+      },
+      "independentHashesPassed": true,
+      "scope": "same-host actual simultaneous two-service TLS transfer; no GUI or physical network"
+    }
+  }
 }

@@ -6,7 +6,7 @@
 
 AirLink sends files and folders directly between devices on the same local network. Native apps for **macOS, Linux and Windows** manage an embedded transfer service; phones and tablets connect through its web interface. No account, cloud relay or internet connection is needed for local transfers.
 
-**0.12.0-beta.1 is being prepared.** Packages are published only after the candidate passes its background checks. This is beta software: physical Mac↔Arch WLAN, desktop rendering and the new 100-GB acceptance run remain separate, open checks. [Verification records](docs/TESTING.md) distinguish tests, builds, packages and physical devices; [1.0 readiness](docs/RELEASE-READINESS.md) remains a separate gate.
+**[0.12.0 Beta 1 is available](https://github.com/lucaskleinsteuber/Airlink/releases/tag/v0.12.0-beta.1).** The background and package checks passed. This is beta software: physical Mac↔Arch WLAN, desktop rendering and the new 100-GB acceptance run remain separate, open checks. [Verification records](docs/TESTING.md) distinguish tests, builds, packages and physical devices; [1.0 readiness](docs/RELEASE-READINESS.md) remains a separate gate.
 
 ## Get AirLink
 
@@ -119,4 +119,4 @@ bash scripts/package.sh
 
 `build.sh` compiles matching helpers and Windows Setup packages, plus separate native Mac apps when run on macOS. Linux packages are built/tested in the hosted Debian container and distro matrix. Package creation does not publish a release or notarize the app. All automated checks are headless; no desktop application or UI suite is launched.
 
-Read the [architecture](docs/ARCHITECTURE.md), [roadmap](docs/ROADMAP.md), [changelog](CHANGELOG.md), [testing record](docs/TESTING.md), [device checks](docs/DEVICE-CHECK.md) and [release gates](docs/RELEASE-READINESS.md). AirLink is MIT licensed, copyright **Lucas Kleinsteuber**. The previous repository remains private and archived; the active repository's publication follows the owner-approved candidate review.
+Read the [architecture](docs/ARCHITECTURE.md), [roadmap](docs/ROADMAP.md), [changelog](CHANGELOG.md), [testing record](docs/TESTING.md), [device checks](docs/DEVICE-CHECK.md) and [release gates](docs/RELEASE-READINESS.md). AirLink is MIT licensed, copyright **Lucas Kleinsteuber**. The active repository is public; the previous repository remains private and archived.

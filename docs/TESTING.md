@@ -4,7 +4,20 @@ AirLink uses background unit, protocol, subprocess, filesystem, and HTTPS integr
 
 ## 0.12.0 Beta 1 — stabilization evidence, 2026-11-10
 
-The application/helper source candidate is `c88f932`. Publication, final package verification and the remaining hosted checks are still in progress. The following measurements have completed against helper SHA-256 `ea512c5ee02d50eed48d11c5021478926533d322e03ae3574bff26da490dffca`.
+The beta is [published](https://github.com/lucaskleinsteuber/Airlink/releases/tag/v0.12.0-beta.1). Application/package sources were frozen at `b52dca9`; the final complete background run at `95d19a6` adds only test-helper startup synchronization. The release tag preserves that tested source. Later documentation/feed and test-fixture corrections do not change the released application packages.
+
+| Area | Completed evidence | Scope |
+| --- | --- | --- |
+| Background matrix | [Windows, macOS and Ubuntu passed](https://github.com/lucaskleinsteuber/Airlink/actions/runs/42743867667): Go race tests and vet, 43 .NET Core tests without skips, 74 Swift tests, 68 web tests/build | Actual helpers use isolated state; both Mac and Windows CPU builds compile |
+| Linux packages | [All six distro lifecycles passed](https://github.com/lucaskleinsteuber/Airlink/actions/runs/42741885862), [repeated after the fixture-only change](https://github.com/lucaskleinsteuber/Airlink/actions/runs/42743867593); Qt Core reports 14 passed per environment | Debian 12 / Qt 6.4 builder; installed native package and AppImage version/linkage, synthetic successor upgrade, Beta ordering, removal and preserved fixtures; [image digests](evidence/0.12.0-beta.1-linux-packages.json) |
+| Native packages | [Eight packages built](https://github.com/lucaskleinsteuber/Airlink/actions/runs/42741926985); Windows x64 real silent install/upgrade/uninstall acceptance passed in the background matrix | ARM64 Windows is built and inspected, not executed; no application window launched |
+| Integrity/updates | Existing-key manifest and every package/feed accepted by Go plus actual Sparkle, NetSparkle and Qt public-only verifiers; wrong key, architecture and changed payload refused | Linux non-root real handoff uses a harmless CLI successor; native updater clicks remain device acceptance |
+| Privacy | 315 tracked source inputs, 40 commits, 13 tags and 933 historical blobs: zero findings in a fresh anonymous clone; eight packages: 1,403 payloads, 919 bundle entries, 2,010 managed resources and four NSIS streams: zero findings | 19 package-guard self-tests; signed/ad hoc metadata, architecture and license material inspected |
+| Upload/delivery | 19 uploaded files match local lengths and server SHA-256; all 19 downloaded anonymously and matched; the downloaded manifest, packages, feeds and checksum list passed public-only verification again | Eight application packages plus eleven verification/feed files; no token or cookies |
+
+The extra tag-triggered Mac run exposed an arbitrary five-second wall-clock assertion for a generated 16-MiB oversized reply. Frame rejection itself reported the correct error at 5.4 seconds, within the ordinary 20-second request bound. The fixture now asserts the frame-validation cause rather than runner throughput; malformed output, size limits and ordinary timeouts remain enforced. All 74 tests pass locally with the helper extracted from the sealed DMG. The immutable tag's original check is rerun separately; no application binary or existing tag is rewritten.
+
+The repeated performance measurements below use helper SHA-256 `ea512c5ee02d50eed48d11c5021478926533d322e03ae3574bff26da490dffca`, built from the same frozen transfer sources. The sealed Mac ARM64 DMG contains ad hoc signed helper `c752b9faae50fe81a3459127ae5fc5ea7e7956be29e96e61b47548a8ab60d366`; both recovery and bidirectional acceptance were additionally repeated successfully using that extracted helper. The app itself was not launched.
 
 | Same-host transfer case | 0.11.0 | 0.12.0-beta.1 | Scope |
 | --- | --- | --- | --- |

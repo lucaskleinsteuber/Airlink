@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "channel": "beta",
+  "platform": "linux",
+  "architecture": "x64",
+  "version": "0.12.0-beta.1",
+  "packages": [
+    {
+      "type": "appimage",
+      "file": "AirLink-0.12.0-beta.1-linux-x64.AppImage",
+      "url": "https://github.com/lucaskleinsteuber/Airlink/releases/download/v0.12.0-beta.1/AirLink-0.12.0-beta.1-linux-x64.AppImage",
+      "length": 47819256,
+      "sha256": "ad1800e285a0cc1eb170ec4ff24fd56d0d2ed24f1bea908f82ab19eec47a45dd",
+      "ed25519Signature": "0ptVg4FoCunVOjPIhdQPUPd8sjioZ3fq3eJYs9PjdLyciehKR/Ug2jbZ7p8uOCxlee/qzk6l24v2W56JDtpAAQ=="
+    },
+    {
+      "type": "deb",
+      "file": "AirLink-0.12.0-beta.1-linux-x64.deb",
+      "url": "https://github.com/lucaskleinsteuber/Airlink/releases/download/v0.12.0-beta.1/AirLink-0.12.0-beta.1-linux-x64.deb",
+      "length": 5039944,
+      "sha256": "df97770f607514cd018b1d71ea00d690d9051802efdc075873378ce670a4a03c",
+      "ed25519Signature": "/vOLi64fg3wpWvNXd7GelsGpy5bLaENCw7HdgBVSUzCVEO9So73az8qFIwBp+8+/yuagu+QhZ8LTv97wcESWBw=="
+    },
+    {
+      "type": "rpm",
+      "file": "AirLink-0.12.0-beta.1-linux-x64.rpm",
+      "url": "https://github.com/lucaskleinsteuber/Airlink/releases/download/v0.12.0-beta.1/AirLink-0.12.0-beta.1-linux-x64.rpm",
+      "length": 6411187,
+      "sha256": "e8176f47eec6bee17688dc1102ceb86608d967dfd53cec47e063213514c6f28b",
+      "ed25519Signature": "iC7JgGpoYG3Lo55kcscMHesFxmlYbP0lUPI/im6cfaFtMBHX4njXbumtMey5XrSI/QkdyH8udJGnB8+ygLvXDg=="
+    },
+    {
+      "type": "arch",
+      "file": "AirLink-0.12.0-beta.1-linux-x64.pkg.tar.zst",
+      "url": "https://github.com/lucaskleinsteuber/Airlink/releases/download/v0.12.0-beta.1/AirLink-0.12.0-beta.1-linux-x64.pkg.tar.zst",
+      "length": 6503513,
+      "sha256": "b24b94362e42c642e9fe20b3175b17d685193db60c4b9e698801e4ec1d7d5a96",
+      "ed25519Signature": "vt/YqC6w3jAItMOmUbTZI120h89LhljWULPT4f0KD9C6DvqRxw2wckrhRTubvYCaVZNkm187x4JNFfdyd6STCg=="
+    }
+  ]
+}

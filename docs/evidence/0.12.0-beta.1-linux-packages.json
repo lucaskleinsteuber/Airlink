@@ -54,5 +54,12 @@
       "digest": "sha256:15a94572598c0331834d7363b842a8b412d67f52f9b7cbd65ab41e60eedca13d",
       "passed": true
     }
-  ]
+  ],
+  "confirmation": {
+    "packagingSourceCommit": "b52dca9b25f23fee09dcf949b1234d7e0ee0adfa",
+    "packagingAndNativeMacWindowsBuilds": "https://github.com/lucaskleinsteuber/Airlink/actions/runs/42741926985",
+    "allSixLinuxPackageLifecyclesPassed": "https://github.com/lucaskleinsteuber/Airlink/actions/runs/42741885862",
+    "repeatedAfterTestFixtureOnlyChange": "https://github.com/lucaskleinsteuber/Airlink/actions/runs/42743867593",
+    "applicationSourcesUnchangedInRepeat": true
+  }
 }
