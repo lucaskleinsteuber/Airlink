@@ -14,14 +14,21 @@ benchmark=importlib.util.module_from_spec(spec);spec.loader.exec_module(benchmar
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('baseline');parser.add_argument('candidate');parser.add_argument('--output',required=True)
 parser.add_argument('--single-files-only', action='store_true')
+parser.add_argument('--folder-only', action='store_true')
+parser.add_argument('--small-file-count', type=int, default=10000)
+parser.add_argument('--folder-repeat', type=int, default=1)
+parser.add_argument('--folder-role', choices=('both','candidate'), default='both')
 args=parser.parse_args()
+if args.single_files_only and args.folder_only: parser.error('Choose single files or folders, not both')
+if not 1 <= args.small_file_count <= 100000 or not 1 <= args.folder_repeat <= 10: parser.error('Use 1–100000 files and 1–10 folder repetitions')
 output=Path(args.output).resolve();output.mkdir(parents=True,exist_ok=True)
-if shutil.disk_usage(output).free < 18*1024**3: raise SystemExit('Need fixture/receive space plus a 10 GiB reserve')
+reserve=(2 if args.folder_only else 18)*1024**3
+if shutil.disk_usage(output).free < reserve: raise SystemExit('Insufficient fixture/receive reserve')
 results=[]
 with tempfile.TemporaryDirectory(prefix='fixtures-',dir=output) as directory:
     fixture=Path(directory)
     block=os.urandom(1024**2)
-    for title,size in [('300MiB',300*1024**2),('4GiB',4*1024**3)]:
+    for title,size in ([] if args.folder_only else [('300MiB',300*1024**2),('4GiB',4*1024**3)]):
         source=fixture/(title+'.bin')
         with source.open('wb') as target:
             for _ in range(size//len(block)): target.write(block)
@@ -35,15 +42,19 @@ with tempfile.TemporaryDirectory(prefix='fixtures-',dir=output) as directory:
             (output/'results.json').write_text(json.dumps(results,indent=2)+'\n')
         source.unlink()
     if not args.single_files_only:
-        source=fixture/'10000-files';source.mkdir();(source/'Empty').mkdir();(source/'Leerer Ordner').mkdir()
-        for i in range(10000):
+        case=str(args.small_file_count)+'-files'
+        source=fixture/case;source.mkdir();(source/'Empty').mkdir();(source/'Leerer Ordner').mkdir()
+        for i in range(args.small_file_count):
             folder=source/('Grüße-'+str(i//100));folder.mkdir(exist_ok=True)
             (folder/('Datei-'+str(i)+'.bin')).write_bytes(block[i%100: i%100+8192])
-        for label in ('baseline','candidate'):
-            print(json.dumps({'event':'start','case':'10000-files','helper':label}),flush=True)
-            records=benchmark.run(SimpleNamespace(helper=getattr(args,label),source=str(source),mib=1,repeat=1,timeout=3600,report=str(output/('10000-files-'+label+'.json'))))
-            for row in records: row.update(case='10000-files',role=label)
-            results.extend(records)
-            (output/'results.json').write_text(json.dumps(results,indent=2)+'\n')
+        for repetition in range(args.folder_repeat):
+            roles=('candidate',) if args.folder_role=='candidate' else (('baseline','candidate') if repetition%2==0 else ('candidate','baseline'))
+            for label in roles:
+                print(json.dumps({'event':'start','case':case,'helper':label,'repetition':repetition+1}),flush=True)
+                suffix='' if repetition==0 else '-'+str(repetition+1)
+                records=benchmark.run(SimpleNamespace(helper=getattr(args,label),source=str(source),mib=1,repeat=1,timeout=3600,report=str(output/(case+'-'+label+suffix+'.json'))))
+                for row in records: row.update(case=case,role=label,comparisonRepetition=repetition+1)
+                results.extend(records)
+                (output/'results.json').write_text(json.dumps(results,indent=2)+'\n')
 
 print(json.dumps({'event':'complete','runs':len(results),'physicalNetworkTested':False}),flush=True)

@@ -2,10 +2,11 @@ name: Background transfer comparison
 on:
   workflow_dispatch:
     inputs:
-      recovery_only:
-        description: Run only restart/recovery and simultaneous transfers
-        type: boolean
-        default: false
+      mode:
+        description: Full comparison, recovery, or focused small-file measurements
+        type: choice
+        default: full
+        options: [full, recovery, small-files]
 permissions:
   contents: read
 jobs:
@@ -26,16 +27,22 @@ jobs:
       - name: Build matching baseline and candidate services
         run: |
           mkdir -p build/comparison-reference
-          if [[ "${{ inputs.recovery_only }}" != true ]]; then
+          if [[ "${{ inputs.mode }}" != recovery ]]; then
             git archive v0.12.0-beta.1 | tar -x -C build/comparison-reference
             (cd build/comparison-reference && CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags='-s -w' -o ../comparison-baseline ./cmd/airlink)
           fi
           CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags='-s -w' -o build/comparison-candidate ./cmd/airlink
       - name: Compare real TLS transfers with independent hashes and sampled RSS
-        if: ${{ !inputs.recovery_only }}
+        if: ${{ inputs.mode == 'full' }}
         run: |
           python3 scripts/benchmark-comparison.py build/comparison-baseline build/comparison-candidate --output build/comparison-results
+      - name: Repeat matched 1000-file comparisons and verify a 10000-file candidate
+        if: ${{ inputs.mode == 'small-files' }}
+        run: |
+          python3 scripts/benchmark-comparison.py build/comparison-baseline build/comparison-candidate --folder-only --small-file-count 1000 --folder-repeat 3 --output build/comparison-results/matched-1000
+          python3 scripts/benchmark-comparison.py build/comparison-baseline build/comparison-candidate --folder-only --small-file-count 10000 --folder-role candidate --output build/comparison-results/candidate-10000
       - name: Verify restart recovery and simultaneous transfers
+        if: ${{ inputs.mode != 'small-files' }}
         run: |
           python3 scripts/acceptance-single-file.py build/comparison-candidate --gib 4 --reserve-gib 4 --expect-version "$(cat VERSION)" --report build/comparison-recovery.json
           python3 scripts/acceptance-bidirectional.py build/comparison-candidate --expect-version "$(cat VERSION)" --report build/comparison-bidirectional.json
@@ -44,7 +51,7 @@ jobs:
         with:
           name: transfer-comparison
           path: |
-            build/comparison-results/*.json
+            build/comparison-results/**/*.json
             build/comparison-recovery.json
             build/comparison-bidirectional.json
           retention-days: 14
