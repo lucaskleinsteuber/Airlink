@@ -25,6 +25,13 @@ case "$FORMAT" in
  *) exit 1;;
 esac
 VERSION="$(cat /AirLink/VERSION)"
+BASE_VERSION="${VERSION%%-beta.*}"
+BETA_NUMBER="${VERSION##*-beta.}"
+[[ "$BETA_NUMBER" =~ ^[1-9][0-9]*$ ]]
+NEXT_BETA="$((BETA_NUMBER + 1))"
+NEXT_DEB_VERSION="$BASE_VERSION~beta.$NEXT_BETA-1"
+NEXT_ARCH_VERSION="${BASE_VERSION}beta$NEXT_BETA-1"
+NEXT_RPM_VERSION="$BASE_VERSION~beta.$NEXT_BETA"
 test "$(/usr/bin/airlink --version)" = "$VERSION"
 test -x /usr/libexec/airlink/airlink-service
 test -f /usr/share/applications/io.github.lucaskleinsteuber.AirLink.desktop
@@ -37,19 +44,22 @@ printf 'kept received content\n' > "$RECEIVED/fixture"
 # package manager upgrade mechanism; it is never a published AirLink build.
 case "$FORMAT" in
  deb)
+  test "$(dpkg-query -W -f='${Version}' airlink)" = "$BASE_VERSION~beta.$BETA_NUMBER-1"
   dpkg-deb -R "$PACKAGE" /tmp/next-package
-  sed -i 's/^Version:.*/Version: 0.12.0~beta.2-1/' /tmp/next-package/DEBIAN/control
+  sed -i "s/^Version:.*/Version: $NEXT_DEB_VERSION/" /tmp/next-package/DEBIAN/control
   dpkg-deb -Zxz --root-owner-group --build /tmp/next-package /tmp/next.deb
   apt-get install -y /tmp/next.deb
-  test "$(dpkg-query -W -f='${Version}' airlink)" = '0.12.0~beta.2-1';;
+  test "$(dpkg-query -W -f='${Version}' airlink)" = "$NEXT_DEB_VERSION";;
  arch)
+  test "$(pacman -Q airlink)" = "airlink ${BASE_VERSION}beta$BETA_NUMBER-1"
   mkdir -p /tmp/next-package
   tar --zstd -xf "$PACKAGE" -C /tmp/next-package
-  sed -i 's/^pkgver = .*/pkgver = 0.12.0beta2-1/' /tmp/next-package/.PKGINFO
+  sed -i "s/^pkgver = .*/pkgver = $NEXT_ARCH_VERSION/" /tmp/next-package/.PKGINFO
   tar --zstd --owner=0 --group=0 --numeric-owner -cf /tmp/next.pkg.tar.zst -C /tmp/next-package .PKGINFO usr
   pacman -U --noconfirm /tmp/next.pkg.tar.zst
-  test "$(pacman -Q airlink)" = 'airlink 0.12.0beta2-1';;
+  test "$(pacman -Q airlink)" = "airlink $NEXT_ARCH_VERSION";;
  rpm)
+  test "$(rpm -q --qf '%{VERSION}-%{RELEASE}' airlink)" = "$BASE_VERSION~beta.$BETA_NUMBER-1"
   if command -v dnf >/dev/null; then dnf install -y rpm-build; else zypper --non-interactive install rpm-build; fi
   mkdir -p /tmp/rpm-fixture/{BUILD,BUILDROOT,RPMS,SPECS,SOURCES,SRPMS}
   cat > /tmp/rpm-fixture/SPECS/next.spec <<'SPEC'
@@ -81,10 +91,11 @@ cp /usr/share/metainfo/io.github.lucaskleinsteuber.AirLink.metainfo.xml %{buildr
 /usr/share/icons/hicolor/scalable/apps/io.github.lucaskleinsteuber.AirLink.svg
 /usr/share/metainfo/io.github.lucaskleinsteuber.AirLink.metainfo.xml
 SPEC
+  sed -i "s/^Version:.*/Version: $NEXT_RPM_VERSION/" /tmp/rpm-fixture/SPECS/next.spec
   rpmbuild --define '_topdir /tmp/rpm-fixture' -bb /tmp/rpm-fixture/SPECS/next.spec
   NEXT="$(find /tmp/rpm-fixture/RPMS -name '*.rpm' -print -quit)"
   if command -v dnf >/dev/null; then dnf install -y "$NEXT"; else zypper --non-interactive --no-gpg-checks install --allow-unsigned-rpm "$NEXT"; fi
-  test "$(rpm -q --qf '%{VERSION}-%{RELEASE}' airlink)" = '0.12.0~beta.2-1';;
+  test "$(rpm -q --qf '%{VERSION}-%{RELEASE}' airlink)" = "$NEXT_RPM_VERSION-1";;
 esac
 TEST_BINARY="$(find /AirLink/build/linux-artifacts -name airlink_core_tests -type f -print -quit)"
 cp "$TEST_BINARY" /tmp/airlink-core-tests; chmod +x /tmp/airlink-core-tests

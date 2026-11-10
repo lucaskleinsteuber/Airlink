@@ -60,7 +60,15 @@ struct TransferDetailsSheet: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack { Text(transfer.title).font(.title2.weight(.semibold)); Spacer(); Button(model.text("Fertig", "Done")) { dismiss() } }
             Text(transfer.deviceName + " · " + model.stateLabel(transfer.state)).foregroundStyle(.secondary)
-            if let error = transfer.error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
+            if let problem = transfer.problem {
+                Text(model.text(problem.titleDE, problem.titleEN)).foregroundStyle(.red)
+                Text(model.text(problem.recoveryDE, problem.recoveryEN)).font(.callout).foregroundStyle(.secondary)
+            }
+            if let error = transfer.error, !error.isEmpty {
+                DisclosureGroup(model.text("Technische Details", "Technical details")) {
+                    Text(error).font(.caption).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 15) {
                     ForEach(files) { file in

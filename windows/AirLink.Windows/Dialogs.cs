@@ -20,6 +20,15 @@ internal static class Dialogs
     {
         var form = new Form(owner, transfer.Title, 650);
         form.Help(c.StateText(transfer.State));
+        if (transfer.Problem is { } advice) {
+            form.Help(c.T(advice.TitleDE, advice.TitleEN));
+            form.Help(c.T(advice.RecoveryDE, advice.RecoveryEN));
+        }
+        if (!string.IsNullOrWhiteSpace(transfer.Error)) form.Add(new Expander {
+            Header = c.T("Technische Details", "Technical details"),
+            Content = new TextBox { Text = transfer.Error, IsReadOnly = true, TextWrapping = TextWrapping.Wrap, BorderThickness = new Thickness(0), Margin = new Thickness(0, 8, 0, 0) },
+            Margin = new Thickness(0, 8, 0, 12)
+        });
         var files = new StackPanel(); form.Add(files);
         var offset = 0; var loading = false;
         async Task Load() {
