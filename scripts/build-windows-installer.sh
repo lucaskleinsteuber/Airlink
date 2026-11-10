@@ -17,7 +17,7 @@ for ARCH in x64 arm64; do
   SETUP="$OUTPUT/windows-$ARCH/AirLink-Setup.exe"
   test -f "$PAYLOAD"
   "$NSIS_BIN" -V3 -INPUTCHARSET UTF8 \
-    "-DAIRLINK_VERSION=$VERSION" "-DAIRLINK_ARCH=$ARCH" \
+    "-DAIRLINK_NUMERIC_VERSION=${VERSION%%-*}.$(cat "$ROOT/BUILD_NUMBER")" "-DAIRLINK_VERSION=$VERSION" "-DAIRLINK_ARCH=$ARCH" \
     "-DAIRLINK_PAYLOAD=$(native_path "$PAYLOAD")" "-DAIRLINK_OUTPUT=$(native_path "$SETUP")" \
     "-DAIRLINK_ICON=$(native_path "$ROOT/windows/AirLink.Windows/Assets/AirLink.ico")" \
     "$(native_path "$ROOT/windows/installer/AirLink.nsi")"

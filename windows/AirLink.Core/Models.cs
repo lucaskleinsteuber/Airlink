@@ -18,6 +18,11 @@ public static class ProtocolJson
 public sealed class HostStatus
 {
     public string Version { get; set; } = "";
+    public bool Summary { get; set; }
+    public int ActiveTransferCount { get; set; }
+    public int ActiveRelayCount { get; set; }
+    public List<PairingSession> PairingSessions { get; set; } = [];
+    public List<Preparation> Preparations { get; set; } = [];
     public string Id { get; set; } = "";
     public string Name { get; set; } = "";
     public List<string> Urls { get; set; } = [];
@@ -46,6 +51,7 @@ public sealed class HostSettings
     public string Appearance { get; set; } = "system";
     public string Language { get; set; } = "system";
     public bool Notifications { get; set; } = true;
+    public bool AutomaticUpdateChecks { get; set; }
     public long SendLimitBytesPerSecond { get; set; }
     public long ReceiveLimitBytesPerSecond { get; set; }
     public Shortcut Shortcut { get; set; } = new();
@@ -121,7 +127,12 @@ public sealed class Transfer
     public string? Destination { get; set; }
     [JsonIgnore] public bool IsActive => State is "offered" or "queued" or "running" or "paused" or "reconnecting" or "verifying" or "checkingDuplicate" or "waitingDuplicate";
     [JsonIgnore] public double Progress => State == "completed" ? 1 : TotalBytes > 0 ? Math.Clamp((double)CompletedBytes / TotalBytes + (double)SkippedBytes / TotalBytes, 0, 1) : 0;
-    [JsonIgnore] public string Title => Files.Count == 0 ? "AirLink" : Files[0].Path.Split('/').Last();
+    public bool Summary { get; set; }
+    public int FileCount { get; set; }
+    public bool HasContent { get; set; }
+    [JsonPropertyName("title")] public string? SummaryTitle { get; set; }
+    [JsonIgnore] public string Title => SummaryTitle ?? (Files.Count == 0 ? "AirLink" : Files[0].Path.Split('/').Last());
+    [JsonIgnore] public bool HasReceivedContent => Direction == "receive" && State == "completed" && (Summary ? HasContent : NativeExperience.ReceivedDisplayEntries(this).Count > 0);
 }
 
 public sealed class TransferFile

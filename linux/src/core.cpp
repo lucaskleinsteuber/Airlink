@@ -180,6 +180,31 @@ QJsonArray visibleTransfers(const QJsonArray &input, const QString &device,
     out.append(finished[i]);
   return out;
 }
+QJsonArray mergeHistory(const QJsonArray &history, const QJsonArray &summary) {
+  QMap<QString, QJsonObject> values;
+  for (const auto &v : history)
+    values[v.toObject()["id"].toString()] = v.toObject();
+  for (const auto &v : summary) {
+    const auto t = v.toObject();
+    if (!terminal(t["state"].toString()) || values.contains(t["id"].toString()))
+      values[t["id"].toString()] = t;
+  }
+  QList<QJsonObject> ordered = values.values();
+  std::sort(ordered.begin(), ordered.end(),
+            [](const QJsonObject &a, const QJsonObject &b) {
+              const bool at = terminal(a["state"].toString()),
+                         bt = terminal(b["state"].toString());
+              if (at != bt)
+                return !at;
+              if (a["createdAt"] != b["createdAt"])
+                return a["createdAt"].toString() > b["createdAt"].toString();
+              return a["id"].toString() > b["id"].toString();
+            });
+  QJsonArray out;
+  for (const auto &t : ordered)
+    out.append(t);
+  return out;
+}
 QJsonArray sortedDevices(const QJsonArray &input, bool paired) {
   QList<QJsonObject> rows;
   for (const auto &v : input) {

@@ -18,7 +18,7 @@ internal sealed class SetupWindow : Window
     private readonly TextBox name, folder;
     private readonly TextBlock title, explanation, progress, error, summary;
     private readonly TextBlock reviewName, reviewFolder;
-    private readonly CheckBox notifications;
+    private readonly CheckBox notifications, updates;
     private readonly Button back, next;
     private bool busy;
     private int step;
@@ -53,6 +53,7 @@ internal sealed class SetupWindow : Window
         reviewStep.Children.Add(Theme.Card(review));
         notifications = new CheckBox { Content = Theme.Text(c.T("Bei Anfragen und empfangenen Dateien benachrichtigen", "Notify about requests and received files"), 13), IsChecked = c.SetupComplete && c.Status?.Settings.Notifications == true, Margin = new Thickness(0, 18, 0, 8) };
         reviewStep.Children.Add(notifications);
+        updates = new CheckBox { Content = Theme.Text(c.T("Über neue Betas informieren", "Notify me about new betas"), 13), IsChecked = c.Status?.Settings.AutomaticUpdateChecks == true, Margin = new Thickness(0, 8, 0, 8) }; reviewStep.Children.Add(updates);
         reviewStep.Children.Add(Theme.Text(c.T("Optional. Du kannst diese Einstellung später unter Allgemein ändern.", "Optional. You can change this later under General."), 12, secondary: true));
         var nextStep = Theme.Text(c.T("Als Nächstes: AirLink auf dem anderen Gerät öffnen und „Gerät hinzufügen“ wählen. Nach einmaligem Bestätigen bleibt die Verbindung gespeichert.", "Next: open AirLink on the other device and choose Add a device. After approving once, the connection stays saved."), 13, secondary: true); nextStep.Margin = new Thickness(0, 20, 0, 0); reviewStep.Children.Add(nextStep); body.Children.Add(reviewStep);
         error = Theme.Text("", 13); error.Foreground = Theme.Color(Theme.Dark ? "#FFB5AE" : "#B1372A"); error.Margin = new Thickness(0, 16, 0, 0); body.Children.Add(error);
@@ -83,7 +84,7 @@ internal sealed class SetupWindow : Window
             if (!Path.IsPathFullyQualified(folder.Text.Trim())) throw new ArgumentException(c.T("Wähle einen vollständigen Zielordner.", "Choose an absolute receive folder."));
             if (step == 1) { step = 2; Render(); return; }
             busy = true; Render();
-            await c.CompleteSetupAsync(name.Text.Trim(), folder.Text.Trim(), notifications.IsChecked == true);
+            await c.CompleteSetupAsync(name.Text.Trim(), folder.Text.Trim(), notifications.IsChecked == true, updates.IsChecked == true);
             if (!c.SetupComplete) throw new InvalidOperationException(c.T("Die Einrichtung konnte noch nicht bestätigt werden. Bitte erneut versuchen.", "Setup has not been confirmed. Please try again."));
             busy = false; DialogResult = true;
         }

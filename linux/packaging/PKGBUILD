@@ -1,0 +1,33 @@
+# Build from the release source tree; no AUR publication is required.
+pkgname=airlink
+pkgver=0.12.0beta1
+pkgrel=1
+pkgdesc='Local encrypted file transfers with a native Qt desktop'
+arch=('x86_64')
+url='https://github.com/lucaskleinsteuber/Airlink'
+license=('MIT')
+depends=('qt6-base>=6.4' 'qt6-svg' 'qt6-wayland' 'openssl')
+makedepends=('cmake' 'ninja' 'go' 'nodejs' 'npm')
+# Use the checked-out release sources as the build input. From its root:
+# cd linux/packaging && makepkg --syncdeps
+# A downloaded tagged source archive works the same way after extraction.
+build() {
+  local repo_root="$(cd "$startdir/../.." && pwd)"
+  cd "$repo_root"
+  export GOMAXPROCS=4
+  npm --prefix web ci
+  npm --prefix web run build
+  bash scripts/embed-web.sh
+  mkdir -p build
+  CGO_ENABLED=0 go build -p 4 -buildvcs=false -trimpath -ldflags='-s -w' -o build/airlink-linux-amd64 ./cmd/airlink
+  cmake -S linux -B build/linux-arch -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DAIRLINK_HELPER="$repo_root/build/airlink-linux-amd64"
+  cmake --build build/linux-arch -j4
+}
+check() {
+  local repo_root="$(cd "$startdir/../.." && pwd)"
+  AIRLINK_TEST_HELPER="$repo_root/build/airlink-linux-amd64" ctest --test-dir "$repo_root/build/linux-arch" --output-on-failure
+}
+package() {
+  local repo_root="$(cd "$startdir/../.." && pwd)"
+  DESTDIR="$pkgdir" cmake --install "$repo_root/build/linux-arch" --strip
+}

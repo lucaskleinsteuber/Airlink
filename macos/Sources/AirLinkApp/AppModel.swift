@@ -34,6 +34,7 @@ struct FailedDirectSend: Identifiable {
     @Published private(set) var activePreparationID: String?
     @Published private(set) var historyRevision = UUID()
     var observedTools = Set<String>()
+    private var toolRequests: [String: UUID] = [:]
     var connectAfterSetup = false
     private var setupOffered = false
     @Published var connectionDraft = PeerConnectionDraft()
@@ -200,7 +201,7 @@ struct FailedDirectSend: Identifiable {
     func perform(_ method: String, data: Data?) {
         guard isReady else { error = engineError ?? text("AirLink ist noch nicht bereit.", "AirLink is not ready yet."); return }
         Task {
-            do { try requireReady(); _ = try await client.request(method, params: data); await refresh(force: true); await refreshTools() }
+            do { try requireReady(); toolRequests.removeAll(); _ = try await client.request(method, params: data); toolRequests.removeAll(); await refresh(force: true); await refreshTools() }
             catch { self.error = error.localizedDescription; await refresh() }
         }
     }
@@ -308,7 +309,9 @@ struct FailedDirectSend: Identifiable {
     func createShare(_ request: ShareCreate) async throws -> Share {
         try requireReady()
         guard request.hasValidSource else { throw NativeError.unavailable(text("Bitte Dateien oder einen Ordner auswählen.", "Please choose files or a folder.")) }
+        toolRequests.removeAll()
         let result = try await client.request("share.create", params: JSONEncoder().encode(request))
+        toolRequests.removeAll()
         let share = try JSONDecoder().decode(Share.self, from: result)
         status?.shares = (status?.shares ?? []).filter { $0.id != share.id } + [share]
         await refresh()
@@ -321,7 +324,9 @@ struct FailedDirectSend: Identifiable {
             throw NativeError.unavailable(self.text("Zwischenablage ist für dieses Gerät nicht freigegeben.", "Clipboard sharing is not enabled for this device."))
         }
         let request = ["deviceId": deviceID, "text": text]
+        toolRequests.removeAll()
         _ = try await client.request("clipboard.send", params: JSONEncoder().encode(request))
+        toolRequests.removeAll()
         await refreshTools()
         await refresh()
     }
@@ -365,7 +370,7 @@ struct FailedDirectSend: Identifiable {
     }
     func observeTool(_ tool: String, active: Bool) {
         if active { observedTools.insert(tool); Task { await refreshTools() } }
-        else { observedTools.remove(tool) }
+        else { observedTools.remove(tool); toolRequests[tool] = nil }
     }
     func refreshTools() async {
         guard isReady else { return }
@@ -373,8 +378,9 @@ struct FailedDirectSend: Identifiable {
         for tool in observedTools.sorted() {
             do {
                 let method = tool == "statistics" ? "statistics.get" : tool == "shares" ? "share.list" : tool == "clipboard" ? "clipboard.list" : "relay.list"
+                let request = UUID(); toolRequests[tool] = request
                 let data = try await client.request(method)
-                guard generation == lifecycleGeneration, isReady, observedTools.contains(tool) else { continue }
+                guard toolRequests[tool] == request, generation == lifecycleGeneration, isReady, observedTools.contains(tool) else { continue }
                 switch tool {
                 case "shares": status?.shares = try JSONDecoder().decode([Share].self, from: data)
                 case "clipboard": status?.clipboard = try JSONDecoder().decode([ClipboardMessage].self, from: data)

@@ -118,12 +118,14 @@ QString desktopQuoted(QString value) {
 } // namespace
 
 MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent), client(this), tray(this), network(this) {
+    : QMainWindow(parent), client(this), tray(this), network(this),
+      systemPalette(QApplication::palette()) {
   setWindowTitle("AirLink Beta");
   setWindowIcon(QIcon(":/airlink/icon.svg"));
   resize(1120, 760);
   setMinimumSize(860, 580);
   build();
+  appliedEnglish = english();
   connect(&client, &DaemonClient::statusChanged, this, &MainWindow::render);
   connect(&client, &DaemonClient::failed, this, [this](const QString &e) {
     preparing = false;
@@ -131,6 +133,16 @@ MainWindow::MainWindow(QWidget *parent)
   });
   tray.setIcon(windowIcon());
   tray.setToolTip("AirLink");
+  rebuildTrayMenu();
+  connect(&tray, &QSystemTrayIcon::activated, this,
+          [this](QSystemTrayIcon::ActivationReason r) {
+            if (r == QSystemTrayIcon::Trigger)
+              activate();
+          });
+  tray.show();
+}
+void MainWindow::rebuildTrayMenu() {
+  auto *previous = tray.contextMenu();
   auto *menu = new QMenu(this);
   menu->addAction(text("AirLink öffnen", "Open AirLink"), this,
                   [this] { activate(); });
@@ -143,12 +155,43 @@ MainWindow::MainWindow(QWidget *parent)
   menu->addSeparator();
   menu->addAction(text("Beenden", "Quit"), this, &MainWindow::quit);
   tray.setContextMenu(menu);
-  connect(&tray, &QSystemTrayIcon::activated, this,
-          [this](QSystemTrayIcon::ActivationReason r) {
-            if (r == QSystemTrayIcon::Trigger)
-              activate();
-          });
-  tray.show();
+  if (previous)
+    previous->deleteLater();
+}
+void MainWindow::applyPresentation() {
+  const auto mode =
+      client.status()["settings"].toObject()["appearance"].toString("system");
+  if (mode != appliedAppearance) {
+    auto palette = systemPalette;
+    if (mode == "light" || mode == "dark") {
+      const bool dark = mode == "dark";
+      palette.setColor(QPalette::Window, QColor(dark ? "#252629" : "#F5F5F7"));
+      palette.setColor(QPalette::Base, QColor(dark ? "#1B1C1F" : "#FFFFFF"));
+      palette.setColor(QPalette::AlternateBase,
+                       QColor(dark ? "#2D2E32" : "#ECEEF1"));
+      palette.setColor(QPalette::Button, QColor(dark ? "#35363B" : "#F0F1F3"));
+      palette.setColor(QPalette::ToolTipBase, palette.color(QPalette::Base));
+      for (auto role : {QPalette::WindowText, QPalette::Text,
+                        QPalette::ButtonText, QPalette::ToolTipText}) {
+        palette.setColor(role, QColor(dark ? "#F2F2F4" : "#202124"));
+        palette.setColor(QPalette::Disabled, role,
+                         QColor(dark ? "#92949B" : "#777A82"));
+      }
+      palette.setColor(QPalette::Highlight,
+                       QColor(dark ? "#3DAEE9" : "#007AFF"));
+      palette.setColor(QPalette::HighlightedText, Qt::white);
+    }
+    appliedAppearance = mode;
+    QApplication::setPalette(palette);
+  }
+  if (appliedEnglish != english()) {
+    const auto page = pages->currentIndex(), pane = settingsPane;
+    appliedEnglish = english();
+    build();
+    pages->setCurrentIndex(page);
+    settingPages->setCurrentIndex(pane);
+    rebuildTrayMenu();
+  }
 }
 bool MainWindow::english() const {
   const auto lang =
@@ -221,7 +264,7 @@ void MainWindow::build() {
   ownName = label("AirLink", side);
   ownName->setTextInteractionFlags(Qt::TextSelectableByMouse);
   sl->addWidget(ownName);
-  sl->addWidget(label(QString::fromLatin1(Version) + " Beta", side));
+  sl->addWidget(label(QString::fromLatin1(Version), side));
   side->setMinimumWidth(240);
   side->setMaximumWidth(460);
   pages = new QStackedWidget(split);
@@ -578,8 +621,7 @@ QWidget *MainWindow::buildSettings() {
   updateFeedback = label("", page);
   updates->addRow(updateFeedback);
   auto *about = formPage(text("Info", "About"));
-  about->addRow(
-      label("AirLink " + QString::fromLatin1(Version) + " Beta", page));
+  about->addRow(label("AirLink " + QString::fromLatin1(Version), page));
   about->addRow(label("Copyright © 2026 Lucas Kleinsteuber · MIT", page));
   about->addRow(
       button(text("Lizenzen anzeigen", "Show licenses"), page, [this] {
@@ -706,6 +748,7 @@ void MainWindow::render() {
     settingsLoaded = true;
   } else if (draft.baseline != settings && !saving)
     draft.rebase(settings);
+  applyPresentation();
   applyEditors();
   const auto listed = sortedDevices(status["devices"].toArray(), true);
   QJsonArray previous;
@@ -775,20 +818,14 @@ void MainWindow::render() {
                    "Preparation cancelled. Your selection is kept.")));
       }
     }
-  renderTransfers(
-      currentTransfers,
-      selected.isEmpty()
-          ? QJsonArray{}
-          : visibleTransfers(status["transfers"].toArray(), selected));
-  for (auto v : historyRows) {
-    const auto id = v.toObject()["id"].toString();
-    for (const auto &n : status["transfers"].toArray())
-      if (n.toObject()["id"].toString() == id) {
-        v = n;
-        break;
-      }
-  }
-  if (pages->currentIndex() == 1)
+  if (isVisible() && pages->currentIndex() == 0)
+    renderTransfers(
+        currentTransfers,
+        selected.isEmpty()
+            ? QJsonArray{}
+            : visibleTransfers(status["transfers"].toArray(), selected));
+  historyRows = mergeHistory(historyRows, status["transfers"].toArray());
+  if (isVisible() && pages->currentIndex() == 1)
     renderTransfers(historyTransfers, historyRows);
   attention->hide();
   if (!settings["setupCompleted"].toBool()) {
@@ -879,8 +916,10 @@ void MainWindow::renderTransfers(QTableWidget *table, const QJsonArray &rows) {
                                  remaining(t));
     const auto previous =
         table->item(row, 0)->data(Qt::UserRole + 1).toJsonObject();
-    if (previous != t) {
-      table->item(row, 0)->setData(Qt::UserRole + 1, t);
+    table->item(row, 0)->setData(Qt::UserRole + 1, t);
+    if (previous.isEmpty() || previous["state"] != t["state"] ||
+        previous["direction"] != t["direction"] ||
+        previous["hasContent"] != t["hasContent"]) {
       auto *actions = new QWidget(table);
       auto *layout = new QHBoxLayout(actions);
       layout->setContentsMargins(2, 0, 2, 0);
@@ -888,10 +927,18 @@ void MainWindow::renderTransfers(QTableWidget *table, const QJsonArray &rows) {
         layout->addWidget(
             button(text("Annehmen", "Accept"), actions,
                    [this, id] { action("transfer.accept", {{"id", id}}); }));
-      else if (t["direction"] == "receive" && t["state"] == "completed")
+      else if (t["direction"] == "receive" && t["state"] == "completed" &&
+               t["hasContent"].toBool())
         layout->addWidget(button(text("Zeigen", "Show"), actions,
                                  [this, id] { reveal(id); }));
-      layout->addWidget(button("⋯", actions, [this, t] { transferMenu(t); }));
+      layout->addWidget(button("⋯", actions, [this, table, id] {
+        for (int i = 0; i < table->rowCount(); ++i)
+          if (table->item(i, 0)->data(Qt::UserRole).toString() == id) {
+            transferMenu(
+                table->item(i, 0)->data(Qt::UserRole + 1).toJsonObject());
+            break;
+          }
+      }));
       table->setCellWidget(row, 4, actions);
     }
     table->setRowHeight(row, 60);
@@ -982,23 +1029,26 @@ void MainWindow::loadHistory(bool more) {
   QJsonObject query{{"limit", 50}};
   if (more)
     query["cursor"] = historyCursor;
-  client.request("history.page", query,
-                 [this, generation, more](QJsonValue v, QString e) {
-                   if (generation != historyGeneration)
-                     return;
-                   historyLoading = false;
-                   if (!e.isEmpty()) {
-                     issue(e);
-                     return;
-                   }
-                   if (!more)
-                     historyRows = {};
-                   for (const auto &row : v.toObject()["transfers"].toArray())
-                     historyRows.append(row);
-                   historyCursor = v.toObject()["nextCursor"].toString();
-                   historyMore->setEnabled(!historyCursor.isEmpty());
-                   renderTransfers(historyTransfers, historyRows);
-                 });
+  client.request(
+      "history.page", query, [this, generation, more](QJsonValue v, QString e) {
+        if (generation != historyGeneration)
+          return;
+        historyLoading = false;
+        if (!e.isEmpty()) {
+          issue(e);
+          return;
+        }
+        if (!more)
+          historyRows = {};
+        for (const auto &row : v.toObject()["transfers"].toArray())
+          historyRows.append(row);
+        historyCursor = v.toObject()["nextCursor"].toString();
+        historyMore->setEnabled(!historyCursor.isEmpty());
+        historyRows =
+            mergeHistory(historyRows, client.status()["transfers"].toArray());
+        if (isVisible())
+          renderTransfers(historyTransfers, historyRows);
+      });
 }
 void MainWindow::transferMenu(const QJsonObject &t) {
   const auto id = t["id"].toString(), state = t["state"].toString();

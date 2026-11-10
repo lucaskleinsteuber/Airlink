@@ -22,6 +22,7 @@ func signedFixture(t *testing.T) (Manifest, []byte, []byte, ed25519.PublicKey, [
 	}
 	payload := make([]byte, 8192)
 	copy(payload, []byte{0x7f, 'E', 'L', 'F', 2, 1, 1, 0, 'A', 'I', 2})
+	payload[18] = 62
 	copy(payload[64:], []byte("signed test fixture; not an executable application"))
 	sum := sha256.Sum256(payload)
 	m := Manifest{SchemaVersion: 1, Channel: "beta", Platform: "linux", Architecture: "x64", Version: "0.12.0-beta.1"}

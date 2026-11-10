@@ -48,8 +48,8 @@ type releaseOptions struct {
 }
 
 func validateRelease(version, build string) error {
-	if !regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`).MatchString(version) {
-		return errors.New("release version must be Major.Minor.Patch")
+	if !regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-beta\.[1-9][0-9]*)?$`).MatchString(version) {
+		return errors.New("release version must be Major.Minor.Patch or Major.Minor.Patch-beta.N")
 	}
 	if value, err := strconv.ParseUint(build, 10, 32); err != nil || value == 0 || strconv.FormatUint(value, 10) != build {
 		return errors.New("macOS build must be a positive integer")
@@ -109,8 +109,8 @@ func escaped(value string) string {
 }
 
 func feedXML(options releaseOptions, platform string, entry artifactRecord) []byte {
-	mac := platform == "macos"
-	version, signatureAttribute, media := options.Version, "signature", "application/octet-stream"
+	mac := strings.HasPrefix(platform, "macos")
+	version, signatureAttribute, media := windowsNumericVersion(options), "signature", "application/octet-stream"
 	if mac {
 		version, signatureAttribute, media = options.Build, "edSignature", "application/x-apple-diskimage"
 	}
@@ -191,6 +191,9 @@ func atomicPublicFile(path string, data []byte) error {
 }
 
 func signRelease(options releaseOptions) error {
+	if modernRelease(options.Version) {
+		return signBetaRelease(options)
+	}
 	if err := validateRelease(options.Version, options.Build); err != nil {
 		return err
 	}
@@ -226,7 +229,7 @@ func signRelease(options releaseOptions) error {
 	for index, platform := range []string{"macos", "windows-x64", "windows-arm64"} {
 		content := feedXML(options, platform, manifest.Packages[index])
 		name := platform + ".xml"
-		if platform == "macos" {
+		if strings.HasPrefix(platform, "macos") {
 			content = signedMacFeed(content, private)
 		}
 		outputs[name] = content
@@ -299,14 +302,14 @@ func verifyEnclosure(content []byte, platform string, options releaseOptions, en
 	}
 	item := feed.Channel.Items[0]
 	download := item.Enclosures[0]
-	expectedVersion, expectedOS := options.Version, "windows"
-	if platform == "macos" {
+	expectedVersion, expectedOS := windowsNumericVersion(options), "windows"
+	if strings.HasPrefix(platform, "macos") {
 		expectedVersion, expectedOS = options.Build, "macos"
 	}
 	if download.URL != releaseBase+"v"+options.Version+"/"+entry.File || download.Length != entry.Length || download.Version != expectedVersion || download.ShortVersion != options.Version || download.OperatingSystem != expectedOS || item.Version != expectedVersion || item.ShortVersion != options.Version {
 		return errors.New("update enclosure does not match the signed release package and version")
 	}
-	if platform == "macos" {
+	if strings.HasPrefix(platform, "macos") {
 		if download.EdSignature != entry.Signature || download.Signature != "" || item.MinimumSystem != "14.0" {
 			return errors.New("macOS update enclosure signature or system requirement is invalid")
 		}
@@ -374,7 +377,7 @@ func verifyManifestFiles(options releaseOptions, manifest releaseManifest, data 
 		if err := validateRecord(entry, feed, public); err != nil {
 			return err
 		}
-		if platform == "macos" {
+		if strings.HasPrefix(platform, "macos") {
 			feed, err = verifyMacFeed(feed, public)
 			if err != nil {
 				return err
@@ -409,6 +412,9 @@ func verifyManifestFiles(options releaseOptions, manifest releaseManifest, data 
 }
 
 func verifyRelease(options releaseOptions) error {
+	if modernRelease(options.Version) {
+		return verifyBetaRelease(options)
+	}
 	manifest, data, public, err := loadReleaseManifest(options, false)
 	if err != nil {
 		return err

@@ -46,7 +46,8 @@ internal sealed class TransferRow : Border
         var speed = double.IsFinite(t.BytesPerSecond) && t.BytesPerSecond > 0 ? t.BytesPerSecond : 0;
         detail.Text = t.State == "completed" ? c.Bytes(t.CompletedBytes) + (t.SkippedBytes > 0 ? " · " + c.Bytes(t.SkippedBytes) + c.T(" übersprungen", " skipped") : "") : c.Bytes(t.CompletedBytes) + " / " + c.Bytes(t.TotalBytes) + (speed > 0 && t.State == "running" ? " · " + c.Bytes((long)Math.Min(speed, long.MaxValue)) + "/s" : "");
         problem.Text = t.Error ?? ""; problem.Visibility = string.IsNullOrWhiteSpace(t.Error) ? Visibility.Collapsed : Visibility.Visible;
-        var key = t.State + ":" + c.Ready + ":" + c.RemovingHistory + ":" + string.Join('|', t.Files.Select(f => f.Id + f.Completed + f.Skipped + f.DuplicateState));
+        if (DesktopTransferSelection.Remaining(t) is { } left) detail.Text += " · " + (left.TotalMinutes >= 1 ? Math.Ceiling(left.TotalMinutes) + c.T(" Min. übrig", " min left") : Math.Ceiling(left.TotalSeconds) + c.T(" Sek. übrig", " sec left"));
+        var key = t.HasContent + ":" + t.State + ":" + c.Ready + ":" + c.RemovingHistory + ":" + string.Join('|', t.Files.Select(f => f.Id + f.Completed + f.Skipped + f.DuplicateState));
         if (key == actionKey) return; actionKey = key; actions.Children.Clear(); files.Children.Clear();
         ContextMenu = null;
         if (t.State == "offered" && t.Direction == "receive")
@@ -58,15 +59,16 @@ internal sealed class TransferRow : Border
         if (t.State is "running" or "queued" or "reconnecting" or "checkingDuplicate" or "waitingDuplicate") actions.Children.Add(Action(c.T("Pause", "Pause"), () => c.CommandAsync("transfer.pause", current.Id)));
         if (t.State is "paused" or "reconnecting") actions.Children.Add(Action(c.T("Fortsetzen", "Resume"), () => c.CommandAsync("transfer.resume", current.Id), true));
         if (t.IsActive) actions.Children.Add(Action(c.T("Abbrechen", "Cancel"), () => c.CommandAsync("transfer.cancel", current.Id)));
-        foreach (var file in t.Files.Where(f => f.DuplicateState == "pending"))
+        actions.Children.Add(Theme.Button(c.T("Details", "Details"), () => Dialogs.TransferDetails(owner, c, current)));
+        foreach (var file in t.Files.Where(f => !t.Summary && f.DuplicateState == "pending"))
             files.Children.Add(Theme.Button(file.Path + c.T(" · Duplikat prüfen", " · Review duplicate"), () => { var fresh = current.Files.FirstOrDefault(f => f.Id == file.Id); if (fresh is not null) Dialogs.Duplicate(owner, c, current, fresh); }));
         if (t.Direction == "receive" && t.State == "completed")
         {
             var received = NativeExperience.ReceivedDisplayEntries(t);
-            if (received.Count > 0)
+            if (t.HasReceivedContent)
             {
                 actions.Children.Add(Action(received.Count == 1 && !received[0].Directory ? c.T("Datei zeigen", "Show file") : c.T("Ordner öffnen", "Open folder"), ShowResult, true));
-                if (received.Count > 1)
+                if (!t.Summary && received.Count > 1)
                 {
                     var entries = new StackPanel();
                     foreach (var file in received.Take(20)) entries.Children.Add(Action(file.Path + " ↗", () => c.RevealAsync(current, file.Id)));

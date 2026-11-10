@@ -34,7 +34,7 @@ type publicConfiguration struct {
 
 func configuration(public ed25519.PublicKey) publicConfiguration {
 	return publicConfiguration{1, "Ed25519", base64.StdEncoding.EncodeToString(public), map[string]string{
-		"macos": feedBase + "macos.xml", "windows-x64": feedBase + "windows-x64.xml", "windows-arm64": feedBase + "windows-arm64.xml",
+		"macos": feedBase + "macos.xml", "macos-arm64": feedBase + "macos-arm64.xml", "macos-x64": feedBase + "macos-x64.xml", "linux-x64": feedBase + "linux-x64.json", "windows-x64": feedBase + "windows-x64.xml", "windows-arm64": feedBase + "windows-arm64.xml",
 	}}
 }
 

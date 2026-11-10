@@ -5,6 +5,7 @@ package update
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"io"
 	"os"
@@ -33,11 +34,11 @@ func imageHeader(path string) error {
 		return e
 	}
 	defer f.Close()
-	header := make([]byte, 16)
+	header := make([]byte, 20)
 	if _, e = io.ReadFull(f, header); e != nil {
 		return e
 	}
-	if !bytes.Equal(header[:4], []byte{0x7f, 'E', 'L', 'F'}) || header[4] != 2 || !bytes.Equal(header[8:11], []byte{'A', 'I', 2}) {
+	if !bytes.Equal(header[:4], []byte{0x7f, 'E', 'L', 'F'}) || header[4] != 2 || header[5] != 1 || binary.LittleEndian.Uint16(header[18:20]) != 62 || !bytes.Equal(header[8:11], []byte{'A', 'I', 2}) {
 		return errors.New("update target is not a 64-bit type 2 AppImage")
 	}
 	return nil
@@ -148,7 +149,11 @@ func ApplyLinux(o ApplyOptions) error {
 		_ = launch()
 		return e
 	}
-	return launch()
+	if e = launch(); e != nil {
+		return e
+	}
+	cleanupLinuxUpdate(o)
+	return nil
 }
 func itoa(n int) string {
 	if n == 0 {
@@ -225,4 +230,33 @@ func replaceImage(o ApplyOptions, a Artifact, old os.FileInfo) error {
 	}
 	defer dir.Close()
 	return dir.Sync()
+}
+
+// Only exact files in the application-owned download cache are removed. A
+// package-manager download or any unknown file is never traversed or deleted.
+func cleanupLinuxUpdate(o ApplyOptions) {
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return
+	}
+	directory := filepath.Dir(o.Package)
+	root := filepath.Join(cache, "AirLink", "updates")
+	if filepath.Dir(directory) != root || !strings.HasPrefix(filepath.Base(directory), "download-") || filepath.Dir(o.Feed) != directory || filepath.Dir(o.SignatureFile) != directory {
+		return
+	}
+	info, err := os.Lstat(directory)
+	if err != nil || !info.IsDir() || info.Mode().Perm()&0077 != 0 {
+		return
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || int(stat.Uid) != os.Geteuid() {
+		return
+	}
+	for _, name := range []string{filepath.Base(o.Package), "feed.json", "feed.signature", "ready.json", "airlink-update"} {
+		path := filepath.Join(directory, name)
+		if _, err := ownRegular(path); err == nil {
+			_ = os.Remove(path)
+		}
+	}
+	_ = os.Remove(directory) // succeeds only if no unknown files remain
 }

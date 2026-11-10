@@ -22,6 +22,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 35
     env:
+      GOMAXPROCS: '4'
+      GOFLAGS: '-p=4'
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'
       DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
       DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
@@ -36,6 +38,7 @@ jobs:
           fetch-depth: 0
       - name: Check publication privacy
         run: |
+          python3 scripts/check-version.py
           python3 scripts/check-privacy.py --self-test
           python3 scripts/check-package-privacy.py --self-test
           python3 scripts/check-privacy.py --history
@@ -58,7 +61,9 @@ jobs:
           npm --prefix web run build
           bash scripts/embed-web.sh
       - name: Go unit, security, HTTPS, and race tests
-        run: go test -race ./...
+        run: |
+          go test -race ./...
+          go vet ./...
       - name: Windows core tests with the actual helper
         run: |
           mkdir -p build
@@ -113,9 +118,9 @@ jobs:
         run: |
           mkdir -p build
           CGO_ENABLED=0 go build -trimpath -o build/airlink-native ./cmd/airlink
-          AIRLINK_TEST_HELPER="$PWD/build/airlink-native" swift test --package-path macos --scratch-path build/swift-tests
+          AIRLINK_TEST_HELPER="$PWD/build/airlink-native" swift test -j 4 --package-path macos --scratch-path build/swift-tests
       - name: Compile both native macOS architectures
         if: runner.os == 'macOS'
         run: |
-          swift build --package-path macos --scratch-path build/swift-arm64 --configuration release --triple arm64-apple-macosx14.0
-          swift build --package-path macos --scratch-path build/swift-x86_64 --configuration release --triple x86_64-apple-macosx14.0
+          swift build -j 4 --package-path macos --scratch-path build/swift-arm64 --configuration release --triple arm64-apple-macosx14.0
+          swift build -j 4 --package-path macos --scratch-path build/swift-x86_64 --configuration release --triple x86_64-apple-macosx14.0

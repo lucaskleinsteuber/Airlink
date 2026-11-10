@@ -143,8 +143,8 @@ internal static class SharingDialogs
         form.Action(c.T("Aktualisieren", "Refresh"), async () => { await c.RefreshAsync(); Render(); });
         form.AfterOperation = Render;
         PropertyChangedEventHandler changed = (_, _) => Render(); c.PropertyChanged += changed;
-        form.Window.Closed += (_, _) => { c.PropertyChanged -= changed; password.Clear(); };
-        Render(); form.Show();
+        form.Window.Closed += (_, _) => { c.PropertyChanged -= changed; c.ObserveTool("shares", false); password.Clear(); };
+        c.ObserveTool("shares", true); Render(); form.Show();
     }
 
     public static void Clipboard(Window owner, Controller c)
@@ -217,8 +217,8 @@ internal static class SharingDialogs
         form.Action(c.T("Aktualisieren", "Refresh"), async () => { await c.RefreshAsync(); Render(); });
         form.AfterOperation = Render;
         PropertyChangedEventHandler changed = (_, _) => Render(); c.PropertyChanged += changed;
-        form.Window.Closed += (_, _) => c.PropertyChanged -= changed;
-        Render(); form.Show();
+        form.Window.Closed += (_, _) => { c.PropertyChanged -= changed; c.ObserveTool("clipboard", false); };
+        c.ObserveTool("clipboard", true); Render(); form.Show();
     }
 
     private static int UTF8Count(string text)

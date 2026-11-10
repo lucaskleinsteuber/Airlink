@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Windows.Threading;
 using System.Globalization;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -12,14 +14,37 @@ using NetSparkleUpdater.Enums;
 
 namespace AirLink.Windows;
 
-/// <summary>Created lazily by an explicit menu action. No update loop, background timer or startup request.</summary>
+/// <summary>Manual installation; optional metadata-only daily checks require a saved opt-in.</summary>
 internal sealed class WindowsUpdater(MainWindow owner, Controller controller) : IDisposable
 {
     private SparkleUpdater? updater;
     private WindowsUpdateFeed? feed;
     private StrictUpdateSignatures? signatures;
     private bool checking;
+    private WindowsUpdateFilter? filter;
+    private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromMinutes(1) };
+    private bool scheduled;
     private readonly List<Window> windows = [];
+
+    public void StartSchedule() {
+        if (scheduled) return; scheduled = true;
+        timer.Tick += async (_, _) => await CheckDailyAsync(); timer.Start();
+    }
+    private async Task CheckDailyAsync() {
+        if (checking || owner.UpdatePrepared || !controller.Ready || !controller.SetupComplete) return;
+        var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AirLink", "last-update-check.txt");
+        DateTimeOffset? last = null;
+        try { if (File.Exists(path) && new FileInfo(path).Length <= 128 && DateTimeOffset.TryParse(File.ReadAllText(path), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed)) last = parsed; }
+        catch (IOException) { return; } catch (UnauthorizedAccessException) { return; }
+        if (!UpdateCheckSchedule.IsDue(controller.Status?.Settings.AutomaticUpdateChecks == true, last, DateTimeOffset.UtcNow)) return;
+        checking = true;
+        try {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.WriteAllText(path, DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+            EnsureUpdater(); await updater!.CheckForUpdatesQuietly();
+            if (filter?.Selected is { } item && controller.Status?.Settings.AutomaticUpdateChecks == true) controller.UpdateAvailable(item.ShortVersion ?? item.Version ?? "");
+        } catch (Exception) { /* Background failure must not interrupt local transfers. */ }
+        finally { checking = false; }
+    }
 
     public async Task CheckAsync()
     {
@@ -48,7 +73,7 @@ internal sealed class WindowsUpdater(MainWindow owner, Controller controller) : 
         var channel = WindowsUpdateChannel.Load(RuntimeInformation.OSArchitecture);
         signatures = new StrictUpdateSignatures(channel.PublicKey);
         feed = new WindowsUpdateFeed(channel.Feed);
-        var filter = new WindowsUpdateFilter(channel.Architecture);
+        filter = new WindowsUpdateFilter(channel.Architecture);
         var ui = new UpdateUI(this)
         {
             HideReleaseNotes = true,
@@ -135,7 +160,7 @@ internal sealed class WindowsUpdater(MainWindow owner, Controller controller) : 
         if (!owner.Dispatcher.CheckAccess()) { owner.Dispatcher.Invoke(ShowUnavailable); return; }
         var message = signatures?.RejectedSignature == true || feed?.Failure == UpdateFeedFailure.InvalidDocument
             ? controller.T("Das Update konnte nicht sicher verifiziert werden. Es wurde nichts installiert. Versuche es später erneut.", "The update could not be verified securely. Nothing was installed. Try again later.")
-            : controller.T("Updates sind derzeit nicht abrufbar. Prüfe die Internetverbindung. Bei einem privaten Repository ist der signierte Update-Feed ohne Anmeldung nicht öffentlich erreichbar; die installierte Version bleibt unverändert.", "Updates are currently unavailable. Check the internet connection. A private repository's signed update feed cannot be accessed publicly without signing in; your installed version is unchanged.");
+            : controller.T("Updates sind derzeit nicht abrufbar. Prüfe die Internetverbindung und versuche es später erneut.", "Updates are currently unavailable. Check the internet connection and try again later.");
         MessageBox.Show(owner, message, controller.T("AirLink-Updates", "AirLink updates"), MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
@@ -145,5 +170,5 @@ internal sealed class WindowsUpdater(MainWindow owner, Controller controller) : 
         public override void ShowDownloadErrorMessage(string message, string? appcastUrl) => updates.ShowUnavailable();
     }
 
-    public void Dispose() { updater?.Dispose(); feed?.Dispose(); }
+    public void Dispose() { timer.Stop(); updater?.Dispose(); feed?.Dispose(); }
 }

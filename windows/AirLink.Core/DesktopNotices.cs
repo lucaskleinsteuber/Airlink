@@ -17,6 +17,8 @@ public sealed class DesktopNoticeTracker
         List<DesktopNotice> notices = [];
         foreach (var request in next.PairRequests)
             if (pairs.Add(request.Id)) notices.Add(new(DesktopNoticeKind.Pairing, request.Id, request.Name, ""));
+        foreach (var request in next.PairingSessions.Where(p => p.CanConfirm))
+            if (pairs.Add("v2:" + request.Id)) notices.Add(new(DesktopNoticeKind.Pairing, request.Id, request.PeerName, ""));
         foreach (var transfer in next.Transfers)
         {
             var prior = previous?.Transfers.FirstOrDefault(t => t.Id == transfer.Id);
@@ -25,7 +27,7 @@ public sealed class DesktopNoticeTracker
             if (transfer.Direction == "receive" && transfer.State == "waitingDuplicate")
                 foreach (var file in transfer.Files.Where(f => f.DuplicateState == "pending"))
                     if (decisions.Add(transfer.Id + ":" + file.Id)) notices.Add(new(DesktopNoticeKind.DuplicateDecision, transfer.Id, transfer.DeviceName, file.Path));
-            if (transfer.Direction == "receive" && transfer.State == "completed" && completed.Add(transfer.Id) && previous is not null && NativeExperience.ReceivedDisplayEntries(transfer).Count > 0)
+            if (transfer.Direction == "receive" && transfer.State == "completed" && completed.Add(transfer.Id) && previous is not null && transfer.HasReceivedContent)
                 notices.Add(new(DesktopNoticeKind.CompletedTransfer, transfer.Id, transfer.DeviceName, transfer.Title));
         }
         foreach (var message in next.Clipboard.Where(m => m.Direction == "receive"))

@@ -16,6 +16,29 @@ internal static class Dialogs
         new PairingWindow(owner, c, seed).ShowDialog();
     }
 
+    public static void TransferDetails(Window owner, Controller c, Transfer transfer)
+    {
+        var form = new Form(owner, transfer.Title, 650);
+        form.Help(c.StateText(transfer.State));
+        var files = new StackPanel(); form.Add(files);
+        var offset = 0; var loading = false;
+        async Task Load() {
+            if (loading || offset < 0) return; loading = true;
+            try {
+                var page = await c.RequestAsync<TransferFilePage>("transfer.files", new { id = transfer.Id, offset, limit = 50 });
+                foreach (var file in page.Files) {
+                    files.Children.Add(Theme.Text(file.Path, 13, true));
+                    files.Children.Add(Theme.Text(c.Bytes(file.Size), 12, secondary: true));
+                    if (file.DuplicateState == "pending") files.Children.Add(Theme.Button(c.T("Duplikat prüfen", "Review duplicate"), () => Duplicate(form.Window, c, transfer, file)));
+                }
+                offset = page.NextOffset;
+            } finally { loading = false; }
+        }
+        form.Action(c.T("Weitere Dateien laden", "Load more files"), async () => { await Load(); return false; });
+        form.Window.Loaded += async (_, _) => await form.Execute(async () => { await Load(); return false; });
+        form.Show();
+    }
+
     public static void Device(Window owner, Controller c, RemoteDevice device)
     {
         var copy = ProtocolJson.Clone(device);
@@ -59,7 +82,7 @@ internal static class Dialogs
         bool Pending()
         {
             var current = c.Status?.Transfers.FirstOrDefault(t => t.Id == transfer.Id);
-            return current?.State == "waitingDuplicate" && current.Files.Any(f => f.Id == file.Id && f.DuplicateState == "pending");
+            return current?.State == "waitingDuplicate";
         }
         async Task Resolve(string action, string? candidate)
         {

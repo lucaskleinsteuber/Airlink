@@ -9,7 +9,7 @@ public sealed class SettingsDraft
     public HostSettings Values { get; private set; }
     public SettingsDraft(HostSettings settings) { baseline = ProtocolJson.Clone(settings); Values = ProtocolJson.Clone(settings); }
     public bool HasChanges => Values.Name != baseline.Name || Values.ReceiveDirectory != baseline.ReceiveDirectory ||
-        Values.Appearance != baseline.Appearance || Values.Language != baseline.Language || Values.Notifications != baseline.Notifications ||
+        Values.Appearance != baseline.Appearance || Values.Language != baseline.Language || Values.Notifications != baseline.Notifications || Values.AutomaticUpdateChecks != baseline.AutomaticUpdateChecks ||
         Values.SendLimitBytesPerSecond != baseline.SendLimitBytesPerSecond || Values.ReceiveLimitBytesPerSecond != baseline.ReceiveLimitBytesPerSecond ||
         Values.Organization.DetectDuplicates != baseline.Organization.DetectDuplicates;
     public void Reset(HostSettings settings) { baseline = ProtocolJson.Clone(settings); Values = ProtocolJson.Clone(settings); }
@@ -21,7 +21,7 @@ public sealed class SettingsDraft
         baseline = ProtocolJson.Clone(latest); Values = rebased; return true;
     }
     private static bool SameDisplayedFields(HostSettings a, HostSettings b) => a.Name == b.Name && a.ReceiveDirectory == b.ReceiveDirectory &&
-        a.Appearance == b.Appearance && a.Language == b.Language && a.Notifications == b.Notifications &&
+        a.Appearance == b.Appearance && a.Language == b.Language && a.Notifications == b.Notifications && a.AutomaticUpdateChecks == b.AutomaticUpdateChecks &&
         a.SendLimitBytesPerSecond == b.SendLimitBytesPerSecond && a.ReceiveLimitBytesPerSecond == b.ReceiveLimitBytesPerSecond &&
         a.Organization.DetectDuplicates == b.Organization.DetectDuplicates && a.Organization.SortEnabled == b.Organization.SortEnabled;
     private HostSettings Merge(HostSettings latest, bool normalizeName)
@@ -32,6 +32,7 @@ public sealed class SettingsDraft
         if (Values.Appearance != baseline.Appearance) result.Appearance = Values.Appearance;
         if (Values.Language != baseline.Language) result.Language = Values.Language;
         if (Values.Notifications != baseline.Notifications) result.Notifications = Values.Notifications;
+        if (Values.AutomaticUpdateChecks != baseline.AutomaticUpdateChecks) result.AutomaticUpdateChecks = Values.AutomaticUpdateChecks;
         if (Values.SendLimitBytesPerSecond != baseline.SendLimitBytesPerSecond) result.SendLimitBytesPerSecond = Values.SendLimitBytesPerSecond;
         if (Values.ReceiveLimitBytesPerSecond != baseline.ReceiveLimitBytesPerSecond) result.ReceiveLimitBytesPerSecond = Values.ReceiveLimitBytesPerSecond;
         if (Values.Organization.DetectDuplicates != baseline.Organization.DetectDuplicates) result.Organization.DetectDuplicates = Values.Organization.DetectDuplicates;

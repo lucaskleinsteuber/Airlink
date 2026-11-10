@@ -56,6 +56,15 @@ internal static class UpdateTests
         var latest = Item("0.11.0", "x64");
         var candidates = filter.GetFilteredAppCastItems(SemVerLike.Parse("0.9.0"), [Item("0.8.1", "x64"), Item("0.12.0", "arm64"), Item("0.10.0", "x64"), latest]).ToArray();
         Require(candidates.Length == 1 && ReferenceEquals(candidates[0], latest), "Update selection accepted a downgrade, another architecture or the wrong newest release");
+        var beta = Item("0.12.0-beta.1", "x64"); beta.Version = "0.12.0.14"; beta.ShortVersion = "0.12.0-beta.1";
+        Require(filter.Accepts(beta), "A signed native beta with numeric OS version was rejected");
+        var beta10 = Item("0.12.0-beta.10", "x64"); beta10.Version = "0.12.0.23"; beta10.ShortVersion = "0.12.0-beta.10";
+        var beta2 = Item("0.12.0-beta.2", "x64"); beta2.Version = "0.12.0.15"; beta2.ShortVersion = "0.12.0-beta.2";
+        var ordered = filter.GetFilteredAppCastItems(SemVerLike.Parse("0.12.0.14"), [beta, beta2, beta10]).Single();
+        Require(ReferenceEquals(ordered, beta10), "Beta ordering used text ordering or offered the installed beta");
+        var stable = Item("0.12.0", "x64"); stable.Version = "0.12.0.24"; stable.ShortVersion = "0.12.0";
+        Require(filter.Accepts(stable) && ReferenceEquals(filter.GetFilteredAppCastItems(SemVerLike.Parse("0.12.0.23"), [beta10, stable]).Single(), stable), "The final version did not replace the last beta");
+        beta.Version = "0.13.0.14"; Require(!filter.Accepts(beta), "The numeric version was not bound to the displayed product version");
         latest.DownloadLink = latest.DownloadLink!.Replace("https://", "http://");
         Require(!filter.Accepts(latest), "An unsigned transport URL was accepted");
         latest = Item("0.11.0", "x64"); latest.DownloadSignature = "";

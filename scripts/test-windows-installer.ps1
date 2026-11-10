@@ -4,7 +4,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$InstallerPath,
     [Parameter(Mandatory = $true)][string]$PayloadPath,
-    [Parameter(Mandatory = $true)][ValidatePattern('^\d+\.\d+\.\d+$')][string]$ExpectedVersion,
+    [Parameter(Mandatory = $true)][ValidatePattern('^\d+\.\d+\.\d+(?:-beta\.[1-9]\d*)?$')][string]$ExpectedVersion,
     [Parameter(Mandatory = $true)][string]$BaselineInstallerPath,
     [Parameter(Mandatory = $true)][string]$BaselinePayloadPath,
     [ValidatePattern('^\d+\.\d+\.\d+$')][string]$BaselineVersion = '0.0.0',
@@ -20,7 +20,7 @@ if ($env:OS -ne 'Windows_NT') {
 if ($env:GITHUB_ACTIONS -ne 'true' -and $env:AIRLINK_ALLOW_INSTALLER_TEST -ne '1') {
     throw 'Use a disposable Windows CI user. Explicit opt-in requires GITHUB_ACTIONS=true or AIRLINK_ALLOW_INSTALLER_TEST=1.'
 }
-if ([Version]$ExpectedVersion -le [Version]$BaselineVersion) {
+if ([Version]($ExpectedVersion.Split('-')[0]) -le [Version]($BaselineVersion.Split('-')[0])) {
     throw 'The release version must be newer than the explicit baseline fixture version.'
 }
 if (-not [Environment]::Is64BitOperatingSystem) {

@@ -5,6 +5,9 @@
   "feeds": {
     "macos": "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/macos.xml",
     "windows-arm64": "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/windows-arm64.xml",
-    "windows-x64": "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/windows-x64.xml"
+    "windows-x64": "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/windows-x64.xml",
+    "macos-arm64": "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/macos-arm64.xml",
+    "macos-x64": "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/macos-x64.xml",
+    "linux-x64": "https://raw.githubusercontent.com/lucaskleinsteuber/Airlink/main/updates/linux-x64.json"
   }
 }

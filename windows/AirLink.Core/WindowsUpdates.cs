@@ -119,7 +119,7 @@ public sealed class WindowsUpdateFeed : IAppCastDataDownloader, IDisposable
 
 public sealed class WindowsUpdateFilter(string architecture) : IAppCastFilter
 {
-    private static readonly Regex ReleaseVersion = new(@"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$", RegexOptions.CultureInvariant);
+    private static readonly Regex ReleaseVersion = new(@"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-beta\.([1-9][0-9]*))?$", RegexOptions.CultureInvariant);
     public AppCastItem? Selected { get; private set; }
     public IEnumerable<AppCastItem> GetFilteredAppCastItems(SemVerLike installed, IEnumerable<AppCastItem> items)
     {
@@ -128,9 +128,12 @@ public sealed class WindowsUpdateFilter(string architecture) : IAppCastFilter
     }
     public bool Accepts(AppCastItem item)
     {
-        if (architecture is not ("x64" or "arm64") || item.Version is null || !ReleaseVersion.IsMatch(item.Version) || !System.Version.TryParse(item.Version, out _)) return false;
-        if (item.OperatingSystem != "windows" || item.UpdateSize <= 0 || item.UpdateSize > 1024L * 1024 * 1024 || !StrictUpdateSignatures.IsBase64(item.DownloadSignature ?? "", 64)) return false;
-        var expected = "https://github.com/lucaskleinsteuber/Airlink/releases/download/v" + item.Version + "/AirLink-" + item.Version + "-windows-" + architecture + "-setup.exe";
+        var display = string.IsNullOrEmpty(item.ShortVersion) ? item.Version : item.ShortVersion;
+        if (architecture is not ("x64" or "arm64") || display is null || !ReleaseVersion.IsMatch(display) || !System.Version.TryParse(item.Version, out var numeric) || !System.Version.TryParse(display.Split('-')[0], out var product)) return false;
+        if (numeric.Major != product.Major || numeric.Minor != product.Minor || numeric.Build != product.Build) return false;
+        if (display.Contains("-beta.", StringComparison.Ordinal) && numeric.Revision < 1) return false;
+        if (item.OperatingSystem != "windows" || item.UpdateSize <= 0 || item.UpdateSize > 512L * 1024 * 1024 || !StrictUpdateSignatures.IsBase64(item.DownloadSignature ?? "", 64)) return false;
+        var expected = "https://github.com/lucaskleinsteuber/Airlink/releases/download/v" + display + "/AirLink-" + display + "-windows-" + architecture + "-setup.exe";
         return item.DownloadLink == expected;
     }
 }

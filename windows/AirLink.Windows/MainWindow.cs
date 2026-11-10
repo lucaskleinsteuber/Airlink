@@ -30,7 +30,7 @@ internal sealed class MainWindow : Window
     private TextBlock host = null!, target = null!, targetDetail = null!, service = null!, notice = null!, error = null!, empty = null!, dropTitle = null!, selectionTitle = null!, receivePath = null!, recentTitle = null!;
     private Border dropArea = null!, hero = null!, welcome = null!, trustedCard = null!;
     private CheckBox automaticReceive = null!;
-    private Button cleanHistory = null!;
+    private Button cleanHistory = null!, moreHistory = null!;
     private bool savingTrust;
     private string? savingTrustDevice;
     private bool savingTrustValue;
@@ -63,7 +63,7 @@ internal sealed class MainWindow : Window
         Closing += (_, e) => { if (!quitting) { e.Cancel = true; Hide(); } };
         Closed += (_, _) => updater.Dispose();
         Loaded += async (_, _) => { await c.StartAsync(); _ = c.PollAsync(); if (c.SetupRequired) OpenSetup(); };
-        Build(); Render();
+        Build(); Render(); updater.StartSchedule();
     }
     private IntPtr WindowMessage(IntPtr window, int message, IntPtr w, IntPtr l, ref bool handled)
     {
@@ -152,6 +152,7 @@ internal sealed class MainWindow : Window
     {
         var entering = next == Page.Settings && page != Page.Settings;
         page = next;
+        if (next == Page.Transfers) _ = c.RunAsync(() => c.LoadHistoryAsync());
         if (entering && settingsPage is SettingsPage editor) editor.Enter();
         Render();
     }
@@ -261,11 +262,12 @@ internal sealed class MainWindow : Window
         cleanHistory.Margin = new Thickness(12, 0, 0, 0); cleanHistory.FontSize = 12; DockPanel.SetDock(cleanHistory, Dock.Right); recentHeader.Children.Add(cleanHistory);
         recentTitle = Theme.Text(c.T("Zuletzt", "Recent"), 15, true); recentTitle.VerticalAlignment = VerticalAlignment.Center; recentHeader.Children.Add(recentTitle); queue.Children.Add(recentHeader);
         recent = new StackPanel(); queue.Children.Add(recent);
+        moreHistory = Theme.Button(c.T("Weitere 50 laden", "Load 50 more"), () => _ = c.RunAsync(() => c.LoadHistoryAsync(true))); body.Children.Add(moreHistory);
         return new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
     }
     private void RemoveFinishedHistory()
     {
-        var captured = (c.Status?.Transfers ?? []).Where(NativeExperience.CanRemoveFromHistory).Select(ProtocolJson.Clone).ToArray();
+        var captured = c.History.Where(NativeExperience.CanRemoveFromHistory).Select(ProtocolJson.Clone).ToArray();
         if (!c.Ready || c.RemovingHistory || captured.Length == 0) return;
         if (MessageBox.Show(this,
             c.T($"{captured.Length} fertige Einträge aus der Liste entfernen? Dazu gehören auch ältere Einträge. Gesendete und empfangene Dateien bleiben erhalten. Laufende Übertragungen werden nicht entfernt.",
@@ -337,6 +339,10 @@ internal sealed class MainWindow : Window
             dropTitle.Text = canSend ? c.T("An ", "Send to ") + selected!.Name + c.T(" senden", "") : c.T("Dateien zum Senden ablegen", "Drop files to send");
             pickFiles.IsEnabled = pickFolder.IsEnabled = c.Ready && c.SetupComplete && !c.Sending;
             receivePath.Text = c.T("Empfang: ", "Received files: ") + (c.Status?.Settings.ReceiveDirectory ?? ""); receivePath.ToolTip = c.Status?.Settings.ReceiveDirectory;
+            if (c.ActivePreparationId is { } preparationId && !pairRows.ContainsKey("preparation")) {
+                var card = Theme.Card(Theme.Button(c.T("Vorbereitung abbrechen", "Cancel preparation"), () => _ = c.RunAsync(() => c.CommandAsync("preparation.cancel", preparationId))));
+                pairRows.Add("preparation", card); requests.Children.Add(card);
+            }
             send.IsEnabled = c.Ready && c.SetupComplete && !c.Sending && c.Selection.Count > 0 && canSend; send.Content = c.Sending ? c.T("Wird vorbereitet …", "Preparing …") : canSend ? c.T("An ", "Send to ") + selected!.Name + c.T(" senden", "") : c.T("Senden", "Send");
             selectionTitle.Visibility = selection.Visibility = send.Visibility = clear.Visibility = c.Selection.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             var selectionKey = string.Join('|', c.Selection.Select(i => i.Id));
@@ -349,21 +355,29 @@ internal sealed class MainWindow : Window
                     var text = Theme.Text(entry.Title, 13); text.ToolTip = entry.Path; line.Children.Add(text); selection.Items.Add(line);
                 }
             }
-            var pending = c.Status?.PairRequests ?? [];
-            foreach (var gone in pairRows.Keys.Where(id => pending.All(p => p.Id != id)).ToArray()) { requests.Children.Remove(pairRows[gone]); pairRows.Remove(gone); }
+            var codes = (c.Status?.PairingSessions ?? []).Where(p => p.CanConfirm || p.LocalConfirmed && p.State is "comparing" or "finishing").ToArray();
+            var pending = (c.Status?.PairRequests ?? []).Concat(codes.Select(p => new PairRequest { Id = "v2:" + p.Id, Name = p.PeerName })).ToArray();
+            foreach (var gone in pairRows.Keys.Where(id => pending.All(p => p.Id != id) && (id != "preparation" || c.ActivePreparationId is null)).ToArray()) { requests.Children.Remove(pairRows[gone]); pairRows.Remove(gone); }
             foreach (var request in pending.Where(p => !pairRows.ContainsKey(p.Id)))
             {
                 var body = new StackPanel(); body.Children.Add(Theme.Text(request.Name + c.T(" möchte sich verbinden", " wants to connect"), 16, true));
+                if (request.Id.StartsWith("v2:", StringComparison.Ordinal)) {
+                    body.Children.Add(Theme.Button(c.T("Vergleichscode öffnen", "Open comparison code"), () => new CodePairingWindow(this, c, request.Id[3..]).ShowDialog()));
+                    var codeCard = Theme.Card(body); pairRows.Add(request.Id, codeCard); requests.Children.Add(codeCard); continue;
+                }
                 body.Children.Add(Theme.Text(c.T("Bestätige nur eine Anfrage, die du selbst auf deinem anderen Gerät gestartet hast.", "Approve only a request you started on your other device."), 12, secondary: true));
                 var trust = new CheckBox { Content = c.T("Von diesem Gerät künftig automatisch empfangen", "Automatically receive from this device in future") }; body.Children.Add(trust);
                 body.Children.Add(Wrap(Action(c.T("Verbinden", "Connect"), () => c.CommandAsync(trust.IsChecked == true ? "pair.approveTrusted" : "pair.approve", request.Id), true), Action(c.T("Ablehnen", "Decline"), () => c.CommandAsync("pair.deny", request.Id))));
                 var card = Theme.Card(body); card.Margin = new Thickness(0, 0, 0, 16); pairRows.Add(request.Id, card); requests.Children.Add(card);
             }
-            var all = c.Status?.Transfers ?? []; var terminal = NativeExperience.RecentTransfers(all, page == Page.Transfers ? 50 : 3); var jobs = all.Where(t => t.IsActive).OrderByDescending(t => t.CreatedAt).Concat(terminal).ToArray();
-            empty.Visibility = jobs.Any(t => t.IsActive) ? Visibility.Collapsed : Visibility.Visible; recentTitle.Visibility = terminal.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            var all = page == Page.Transfers ? DesktopTransferSelection.MergeHistory(c.History, c.Status?.Transfers ?? []) : DesktopTransferSelection.ForDevice(c.Status?.Transfers ?? [], c.SelectedDeviceId).ToList();
+            var terminal = all.Where(t => !t.IsActive).OrderByDescending(t => t.UpdatedAt).ToArray(); var jobs = all.Where(t => t.IsActive).OrderByDescending(t => t.CreatedAt).Concat(terminal).ToArray();
+            moreHistory.Visibility = page == Page.Transfers && c.HistoryCursor is not null ? Visibility.Visible : Visibility.Collapsed;
+            moreHistory.IsEnabled = !c.HistoryLoading;
+            empty.Visibility = jobs.Any(t => t.IsActive) ? Visibility.Collapsed : Visibility.Visible; recentTitle.Visibility = terminal.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
             cleanHistory.Visibility = all.Any(NativeExperience.CanRemoveFromHistory) ? Visibility.Visible : Visibility.Collapsed;
             cleanHistory.IsEnabled = c.Ready && !c.RemovingHistory;
-            recentTitle.Text = c.T("Zuletzt", "Recent") + (page == Page.Transfers && all.Count(t => !t.IsActive) > terminal.Count ? " · " + terminal.Count + c.T(" von ", " of ") + all.Count(t => !t.IsActive) : "");
+            recentTitle.Text = c.T("Zuletzt", "Recent") + (page == Page.Transfers && all.Count(t => !t.IsActive) > terminal.Length ? " · " + terminal.Length + c.T(" von ", " of ") + all.Count(t => !t.IsActive) : "");
             foreach (var gone in transferRows.Keys.Where(id => jobs.All(t => t.Id != id)).ToArray()) { transfers.Children.Remove(transferRows[gone]); recent.Children.Remove(transferRows[gone]); transferRows.Remove(gone); }
             int activeAt = 0, recentAt = 0;
             foreach (var job in jobs)

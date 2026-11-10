@@ -4,6 +4,7 @@
 #include "updates.h"
 #include <QMainWindow>
 #include <QNetworkAccessManager>
+#include <QPalette>
 #include <QPointer>
 #include <QSet>
 #include <QSystemTrayIcon>
@@ -33,6 +34,11 @@ private:
   QSystemTrayIcon tray;
   QNetworkAccessManager network;
   SettingsDraft draft;
+  QPalette systemPalette;
+  QString appliedAppearance;
+  bool appliedEnglish = false;
+  void applyPresentation();
+  void rebuildTrayMenu();
   SourceSelection selection;
   QString selected, activePreparation, historyCursor, helperPath;
   QStringList submittedIdentities;

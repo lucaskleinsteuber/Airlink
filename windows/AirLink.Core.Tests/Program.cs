@@ -18,6 +18,7 @@ internal static class Program
         if (arguments.Length > 0 && arguments[0] == "--inspect-native") return NativePackageInspection.Run(arguments);
         if (arguments.Length == 4 && arguments[0] == "--verify-update-release") return UpdateTests.VerifyRelease(arguments[1], arguments[2], arguments[3]);
         (string Name, Func<Task> Run)[] cases = [
+            ("compact desktop models preserve code identity, settings drafts and active history", DesktopProtocolTests.Run),
             ("settings preserve existing permissions and unknown additive fields", SettingsRoundTrip),
             ("setup is explicit and preserves custom destinations", SetupTests.ExplicitDefaults),
             ("settings edits merge only changed fields into the newest snapshot", SettingsDraftTests.MergeOnlyEditedFields),
@@ -475,7 +476,7 @@ internal static class Program
         await using var fixture = new Fixture(); await using var client = new DaemonClient(new DaemonClientOptions { DisableDiscovery = true });
         await client.StartAsync(Path.GetFullPath(helper), fixture.Data, fixture.Received);
         var before = await client.RequestAsync<HostStatus>("status");
-        var expectedVersion = Environment.GetEnvironmentVariable("AIRLINK_TEST_VERSION") ?? "0.11.0";
+        var expectedVersion = Environment.GetEnvironmentVariable("AIRLINK_TEST_VERSION") ?? "0.12.0-beta.1";
         Require(before.Version == expectedVersion && before.Fingerprint.Length == 64 && before.ChunkSize == 8 * 1024 * 1024, "Unexpected service contract/version");
         var settings = ProtocolJson.Clone(before.Settings);
         settings.Appearance = "dark"; settings.Language = "en"; settings.Notifications = false;

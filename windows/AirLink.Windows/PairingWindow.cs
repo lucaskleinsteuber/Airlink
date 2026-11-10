@@ -72,7 +72,19 @@ internal sealed class PairingWindow : Window
         step = step == Step.Compare && manuallyEntered ? Step.Manual : Step.Choose;
         Render();
     }
-    private void Choose(Device device)
+    private async void Choose(Device device)
+    {
+        if (busy) return;
+        busy = true; UpdateButtons();
+        try {
+            var session = await c.StartPairingAsync(device.Address ?? "");
+            new CodePairingWindow(IsVisible ? this : Owner!, c, session.Id).ShowDialog();
+            busy = false;
+            if (c.Status?.Devices.Any(d => d.Id == session.PeerId && d.Paired) == true) Close();
+        } catch (Exception e) { error.Text = e.Message + c.T(" Nutze bei einer älteren App den manuellen Fingerabdruck-Vergleich.", " For an older app, use the manual fingerprint comparison."); }
+        finally { busy = false; UpdateButtons(); }
+    }
+    private void ChooseLegacy(Device device)
     {
         draft = new ConnectionDraft(device.Address ?? "", device.Fingerprint ?? ""); peerName = device.Name;
         manuallyEntered = !draft.IsValid; verification.Reset(); step = draft.IsValid ? Step.Compare : Step.Manual; error.Text = ""; Render();

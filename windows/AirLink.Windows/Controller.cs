@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -49,6 +50,13 @@ internal sealed class Controller : INotifyPropertyChanged
     }
     public bool Sending => draft.IsSending;
     public bool RemovingHistory { get; private set; }
+    public string? ActivePreparationId { get; private set; }
+    public List<Transfer> History { get; private set; } = [];
+    public string? HistoryCursor { get; private set; }
+    public bool HistoryLoading { get; private set; }
+    private long historyGeneration;
+    private long toolGeneration;
+    private readonly HashSet<string> observedTools = [];
     public string? Error => actionError ?? serviceError;
     public bool HasActionError => actionError is not null;
     public string? Notice { get; private set; }
@@ -63,7 +71,7 @@ internal sealed class Controller : INotifyPropertyChanged
     public string DataDirectory => Path.Combine(Environment.GetEnvironmentVariable("APPDATA") ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AirLink");
     public Device? SelectedDevice => Status?.Devices.FirstOrDefault(d => d.Id == SelectedDeviceId);
     public int ActiveCount => (Status?.Transfers.Count(t => t.IsActive) ?? 0) + (Status?.Relays.Count(r => r.State is not ("delivered" or "cancelled" or "failed")) ?? 0);
-    public string Version => Status?.Version ?? "0.11.0";
+    public string Version => Status?.Version ?? "0.12.0-beta.1";
 
     public Controller(Dispatcher dispatcher)
     {
@@ -99,7 +107,7 @@ internal sealed class Controller : INotifyPropertyChanged
     private static async Task<string> ExtractHelperAsync()
     {
         var assembly = Assembly.GetExecutingAssembly();
-        var version = assembly.GetName().Version?.ToString(3) ?? "0.11.0";
+        var version = assembly.GetName().Version?.ToString(4) ?? "0.12.0-beta.1";
         var cache = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AirLink", "Runtime", version,
             RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant());
         Stream Open() => assembly.GetManifestResourceStream("AirLink.Windows.Helper") ?? throw new FileNotFoundException("The bundled AirLink service is missing. Download the complete app.");
@@ -114,7 +122,7 @@ internal sealed class Controller : INotifyPropertyChanged
         try
         {
             while (await timer.WaitForNextTickAsync(lifetime.Token))
-                if (client.IsRunning && !starting && !stopping) await RefreshAsync();
+                if (client.IsRunning && !starting && !stopping) { await RefreshAsync(); await RunAsync(RefreshToolsAsync); }
         }
         catch (OperationCanceledException) { }
     }
@@ -126,9 +134,11 @@ internal sealed class Controller : INotifyPropertyChanged
         if (ticket is null) return;
         try
         {
-            var next = await client.RequestAsync<HostStatus>("status", ct: lifetime.Token);
+            var next = await client.RequestAsync<HostStatus>("status.summary", ct: lifetime.Token);
             if (!refreshes.IsCurrent(ticket.Value)) return;
+            if (Status is { } previous) { next.Shares = previous.Shares; next.Statistics = previous.Statistics; if (observedTools.Contains("clipboard")) next.Clipboard = previous.Clipboard; }
             Status = next; Ready = true; serviceError = null;
+            History = DesktopTransferSelection.MergeHistory(History, next.Transfers);
             draft.RefreshDevices(next.Devices);
             if (pendingPeerFingerprint is not null && next.Devices.FirstOrDefault(d => d.Paired && d.Kind == "engine" && string.Equals(d.Fingerprint, pendingPeerFingerprint, StringComparison.OrdinalIgnoreCase)) is { } paired)
             {
@@ -194,18 +204,26 @@ internal sealed class Controller : INotifyPropertyChanged
     public async Task<T> RequestAsync<T>(string method, object? parameters = null)
     {
         RequireReady();
-        return await client.RequestAsync<T>(method, parameters, lifetime.Token);
+        var mutating = IsToolMutation(method); if (mutating) toolGeneration++;
+        try { return await client.RequestAsync<T>(method, parameters, lifetime.Token); }
+        finally { if (mutating) toolGeneration++; }
     }
     public async Task<System.Text.Json.JsonElement> RequestAsync(string method, object? parameters = null)
     {
         RequireReady();
-        return await client.RequestAsync(method, parameters, lifetime.Token);
+        var mutating = IsToolMutation(method); if (mutating) toolGeneration++;
+        try { return await client.RequestAsync(method, parameters, lifetime.Token); }
+        finally { if (mutating) toolGeneration++; }
     }
+
+    private static bool IsToolMutation(string method) => method is "share.create" or "share.revoke" or "clipboard.send" or "clipboard.dismiss";
 
     public async Task CommandAsync(string method, string id)
     {
         RequireReady();
+        toolGeneration++; historyGeneration++;
         await client.RequestAsync(method, new { id }, lifetime.Token);
+        if (method == "history.remove") History.RemoveAll(t => t.Id == id);
         await RefreshAsync(force: true);
     }
 
@@ -219,7 +237,8 @@ internal sealed class Controller : INotifyPropertyChanged
         var removed = 0;
         try
         {
-            removed = await plan.ExecuteAsync(() => Status?.Transfers ?? [], async id => { await client.RequestAsync("history.remove", new { id }, lifetime.Token); }, lifetime.Token);
+            historyGeneration++;
+            removed = await plan.ExecuteAsync(() => DesktopTransferSelection.MergeHistory(History, Status?.Transfers ?? []), async id => { await client.RequestAsync("history.remove", new { id }, lifetime.Token); History.RemoveAll(t => t.Id == id); }, lifetime.Token);
             Notice = removed == 1 ? T("Eintrag entfernt. Deine Dateien bleiben erhalten.", "Entry removed. Your files are preserved.") :
                 T($"{removed} Einträge entfernt. Deine Dateien bleiben erhalten.", $"{removed} entries removed. Your files are preserved.");
         }
@@ -230,6 +249,34 @@ internal sealed class Controller : INotifyPropertyChanged
         }
         finally { await RefreshAsync(force: true); RemovingHistory = false; Changed(); }
     }
+
+    public void ObserveTool(string name, bool active) { toolGeneration++; if (active) { observedTools.Add(name); _ = RunAsync(RefreshToolsAsync); } else observedTools.Remove(name); }
+    public async Task RefreshToolsAsync() {
+        if (!Ready) return;
+        var revision = ++toolGeneration;
+        foreach (var name in observedTools.ToArray()) {
+            var method = name == "shares" ? "share.list" : name == "clipboard" ? "clipboard.list" : "statistics.get";
+            var data = await client.RequestAsync(method, ct: lifetime.Token);
+            if (revision != toolGeneration || !observedTools.Contains(name) || Status is null) continue;
+            if (name == "shares") Status.Shares = data.Deserialize<List<Share>>(ProtocolJson.Options) ?? [];
+            else if (name == "clipboard") Status.Clipboard = data.Deserialize<List<ClipboardMessage>>(ProtocolJson.Options) ?? [];
+            else Status.Statistics = data.Deserialize<Statistics>(ProtocolJson.Options) ?? new();
+            Changed();
+        }
+    }
+    public async Task LoadHistoryAsync(bool more = false) {
+        if (HistoryLoading) return;
+        HistoryLoading = true; var generation = ++historyGeneration; Changed();
+        try {
+            var page = await RequestAsync<TransferPage>("history.page", new { limit = 50, cursor = more ? HistoryCursor : null });
+            if (generation != historyGeneration) return;
+            History = DesktopTransferSelection.MergeHistory((more ? History : []).Concat(page.Transfers).DistinctBy(t => t.Id), Status?.Transfers ?? []);
+            HistoryCursor = page.NextCursor;
+        } finally { HistoryLoading = false; Changed(); }
+    }
+    public Task<PairingSession> StartPairingAsync(string url) => RequestAsync<PairingSession>("pairing.start", new { url });
+    public async Task ConfirmPairingAsync(string id, bool automaticReceive) { await RequestAsync("pairing.confirm", new { id, automaticReceive }); await RefreshAsync(true); }
+    public void UpdateAvailable(string version) { Notice = T("Neue Beta verfügbar: ", "New beta available: ") + version + T(" · Einstellungen → Updates", " · Settings → Updates"); Changed(); }
 
     public async Task SetAutomaticReceiveAsync(string deviceId, bool automatic)
     {
@@ -299,13 +346,19 @@ internal sealed class Controller : INotifyPropertyChanged
         Changed();
         try
         {
-            await client.RequestAsync<Transfer>("offer", new { deviceId = submitted.DeviceId, paths = submitted.Paths, requestId = submitted.Token.ToString("N") }, lifetime.Token);
+            var job = await client.RequestAsync<Preparation>("preparation.start", new { deviceId = submitted.DeviceId, paths = submitted.Paths, requestId = submitted.Token.ToString("N") }, lifetime.Token);
+            ActivePreparationId = job.Id; Changed();
+            while (job.State == "preparing") {
+                await Task.Delay(150, lifetime.Token);
+                job = await client.RequestAsync<Preparation>("preparation.status", new { id = job.Id }, lifetime.Token);
+            }
+            if (job.State != "completed") throw new IOException(job.Error ?? T("Vorbereitung abgebrochen. Deine Auswahl bleibt erhalten.", "Preparation cancelled. Your selection is preserved."));
             draft.FinishSuccess(submitted);
             Notice = T("Übertragung angelegt.", "Transfer created.");
             await RefreshAsync(force: true);
         }
         catch { draft.Fail(submitted); throw; }
-        finally { Changed(); }
+        finally { ActivePreparationId = null; Changed(); }
     }
 
     public async Task<HostSettings> SaveSettingsAsync(HostSettings settings)
@@ -315,13 +368,14 @@ internal sealed class Controller : INotifyPropertyChanged
         await RefreshAsync(force: true);
         return saved;
     }
-    public async Task CompleteSetupAsync(string name, string folder, bool? notifications = null)
+    public async Task CompleteSetupAsync(string name, string folder, bool? notifications = null, bool? automaticUpdateChecks = null)
     {
         RequireReady();
         try { name = SetupDefaults.NormalizeName(name); }
         catch (ArgumentException) { throw new ArgumentException(T("Bitte einen Gerätenamen mit höchstens 120 UTF-8 Bytes ohne Steuerzeichen eingeben.", "Enter a device name of at most 120 UTF-8 bytes without control characters.")); }
         if (!Path.IsPathFullyQualified(folder.Trim())) throw new ArgumentException(T("Bitte einen vollständigen Empfangsordner wählen.", "Choose an absolute receive folder."));
         var settings = SetupDefaults.Complete(Status!.Settings, name, folder, notifications);
+        if (automaticUpdateChecks is not null) settings.AutomaticUpdateChecks = automaticUpdateChecks.Value;
         await SaveSettingsAsync(settings);
     }
 

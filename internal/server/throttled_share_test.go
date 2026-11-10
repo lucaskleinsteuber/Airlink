@@ -19,11 +19,11 @@ func TestThrottledSharesRecheckExpiryAndRevocationAfterWaiting(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			s := integrationHost(t)
 			original := filepath.Join(t.TempDir(), "private.bin")
-			data := bytes.Repeat([]byte("PRIVATE!"), 1024)
+			data := bytes.Repeat([]byte("PRIVATE!"), 4096)
 			_ = os.WriteFile(original, data, 0600)
 			input := model.ShareCreate{Paths: []string{original}}
 			if mode == "expiry" {
-				input.ExpiresAt = time.Now().Add(200 * time.Millisecond).UTC().Format(time.RFC3339Nano)
+				input.ExpiresAt = time.Now().Add(10 * time.Second).UTC().Format(time.RFC3339Nano)
 			}
 			share, err := s.createShare("local", input)
 			if err != nil {
@@ -34,11 +34,13 @@ func TestThrottledSharesRecheckExpiryAndRevocationAfterWaiting(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_ = s.traffic.SetLimits(8192, 0)
+			_ = s.traffic.SetLimits(2048, 0)
 			if mode == "revocation" {
 				go func() { time.Sleep(100 * time.Millisecond); _ = s.shares.Revoke(share.ID, "local") }()
 			}
-			req, _ := http.NewRequest(http.MethodGet, hostURL(s)+"/api/v1/public/shares/"+share.ID+"/files/"+share.Files[0].ID, nil)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			req, _ := http.NewRequestWithContext(ctx, http.MethodGet, hostURL(s)+"/api/v1/public/shares/"+share.ID+"/files/"+share.Files[0].ID, nil)
 			req.AddCookie(&http.Cookie{Name: shareCookieName(share.ID), Value: token})
 			res, err := pinnedClient(s.fingerprint).Do(req)
 			if err != nil {

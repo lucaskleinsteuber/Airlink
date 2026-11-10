@@ -3,8 +3,7 @@ import Combine
 import AirLinkCore
 import Sparkle
 
-/// The updater is created and started only after an explicit menu action.
-/// Local transfer startup does not initialize an update session or use a feed.
+/// Manual installation with optional daily checks after a saved user opt-in.
 @MainActor final class AirLinkUpdater: NSObject, ObservableObject, SPUUpdaterDelegate {
     static let shared = AirLinkUpdater()
     @Published private(set) var canCheckForUpdates = true

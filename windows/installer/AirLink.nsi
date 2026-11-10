@@ -43,13 +43,16 @@ InstallDir "$LOCALAPPDATA\Programs\AirLink"
 BrandingText "AirLink"
 Icon "${AIRLINK_ICON}"
 UninstallIcon "${AIRLINK_ICON}"
-VIProductVersion "${AIRLINK_VERSION}.0"
+!ifndef AIRLINK_NUMERIC_VERSION
+  !define AIRLINK_NUMERIC_VERSION "${AIRLINK_VERSION}.0"
+!endif
+VIProductVersion "${AIRLINK_NUMERIC_VERSION}"
 VIAddVersionKey "ProductName" "AirLink"
 VIAddVersionKey "FileDescription" "AirLink per-user setup"
 VIAddVersionKey "FileVersion" "${AIRLINK_VERSION}"
 VIAddVersionKey "ProductVersion" "${AIRLINK_VERSION}"
-VIAddVersionKey "CompanyName" "lucasfd3"
-VIAddVersionKey "LegalCopyright" "Copyright (c) 2026 lucasfd3"
+VIAddVersionKey "CompanyName" "Lucas Kleinsteuber"
+VIAddVersionKey "LegalCopyright" "Copyright (c) 2026 Lucas Kleinsteuber"
 
 Var DesktopMutex
 Var StagedPayload

@@ -3,14 +3,15 @@
 <plist version="1.0"><dict>
   <key>CFBundleName</key><string>AirLink</string>
   <key>CFBundleDisplayName</key><string>AirLink</string>
-  <key>NSHumanReadableCopyright</key><string>Copyright © 2026 lucasfd3</string>
+  <key>NSHumanReadableCopyright</key><string>Copyright © 2026 Lucas Kleinsteuber</string>
   <key>CFBundleIdentifier</key><string>com.lucasfd3.airlink</string>
   <key>CFBundleExecutable</key><string>AirLink</string>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleLocalizations</key><array><string>de</string><string>en</string></array>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.11.0</string>
-  <key>CFBundleVersion</key><string>13</string>
+  <key>CFBundleShortVersionString</key><string>0.12.0</string>
+  <key>AirLinkDisplayVersion</key><string>0.12.0-beta.1</string>
+  <key>CFBundleVersion</key><string>14</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>NSHighResolutionCapable</key><true/>

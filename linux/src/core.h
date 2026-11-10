@@ -36,6 +36,7 @@ QString transferTitle(const QJsonObject &transfer);
 QString stateLabel(const QString &state, bool english);
 QJsonArray visibleTransfers(const QJsonArray &transfers, const QString &device,
                             int recent = 3);
+QJsonArray mergeHistory(const QJsonArray &history, const QJsonArray &summary);
 QJsonArray sortedDevices(const QJsonArray &devices, bool paired);
 QJsonObject sendBatch(const QJsonObject &device, const QStringList &paths,
                       const QString &requestId = {});

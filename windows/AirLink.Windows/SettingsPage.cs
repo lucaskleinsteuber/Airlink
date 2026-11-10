@@ -41,7 +41,7 @@ internal sealed class SettingsPage : Grid
     private Button save = null!, discard = null!;
     private TextBox? nameInput, folderInput, sendInput, receiveInput;
     private ComboBox? appearanceInput, languageInput;
-    private CheckBox? notificationsInput, duplicatesInput;
+    private CheckBox? notificationsInput, duplicatesInput, updatesInput;
     private TextBlock? sortingHelp;
     private bool applying;
 
@@ -72,6 +72,7 @@ internal sealed class SettingsPage : Grid
             if (appearanceInput is not null) appearanceInput.SelectedIndex = Math.Max(0, Array.IndexOf(new[] { "system", "light", "dark" }, values.Appearance));
             if (languageInput is not null) languageInput.SelectedIndex = Math.Max(0, Array.IndexOf(new[] { "system", "de", "en" }, values.Language));
             if (notificationsInput is not null) notificationsInput.IsChecked = values.Notifications;
+            if (updatesInput is not null) updatesInput.IsChecked = values.AutomaticUpdateChecks;
             if (duplicatesInput is not null) duplicatesInput.IsChecked = values.Organization.DetectDuplicates;
             if (SettingsDraft.TryParseLimit(state.SendLimit, out var send) && send != values.SendLimitBytesPerSecond)
             {
@@ -106,6 +107,7 @@ internal sealed class SettingsPage : Grid
             AddCategory(c.T("Allgemein", "General"), General());
             AddCategory(c.T("Empfangen", "Receiving"), Receiving());
             AddCategory(c.T("Übertragung", "Transfers"), Transfers());
+            AddCategory(c.T("Updates", "Updates"), Updates());
             AddCategory(c.T("Info", "About"), About());
             SelectCategory(Math.Clamp(state.Category, 0, sections.Count - 1));
         }
@@ -202,14 +204,19 @@ internal sealed class SettingsPage : Grid
     private string SortingDescription(bool enabled) => enabled
         ? c.T("Deine Sortierregeln sind aktiv und bleiben erhalten. Den Regeleditor findest du in der Weboberfläche.", "Your sorting rules are active and preserved. The rule editor is available in the web interface.")
         : c.T("Automatische Sortierung ist ausgeschaltet. Sortierregeln können in der Weboberfläche eingerichtet werden.", "Automatic sorting is off. Sorting rules can be configured in the web interface.");
+    private FrameworkElement Updates()
+    {
+        var panel = Section(c.T("Updates", "Updates"), c.T("Neue Betas prüfen und bewusst installieren.", "Check for new betas and choose when to install."));
+        updatesInput = Toggle(panel, c.T("Über neue Betas informieren", "Notify me about new betas"), state.Draft!.Values.AutomaticUpdateChecks, value => state.Draft!.Values.AutomaticUpdateChecks = value);
+        panel.Children.Add(Theme.Text(c.T("Optional, höchstens einmal in 24 Stunden. Download und Installation starten erst auf Klick. Diese Auswahl wird mit Speichern übernommen.", "Optional, at most once in 24 hours. Downloads and installation start only on click. Save applies this choice."), 12, secondary: true));
+        var check = Theme.Button(c.T("Jetzt nach Updates suchen …", "Check for updates now …"), () => _ = owner.CheckForUpdatesAsync()); panel.Children.Add(check);
+        return panel;
+    }
     private FrameworkElement About()
     {
         var panel = Section("AirLink " + c.Version, c.T("Dateien im lokalen Netzwerk teilen.", "Share files on your local network."));
-        panel.Children.Add(Theme.Text(c.T("Private Entwicklungsversion", "Private development build"), 16, true));
-        panel.Children.Add(Theme.Text(c.T("Neue Versionen lädst du angemeldet aus den privaten GitHub-Releases herunter und installierst sie selbst.", "Download new versions from the private GitHub releases while signed in, then install them manually."), 13, secondary: true));
-        var releases = Theme.Button(c.T("Downloads auf GitHub öffnen", "Open GitHub downloads"), () => _ = c.RunAsync(() => { Shell.OpenUrl("https://github.com/lucaskleinsteuber/Airlink/releases"); return System.Threading.Tasks.Task.CompletedTask; })); releases.HorizontalAlignment = HorizontalAlignment.Left; releases.Margin = new Thickness(0, 16, 0, 8); panel.Children.Add(releases);
-        var check = Theme.Button(c.T("Nach Updates suchen …", "Check for updates …"), () => _ = owner.CheckForUpdatesAsync()); check.HorizontalAlignment = HorizontalAlignment.Left; panel.Children.Add(check);
-        panel.Children.Add(Theme.Text(c.T("Die Prüfung startet nur auf Anfrage. Der private GitHub-Feed kann ohne Anmeldung von der App nicht abgerufen werden.", "The check starts only on request. The app cannot access the private GitHub feed without authentication."), 12, secondary: true));
+        panel.Children.Add(Theme.Text("Beta · MIT · Copyright © 2026 Lucas Kleinsteuber", 13, secondary: true));
+        var releases = Theme.Button(c.T("Downloads auf GitHub öffnen", "Open GitHub downloads"), () => _ = c.RunAsync(() => { Shell.OpenUrl("https://github.com/lucaskleinsteuber/Airlink/releases"); return System.Threading.Tasks.Task.CompletedTask; })); panel.Children.Add(releases);
         var licenses = Theme.Button(c.T("Lizenzen", "Licenses"), () => NativeLicenses.Show(owner, c)); licenses.HorizontalAlignment = HorizontalAlignment.Left; licenses.Margin = new Thickness(0, 20, 0, 0); panel.Children.Add(licenses);
         return panel;
     }
@@ -218,7 +225,7 @@ internal sealed class SettingsPage : Grid
     {
         if (save is null) return;
         content.IsEnabled = !state.Saving; categoryBar.IsEnabled = !state.Saving;
-        for (var i = 0; i < sections.Count; i++) sections[i].IsEnabled = !state.Saving && (i == 3 || c.Ready);
+        for (var i = 0; i < sections.Count; i++) sections[i].IsEnabled = !state.Saving && (i >= 3 || c.Ready);
         save.IsEnabled = c.Ready && !state.Saving && state.Draft is not null && state.IsDirty && state.LimitsValid;
         discard.IsEnabled = c.Ready && !state.Saving && state.IsDirty;
         save.Content = state.Saving ? c.T("Wird gespeichert …", "Saving …") : c.T("Speichern", "Save");

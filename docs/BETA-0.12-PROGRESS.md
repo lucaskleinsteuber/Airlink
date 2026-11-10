@@ -54,3 +54,10 @@ Record actual test/build/benchmark results below as they complete. Physical Mac/
 - The dedicated Debian 12 / Qt 6.4 hosted job passed at `d313075`, including the desktop compile, Qt Core / actual helper checks and Linux-only update tests. The Mac hosted matrix job also passed for that checkpoint. This is not final-candidate or GUI acceptance.
 - The hosted Windows run exposed CRLF-sensitive JavaScript extraction in a test; the Ubuntu run exposed a post-write counter synchronization race in a test. Both checks have been corrected without relaxing their behavioral assertions; final hosted runs remain required.
 - macOS now consumes compact status and cancellable preparation, has recipient-focused navigation, paged history/details, native code-comparison pairing and optional daily beta update checks. Compile checks passed; final background tests and release packaging are still pending.
+
+### Stabilization continuation
+
+- Corrected cross-volume publishing-key comparisons, historical receive-file identity comparisons, open-file source replacement checks, and relay lockfile inspection. Local Go release/engine/server race suites pass; the next Windows run passed these cases but exposed the overly short 200 ms share-expiry fixture. Its validity window now spans setup and expires during a deliberately throttled download.
+- Windows compiles with no warnings after compact status, cancellable preparation, paged history/details, eight-digit pairing and opt-in daily update checks. The current actual-helper Core suite passes 42 cases with no skips.
+- Beta metadata is `0.12.0-beta.1`, numerical OS build 14. New release-tool tests cover the exact eight-package/five-feed set, signed manifest and tampering. Historical three-package fixtures remain supported separately.
+- Linux package generation, isolated distro installation/upgrade tests and expanded payload inspection are being integrated. These packages have not passed the hosted matrix or been published yet.

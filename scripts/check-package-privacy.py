@@ -10,6 +10,8 @@ are detached. Findings name categories, never matched personal values. This is a
 regression guard for known metadata channels, not a guarantee of anonymity.
 """
 import argparse
+import gzip
+import io
 import hashlib
 import io
 import lzma
@@ -410,6 +412,42 @@ class PE:
             yield name, checked_slice(self.data, resources + offset + 4, length)
 
 
+def bounded_uncompress(data):
+    if data.startswith(b'\x1f\x8b'): reader = gzip.GzipFile(fileobj=io.BytesIO(data))
+    elif data.startswith(b'\xfd7zXZ\x00'): reader = lzma.LZMAFile(io.BytesIO(data))
+    elif data.startswith(b'\x28\xb5\x2f\xfd'):
+        with tempfile.TemporaryFile() as source:
+            source.write(data); source.seek(0)
+            process = subprocess.Popen(['zstd', '-q', '-d', '-c'], stdin=source, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            try:
+                result = process.stdout.read(NSIS_TOTAL_LIMIT + 1)
+                if len(result) > NSIS_TOTAL_LIMIT: raise ValueError('native payload exceeds its bound')
+                if process.wait(timeout=30): raise ValueError('native zstd payload could not be decoded')
+                return result
+            finally:
+                if process.poll() is None: process.kill(); process.wait()
+    else: return data
+    with reader:
+        result = reader.read(NSIS_TOTAL_LIMIT + 1)
+    if len(result) > NSIS_TOTAL_LIMIT: raise ValueError('native payload exceeds its bound')
+    return result
+
+
+def rpm_payload(data):
+    if len(data) < 112 or data[:4] != b'\xed\xab\xee\xdb': raise ValueError('invalid RPM lead')
+    def header(at):
+        raw = checked_slice(data, at, 16)
+        if raw[:3] != b'\x8e\xad\xe8': raise ValueError('invalid RPM header')
+        count, size = struct.unpack_from('>II', raw, 8)
+        if count > 100000: raise ValueError('oversized RPM header')
+        end = at + 16 + count * 16 + size
+        checked_slice(data, at, end-at)
+        return end
+    end = header(96)
+    end = header((end + 7) & ~7)
+    return bounded_uncompress(data[end:])
+
+
 class Audit:
     def __init__(self, seven_zip_path=None, expected_payload=None):
         self.issues = set(); self.files = self.bundled = self.resources = self.installers = 0
@@ -497,6 +535,10 @@ class Audit:
             for item in sorted(path.rglob('*')):
                 if item.is_file() and not item.is_symlink(): self.file(item, path.name + '/' + str(item.relative_to(path)))
         elif path.suffix.lower() == '.dmg': self.dmg(path)
+        elif path.suffix == '.AppImage': self.native_appimage(path.read_bytes(), path.name)
+        elif path.suffix == '.deb': self.native_deb(path.read_bytes(), path.name)
+        elif path.suffix == '.rpm': self.native_rpm(path.read_bytes(), path.name)
+        elif path.name.endswith('.pkg.tar.zst'): self.native_tar(path.read_bytes(), path.name)
         elif zipfile.is_zipfile(path):
             with zipfile.ZipFile(path) as archive:
                 for item in archive.infolist():
@@ -515,6 +557,84 @@ class Audit:
                         if item.size > LIMIT: raise ValueError('archive entry exceeds bounded audit size')
                         self.payload(label, archive.extractfile(item).read(), first_party_document(label))
         else: self.file(path)
+
+    def native_tar(self, data, label):
+        data = bounded_uncompress(data)
+        total = 0
+        with tarfile.open(fileobj=io.BytesIO(data), mode='r:') as archive:
+            for index, item in enumerate(archive):
+                if index >= NSIS_ENTRY_LIMIT: raise ValueError('too many native package entries')
+                name = item.name
+                while name.startswith('./'): name = name[2:]
+                if name in ('', '.'): continue
+                name = installer_name(name.rstrip('/'))
+                if item.uid != 0 or item.gid != 0 or item.uname not in ('', 'root') or item.gname not in ('', 'root'): self.issue(label+'!/'+name, 'non-neutral archive owner metadata')
+                if item.isdir(): continue
+                if not item.isfile(): raise ValueError('unsupported native package entry type')
+                total += item.size
+                if item.size > LIMIT or total > NSIS_TOTAL_LIMIT: raise ValueError('oversized native archive')
+                self.payload(label+'!/'+name, archive.extractfile(item).read(), first_party_document(name))
+
+    def native_rpm(self, data, label):
+        payload = rpm_payload(data); at = 0; count = 0; total = 0
+        while at < len(payload):
+            raw = checked_slice(payload, at, 110)
+            if raw[:6] not in (b'070701', b'070702'): raise ValueError('unsupported RPM cpio payload')
+            fields = [int(raw[6+i*8:14+i*8],16) for i in range(13)]
+            mode, uid, gid, links, size, namesize = fields[1], fields[2], fields[3], fields[4], fields[6], fields[11]
+            if not 1 <= namesize <= 4096: raise ValueError('invalid cpio pathname')
+            name = checked_slice(payload,at+110,namesize)
+            if not name.endswith(b'\0'): raise ValueError('unterminated cpio pathname')
+            name = name[:-1].decode('utf-8'); at = (at+110+namesize+3)&~3
+            if name == 'TRAILER!!!': return
+            while name.startswith('./'): name=name[2:]
+            name=installer_name(name.rstrip('/')); count+=1; total+=size
+            if count>NSIS_ENTRY_LIMIT or size>LIMIT or total>NSIS_TOTAL_LIMIT: raise ValueError('oversized RPM payload')
+            content=checked_slice(payload,at,size);at=(at+size+3)&~3
+            if uid or gid: self.issue(label+'!/'+name, 'non-neutral archive owner metadata')
+            if stat.S_ISDIR(mode): continue
+            if not stat.S_ISREG(mode) or links != 1: raise ValueError('RPM links or special files are not permitted')
+            self.payload(label+'!/'+name,content,first_party_document(name))
+        raise ValueError('missing cpio trailer')
+
+    def native_deb(self, data, label):
+        if data[:8] != b'!<arch>\n': raise ValueError('invalid DEB archive')
+        at=8; seen=set()
+        while at<len(data):
+            header=checked_slice(data,at,60)
+            if header[-2:] != b'`\n': raise ValueError('invalid ar header')
+            name=header[:16].decode('ascii').strip().rstrip('/');size=int(header[48:58]);at+=60
+            content=checked_slice(data,at,size);at+=size+(size%2)
+            if name in seen: raise ValueError('duplicate DEB member')
+            seen.add(name)
+            if name=='debian-binary':
+                if content!=b'2.0\n': raise ValueError('unsupported DEB version')
+            elif name.startswith(('control.tar.','data.tar.')): self.native_tar(content,label+'!/'+name)
+            else: raise ValueError('unexpected DEB member')
+        if len(seen)!=3 or 'debian-binary' not in seen: raise ValueError('incomplete DEB')
+
+    def native_appimage(self, data, label):
+        if data[:4]!=b'\x7fELF' or data[8:11]!=b'AI\x02': raise ValueError('invalid AppImage')
+        candidates=[];at=0
+        while True:
+            at=data.find(b'hsqs',at)
+            if at<0: break
+            if at+96<=len(data):
+                block=struct.unpack_from('<I',data,at+12)[0]
+                major=struct.unpack_from('<H',data,at+28)[0]
+                used=struct.unpack_from('<Q',data,at+40)[0]
+                if major==4 and 4096<=block<=1048576 and block&(block-1)==0 and 96<=used<=len(data)-at: candidates.append(at)
+            at+=4
+        if len(candidates)!=1: raise ValueError('ambiguous AppImage filesystem')
+        with tempfile.TemporaryDirectory(prefix='airlink-appimage-audit-') as temporary:
+            owned=Path(temporary); archive=owned/'payload.squashfs'; output=owned/'payload'
+            archive.write_bytes(data[candidates[0]:]); output.mkdir()
+            extractor=find_seven_zip(self.seven_zip_path)
+            listing=seven_zip([extractor,'l','-slt','-ba','-sccUTF-8','--',str(archive)],NSIS_LIST_LIMIT)
+            declared=nsis_listing(listing)
+            seven_zip([extractor,'x','-y','-bd','-bb0','-sccUTF-8','-o'+str(output),'--',str(archive)],2*1024*1024,output,declared)
+            for name,(directory,path) in extracted_entries(output,declared,complete=True).items():
+                if not directory: self.file(path,label+'!/'+name)
 
     def zip_owner(self, label, extra):
         at = 0

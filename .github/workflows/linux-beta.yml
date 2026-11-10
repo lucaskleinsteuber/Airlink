@@ -5,45 +5,94 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: linux-beta-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  qt-minimum:
-    name: Debian 12 / Qt 6.4 / no GUI
+  packages:
+    name: Debian 12 / Qt 6.4 / Linux packages
     runs-on: ubuntu-latest
     container: debian:12
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       DEBIAN_FRONTEND: noninteractive
       GOMAXPROCS: '4'
     steps:
-      - name: Install build tools and runtime libraries
+      - name: Install headless build and packaging tools
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends ca-certificates git g++ cmake ninja-build qt6-base-dev libqt6svg6-dev qt6-wayland libssl-dev
+          apt-get install -y --no-install-recommends ca-certificates git g++ cmake ninja-build qt6-base-dev libqt6svg6-dev qt6-wayland libssl-dev rpm zstd squashfs-tools file binutils 7zip
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/setup-go@v7
         with:
           go-version: '1.27.3'
-      - name: Build the real private-pipe helper
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Build embedded web interface
         run: |
-          mkdir -p build
-          CGO_ENABLED=0 go build -buildvcs=false -trimpath -o build/airlink-helper ./cmd/airlink
-      - name: Build the desktop and logic tests without launching a GUI
+          npm --prefix web ci
+          npm --prefix web run build
+          bash scripts/embed-web.sh
+      - name: Build all four Linux packages and run Qt Core with the actual helper
+        run: bash scripts/build-linux-packages.sh
+      - name: Run Linux update transactions as an ordinary user
         run: |
-          cmake -S linux -B build/linux -G Ninja -DCMAKE_BUILD_TYPE=Release
-          cmake --build build/linux -j 4
-      - name: Core and real helper tests without a desktop session
-        run: AIRLINK_TEST_HELPER="$PWD/build/airlink-helper" ctest --test-dir build/linux --output-on-failure
-      - name: Linux-only update transaction tests
-        run: go test -race ./internal/update
-      - name: Check the application metadata without GUI initialization
-        run: build/linux/airlink --version
+          go test -p 4 -race -c -o build/linux-update-tests ./internal/update
+          useradd --create-home airlink-test
+          runuser -u airlink-test -- build/linux-update-tests -test.v
+      - name: Inspect all package payloads without executing an application
+        run: python3 scripts/check-package-privacy.py build/linux-packages/AirLink-*.AppImage build/linux-packages/AirLink-*.deb build/linux-packages/AirLink-*.rpm build/linux-packages/AirLink-*.pkg.tar.zst
       - uses: actions/upload-artifact@v6
         with:
-          name: linux-beta-development-build
+          name: linux-beta-packages
           path: |
-            build/linux/airlink
-            build/linux/airlink_core_tests
-            build/airlink-helper
-          retention-days: 7
+            build/linux-packages/AirLink-*
+            build/linux-release/airlink_core_tests
+            build/linux-release/airlink_update_verify
+          retention-days: 14
+  installation:
+    needs: packages
+    name: Install / upgrade / remove (${{ matrix.distribution }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distribution: Debian 12
+            image: debian:12
+            format: deb
+          - distribution: Ubuntu 24.04
+            image: ubuntu:24.04
+            format: deb
+          - distribution: Arch
+            image: archlinux:base-devel
+            format: arch
+          - distribution: Fedora
+            image: fedora:latest
+            format: rpm
+          - distribution: openSUSE Leap 16
+            image: opensuse/leap:16.0
+            format: rpm
+          - distribution: openSUSE Tumbleweed
+            image: opensuse/tumbleweed:latest
+            format: rpm
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v7
+        with:
+          name: linux-beta-packages
+          path: build/linux-artifacts
+      - name: Install, upgrade, preserve state and remove in an isolated environment
+        env:
+          AIRLINK_IMAGE: ${{ matrix.image }}
+          AIRLINK_FORMAT: ${{ matrix.format }}
+        run: |
+          docker pull "$AIRLINK_IMAGE"
+          docker image inspect "$AIRLINK_IMAGE" --format '{{json .RepoDigests}}'
+          docker run --rm --network bridge -e AIRLINK_PACKAGE_FORMAT="$AIRLINK_FORMAT" -v "$PWD:/AirLink:ro" "$AIRLINK_IMAGE" bash /AirLink/scripts/test-linux-package.sh
