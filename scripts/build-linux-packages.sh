@@ -6,7 +6,9 @@ cd "$ROOT"
 VERSION="$(cat VERSION)"
 GO_BIN="${AIRLINK_GO:-go}"
 export GOMAXPROCS=4
-export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+AIRLINK_SOURCE_TIME="$(git -c safe.directory="$ROOT" log -1 --format=%ct)"
+[[ "$AIRLINK_SOURCE_TIME" =~ ^[0-9]+$ ]]
+export SOURCE_DATE_EPOCH="$AIRLINK_SOURCE_TIME"
 OUTPUT="$ROOT/build/linux-packages"
 STAGE="$ROOT/build/linux-stage"
 APPDIR="$ROOT/build/linux-appdir"

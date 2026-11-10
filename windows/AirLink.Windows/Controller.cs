@@ -70,7 +70,7 @@ internal sealed class Controller : INotifyPropertyChanged
     public string T(string de, string en) => English ? en : de;
     public string DataDirectory => Path.Combine(Environment.GetEnvironmentVariable("APPDATA") ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AirLink");
     public Device? SelectedDevice => Status?.Devices.FirstOrDefault(d => d.Id == SelectedDeviceId);
-    public int ActiveCount => (Status?.Transfers.Count(t => t.IsActive) ?? 0) + (Status?.Relays.Count(r => r.State is not ("delivered" or "cancelled" or "failed")) ?? 0);
+    public int ActiveCount => Status is { Summary: true } summary ? summary.ActiveTransferCount + summary.ActiveRelayCount : (Status?.Transfers.Count(t => t.IsActive) ?? 0) + (Status?.Relays.Count(r => r.State is not ("delivered" or "cancelled" or "failed")) ?? 0);
     public string Version => Status?.Version ?? "0.12.0-beta.1";
 
     public Controller(Dispatcher dispatcher)

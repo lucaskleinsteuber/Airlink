@@ -15,6 +15,11 @@ import SwiftUI
         }
         .defaultSize(width: 1000, height: 700)
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button(model.text("Über AirLink", "About AirLink")) {
+                    NSApp.orderFrontStandardAboutPanel(options: [.applicationVersion: model.version])
+                }
+            }
             CommandGroup(after: .appInfo) {
                 Button(model.text("Nach Updates suchen…", "Check for Updates…")) { updater.checkForUpdates() }
                     .disabled(!updater.canCheckForUpdates)

@@ -124,7 +124,7 @@ def nsis_listing(text):
         attributes = fields.get('Attributes', '')
         if 'L' in attributes.upper() or 'l' in fields.get('Mode', ''):
             raise ValueError('installer link attributes are not permitted')
-        directory = fields.get('Folder') == '+' or 'D' in attributes.upper()
+        directory = fields.get('Folder') == '+' or 'D' in attributes.upper() or fields.get('Mode', '').startswith('d')
         raw_size = fields.get('Size', '')
         # NSIS reconstructs an uninstaller without declaring its size in -slt.
         # Its actual extracted size is still checked before content inspection.
