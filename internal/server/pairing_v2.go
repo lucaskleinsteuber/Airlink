@@ -19,8 +19,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lucasfd3/Airlink/internal/engine"
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/engine"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
 
 // All pairing receipts are private persisted host data. The local comparison

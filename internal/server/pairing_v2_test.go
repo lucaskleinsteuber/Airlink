@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
 
 func pairingCall(t *testing.T, s *Server, method string, input any) model.PairingSession {

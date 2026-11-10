@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/lucasfd3/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
 
 // SummaryQuery is local metadata navigation. File manifests are loaded separately.
