@@ -366,7 +366,7 @@ func (e *Engine) beginDuplicateLocked(ctx context.Context, r *record, index int,
 	opCtx, cancel := context.WithCancel(ctx)
 	op := &verificationOperation{ctx: opCtx, cancel: cancel}
 	e.verifications[r.Transfer.ID] = op
-	if err := e.saveLocked(r); err != nil {
+	if err := e.saveFileLocked(r, index); err != nil {
 		cancel()
 		delete(e.verifications, r.Transfer.ID)
 		return nil, err
@@ -421,7 +421,7 @@ func (e *Engine) duplicateResultLocked(r *record, index int, op *verificationOpe
 		f.DuplicateCandidates = nil
 		r.Transfer.State = "queued"
 	}
-	if err := e.saveLocked(r); err != nil {
+	if err := e.saveFileLocked(r, index); err != nil {
 		return "", err
 	}
 	if err := e.scheduleLocked(); err != nil {
@@ -448,7 +448,7 @@ func (e *Engine) PrepareFile(ctx context.Context, id, fileID, hash string) (stri
 		e.mu.Unlock()
 		return "", err
 	}
-	index, err := fileIndex(&r.Transfer, fileID)
+	index, err := r.fileIndex(fileID)
 	if err != nil {
 		e.mu.Unlock()
 		return "", err
@@ -533,7 +533,7 @@ func (e *Engine) ResolveDuplicate(ctx context.Context, id, fileID, action, candi
 		e.mu.Unlock()
 		return model.Transfer{}, err
 	}
-	index, err := fileIndex(&r.Transfer, fileID)
+	index, err := r.fileIndex(fileID)
 	if err != nil {
 		e.mu.Unlock()
 		return model.Transfer{}, err
@@ -547,7 +547,7 @@ func (e *Engine) ResolveDuplicate(ctx context.Context, id, fileID, action, candi
 		r.Transfer.Files[index].DuplicateState = "keep"
 		r.Transfer.Files[index].DuplicateCandidates = nil
 		r.Transfer.State = "queued"
-		if err = e.saveLocked(r); err == nil {
+		if err = e.saveFileLocked(r, index); err == nil {
 			err = e.scheduleLocked()
 		}
 		out := clone(r.Transfer)
@@ -570,7 +570,7 @@ func (e *Engine) ResolveDuplicate(ctx context.Context, id, fileID, action, candi
 	op := &verificationOperation{ctx: opCtx, cancel: cancel}
 	e.verifications[id] = op
 	r.Transfer.State = "queued"
-	if err = e.saveLocked(r); err == nil {
+	if err = e.saveFileLocked(r, index); err == nil {
 		err = e.scheduleLocked()
 	}
 	e.mu.Unlock()
@@ -591,7 +591,7 @@ func (e *Engine) ResolveDuplicate(ctx context.Context, id, fileID, action, candi
 		}
 		if r.Transfer.State == "running" {
 			r.Transfer.State = "checkingDuplicate"
-			err = e.saveLocked(r)
+			err = e.saveFileLocked(r, index)
 			e.mu.Unlock()
 			if err != nil {
 				return model.Transfer{}, err
@@ -651,7 +651,7 @@ func (e *Engine) ResolveDuplicate(ctx context.Context, id, fileID, action, candi
 		r.Transfer.State = "completed"
 	}
 	r.Transfer.BytesPerSecond = 0
-	if err = e.saveLocked(r); err == nil {
+	if err = e.saveFileLocked(r, index); err == nil {
 		cleanupCompletedReceive(r)
 		err = e.scheduleLocked()
 	}
@@ -683,7 +683,7 @@ func (e *Engine) MarkOutgoingSkipped(id, fileID string, received int64, hash str
 	if err != nil {
 		return err
 	}
-	index, err := fileIndex(&r.Transfer, fileID)
+	index, err := r.fileIndex(fileID)
 	if err != nil {
 		return err
 	}
@@ -712,7 +712,7 @@ func (e *Engine) MarkOutgoingSkipped(id, fileID string, received int64, hash str
 		r.Transfer.State = "completed"
 		r.Transfer.BytesPerSecond = 0
 	}
-	if err = e.saveLocked(r); err != nil {
+	if err = e.saveFileLocked(r, index); err != nil {
 		return err
 	}
 	return e.scheduleLocked()

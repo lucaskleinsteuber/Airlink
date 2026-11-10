@@ -152,6 +152,8 @@ struct SettingsView: View {
                     LabeledContent(model.text("Version", "Version"), value: model.version)
                     Text(model.text("Dateien direkt in deinem Netzwerk teilen. Die Übertragung ist verschlüsselt und wird auf Dateiintegrität geprüft.", "Share files directly on your network. Transfers are encrypted and checked for file integrity.")).foregroundStyle(.secondary)
                     Link(model.text("Entwicklungsstände herunterladen …", "Download development builds …"), destination: URL(string: "https://github.com/lucaskleinsteuber/Airlink/releases")!)
+                    Button(model.text("Diagnosebericht speichern …", "Save diagnostic report …")) { Task { await model.exportDiagnostics() } }
+                    Text(model.text("Enthält technische Summen, keine Dateinamen, privaten Pfade, Geräteadressen oder Zugangsdaten. Der Bericht wird lokal gespeichert.", "Contains technical totals, no file names, private paths, device addresses or credentials. The report is saved locally.")).font(.caption).foregroundStyle(.secondary)
                     Text("Copyright © 2026 Lucas Kleinsteuber · MIT").font(.caption).foregroundStyle(.secondary)
                 }
             }

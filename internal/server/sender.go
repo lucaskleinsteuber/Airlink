@@ -42,7 +42,7 @@ func (s *Server) runOutgoingLoop(ticks <-chan time.Time) {
 		case <-s.outgoingWake:
 		}
 		p := s.store.snapshot()
-		for _, t := range s.engine.Transfers("") {
+		for _, t := range s.engine.OutgoingCandidates() {
 			if t.Direction != "send" || t.State == "completed" || t.State == "failed" || t.State == "paused" {
 				continue
 			}
@@ -131,7 +131,7 @@ func (s *Server) sendTransfer(ctx context.Context, t model.Transfer, rec deviceR
 		}
 		var target model.Transfer
 		if remote == "" {
-			files := append([]model.File(nil), t.Files...)
+			files := append([]model.File(nil), local.Files...)
 			for i := range files {
 				files[i] = publicFile(files[i])
 				files[i].Skipped = false
@@ -194,7 +194,7 @@ func (s *Server) sendTransfer(ctx context.Context, t model.Transfer, rec deviceR
 		}
 		retryTransfer := false
 		for _, f := range target.Files {
-			current, err := s.engine.Get(t.ID)
+			current, err := s.engine.FileSnapshot(t.ID, f.ID)
 			if err != nil {
 				return
 			}
@@ -248,7 +248,7 @@ func (s *Server) sendTransfer(ctx context.Context, t model.Transfer, rec deviceR
 				_ = s.engine.CompleteOutgoingFile(t.ID, f.ID, hash)
 				continue
 			}
-			decision, prepared, prepErr := prepareRemoteFile(ctx, client, base+"/"+remote+"/files/"+f.ID+"/prepare", rec.OutboundToken, hash, remote, f.ID)
+			decision, prepared, prepErr := prepareRemoteFile(ctx, client, base+"/"+remote+"/files/"+f.ID+"/prepare?fileOnly=1", rec.OutboundToken, hash, remote, f.ID)
 			if prepErr != nil {
 				if ctx.Err() != nil {
 					return
@@ -284,7 +284,7 @@ func (s *Server) sendTransfer(ctx context.Context, t model.Transfer, rec deviceR
 			chunkResult := func() bool {
 				defer stopPrefetch()
 				for offset := f.Received; offset < f.Size; {
-					own, err := s.engine.Get(t.ID)
+					own, err := s.engine.Header(t.ID)
 					if err != nil || own.State == "paused" || own.State == "cancelled" || ctx.Err() != nil {
 						return false
 					}
@@ -362,7 +362,7 @@ func (s *Server) sendTransfer(ctx context.Context, t model.Transfer, rec deviceR
 				break
 			}
 			var done model.Transfer
-			e = requestJSON(ctx, client, "POST", base+"/"+remote+"/files/"+f.ID+"/complete", rec.OutboundToken, map[string]string{"sha256": hash}, &done)
+			e = requestJSON(ctx, client, "POST", base+"/"+remote+"/files/"+f.ID+"/complete?fileOnly=1", rec.OutboundToken, map[string]string{"sha256": hash}, &done)
 			if e != nil {
 				if ctx.Err() != nil {
 					return
@@ -397,7 +397,7 @@ func (s *Server) sendTransfer(ctx context.Context, t model.Transfer, rec deviceR
 			}
 		}
 		if !retryTransfer {
-			completed, _ := s.engine.Get(t.ID)
+			completed, _ := s.engine.Header(t.ID)
 			if completed.State == "completed" {
 				return
 			}

@@ -16,7 +16,13 @@ public struct TransferFile: Codable, Identifiable, Sendable {
     public var isSkipped: Bool { skipped ?? false }
 }
 
+public struct TransferProblem: Codable, Sendable {
+ public var code, titleDE, titleEN, recoveryDE, recoveryEN: String
+}
+
 public struct Transfer: Codable, Identifiable, Sendable {
+ public var problem: TransferProblem?
+ public var retryable: Bool?
     public var id: String
     public var deviceId: String
     public var deviceName: String

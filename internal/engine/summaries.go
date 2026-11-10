@@ -28,6 +28,8 @@ type SummaryPage struct {
 type summaryCursor struct{ CreatedAt, ID string }
 
 func summarize(t model.Transfer) model.Transfer {
+	t.Problem = model.DescribeTransferError(t.Error)
+	t.Retryable = model.CanRetryTransfer(t)
 	files := t.Files
 	t.Summary, t.FileCount = true, len(files)
 	t.Files = make([]model.File, 0, min(3, len(files)))

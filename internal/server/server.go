@@ -504,7 +504,7 @@ func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	t, err := s.engine.Get(parts[1])
+	t, err := s.engine.Header(parts[1])
 	if err != nil {
 		s.engineError(w, err)
 		return
@@ -522,6 +522,11 @@ func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) {
 		defer unregister()
 	}
 	if len(parts) == 2 && r.Method == "GET" {
+		t, err = s.engine.Get(t.ID)
+		if err != nil {
+			s.engineError(w, err)
+			return
+		}
 		t = publicTransfer(t)
 		respond(w, 200, t)
 		return
@@ -554,11 +559,21 @@ func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(parts) == 3 && parts[2] == "archive" && r.Method == "GET" {
-		s.archive(w, r, t)
+		full, err := s.engine.Get(t.ID)
+		if err != nil {
+			s.engineError(w, err)
+			return
+		}
+		s.archive(w, r, full)
 		return
 	}
 	if len(parts) >= 5 && parts[2] == "files" {
 		fid := parts[3]
+		t, err = s.engine.FileSnapshot(t.ID, fid)
+		if err != nil {
+			s.engineError(w, err)
+			return
+		}
 		if len(parts) == 5 && parts[4] == "prepare" && r.Method == "POST" {
 			var v struct {
 				SHA string `json:"sha256"`
@@ -571,7 +586,11 @@ func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) {
 				s.engineError(w, e)
 				return
 			}
-			fresh, _ := s.engine.Get(t.ID)
+			fresh, err := s.fileResponse(t.ID, fid, r.URL.Query().Get("fileOnly") == "1")
+			if err != nil {
+				s.engineError(w, err)
+				return
+			}
 			respond(w, 200, map[string]any{"decision": decision, "transfer": publicTransfer(fresh)})
 			return
 		}
@@ -606,7 +625,11 @@ func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) {
 				s.engineError(w, e)
 				return
 			}
-			fresh, _ := s.engine.Get(t.ID)
+			fresh, err := s.fileResponse(t.ID, fid, r.URL.Query().Get("fileOnly") == "1")
+			if err != nil {
+				s.engineError(w, err)
+				return
+			}
 			for _, file := range fresh.Files {
 				if file.ID == fid && !file.Completed {
 					// A legacy sender interprets any 2xx completion as final.
@@ -645,6 +668,10 @@ func (s *Server) engineError(w http.ResponseWriter, e error) {
 	var linkError *os.LinkError
 	if errors.As(e, &pathError) || errors.As(e, &linkError) {
 		log.Printf("Transfer filesystem error: %v", e)
+		if p := model.DescribeTransferError(e.Error()); p != nil && (p.Code == "storage_full" || p.Code == "file_access") {
+			fail(w, 409, errors.New(p.Code+": "+p.TitleEN))
+			return
+		}
 		fail(w, 409, errors.New("source or destination is unavailable; check it on the host"))
 		return
 	}
@@ -692,4 +719,11 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request, d model.Device) 
 func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = io.WriteString(w, `<!doctype html><meta name="viewport" content="width=device-width"><title>AirLink · Verbindung</title><style>body{font:17px system-ui;max-width:660px;margin:60px auto;padding:24px;line-height:1.6;color-scheme:light dark}a{color:#3485ed}code{overflow-wrap:anywhere}</style><h1>Sicher lokal verbinden</h1><p>Vergleiche den Fingerabdruck dieses AirLink-Gastgebers mit der Anzeige in seiner App oder lokalen Konsole, bevor du seinem Zertifikat vertraust.</p><p><code>`+s.fingerprint+`</code></p><p><a href="/certificate.pem">Öffentliches Zertifikat laden</a></p><p>Installiere das Zertifikat auf diesem Gerät als vertrauenswürdig. Unter iOS: Einstellungen → Allgemein → VPN und Geräteverwaltung zum Installieren, danach Allgemein → Info → Zertifikatsvertrauenseinstellungen → volles Vertrauen aktivieren.</p><p>Windows: Zertifikat für den aktuellen Benutzer unter Vertrauenswürdige Stammzertifizierungsstellen importieren. macOS: im Schlüsselbund importieren und nach Fingerabdruckprüfung SSL-Vertrauen setzen. Linux: Zertifikat im Browser oder lokalen Zertifikatsspeicher importieren.</p><p>Das Zertifikat gilt nur für diesen Gastgeber. Widerrufe es bei Bedarf in den Systemeinstellungen. Private Schlüssel werden niemals verteilt.</p><p><a href="/">Zurück zu AirLink</a></p>`)
+}
+
+func (s *Server) fileResponse(id, fileID string, compact bool) (model.Transfer, error) {
+	if compact {
+		return s.engine.FileSnapshot(id, fileID)
+	}
+	return s.engine.Get(id)
 }

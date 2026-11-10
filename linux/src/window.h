@@ -92,6 +92,7 @@ private:
   void quit();
   void checkUpdates(bool automatic = false);
   void installAppImage();
+  void exportDiagnostics();
   void maybeCheckUpdates();
   void fetchUpdate(const QUrl &url, qint64 limit,
                    std::function<void(QByteArray, QString)> done);

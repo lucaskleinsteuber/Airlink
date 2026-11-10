@@ -60,7 +60,7 @@ struct FailedDirectSend: Identifiable {
     var activeTransfers: [Transfer] { status?.transfers.filter(\.isActive) ?? [] }
     var activeRelays: [Relay] { status?.relays?.filter(\.isActive) ?? [] }
     var colorSchemeName: String { status?.settings.appearance ?? "system" }
-    var version: String { status?.version ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "" }
+    var version: String { status?.version ?? Bundle.main.object(forInfoDictionaryKey: "AirLinkDisplayVersion") as? String ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "" }
     var shares: [Share] { status?.shares ?? [] }
     var clipboardMessages: [ClipboardMessage] { status?.clipboard ?? [] }
     var pendingURLs: [URL] {
@@ -615,4 +615,22 @@ struct FailedDirectSend: Identifiable {
         }
         NSWorkspace.shared.open(URL(fileURLWithPath: path, isDirectory: true))
     }
+    func exportDiagnostics() async {
+        do {
+            let data: Data
+            if isReady { data = try await client.request("diagnostics.export") }
+            else {
+                data = try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "version": version, "platform": "macos", "service": "unavailable", "privacy": "No raw logs or personal data included."])
+            }
+            let panel = NSSavePanel()
+            panel.title = text("Diagnosebericht speichern", "Save diagnostic report")
+            panel.nameFieldStringValue = "AirLink-Diagnose.json"
+            panel.allowedContentTypes = [.json]
+            guard panel.runModal() == .OK, let url = panel.url else { return }
+            let object = try JSONSerialization.jsonObject(with: data)
+            let pretty = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+            try pretty.write(to: url, options: .atomic)
+        } catch { self.error = error.localizedDescription }
+    }
+
 }

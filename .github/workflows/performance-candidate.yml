@@ -1,0 +1,40 @@
+name: Background transfer comparison
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  comparison:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      GOMAXPROCS: '4'
+      GOFLAGS: '-p=4'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.3'
+      - name: Build matching baseline and candidate services
+        run: |
+          mkdir -p build/comparison-reference
+          git archive v0.12.0-beta.1 | tar -x -C build/comparison-reference
+          (cd build/comparison-reference && CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags='-s -w' -o ../comparison-baseline ./cmd/airlink)
+          CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags='-s -w' -o build/comparison-candidate ./cmd/airlink
+      - name: Compare real TLS transfers with independent hashes and sampled RSS
+        run: |
+          python3 scripts/benchmark-comparison.py build/comparison-baseline build/comparison-candidate --output build/comparison-results
+          python3 scripts/acceptance-single-file.py build/comparison-candidate --gib 4 --expect-version "$(cat VERSION)" --report build/comparison-recovery.json
+          python3 scripts/acceptance-bidirectional.py build/comparison-candidate --expect-version "$(cat VERSION)" --report build/comparison-bidirectional.json
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: transfer-comparison
+          path: |
+            build/comparison-results/*.json
+            build/comparison-recovery.json
+            build/comparison-bidirectional.json
+          retention-days: 14

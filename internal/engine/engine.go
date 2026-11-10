@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -41,6 +40,9 @@ type source struct {
 	Identity string `json:"identity,omitempty"`
 }
 type record struct {
+	normalized        bool
+	fileIndexes       map[string]int
+	indexedFiles      int
 	Transfer          model.Transfer     `json:"transfer"`
 	Sources           map[string]source  `json:"sources,omitempty"`
 	ReceiveRoot       string             `json:"receiveRoot,omitempty"`
@@ -97,6 +99,7 @@ func New(dataDir, receiveDir string) (*Engine, error) {
 	db.SetMaxOpenConns(1)
 	_, err = db.Exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;
 CREATE TABLE IF NOT EXISTS transfers(id TEXT PRIMARY KEY, document BLOB NOT NULL);
+CREATE TABLE IF NOT EXISTS transfer_files(transfer_id TEXT NOT NULL,file_id TEXT NOT NULL,ordinal INTEGER NOT NULL,document BLOB NOT NULL,PRIMARY KEY(transfer_id,file_id),UNIQUE(transfer_id,ordinal));
 CREATE TABLE IF NOT EXISTS chunks(transfer_id TEXT NOT NULL,file_id TEXT NOT NULL,idx INTEGER NOT NULL,hash TEXT NOT NULL,size INTEGER NOT NULL,PRIMARY KEY(transfer_id,file_id,idx));`)
 	if err != nil {
 		db.Close()
@@ -119,33 +122,21 @@ CREATE TABLE IF NOT EXISTS chunks(transfer_id TEXT NOT NULL,file_id TEXT NOT NUL
 		db.Close()
 		return nil, err
 	}
-	rows, err := db.Query("SELECT document FROM transfers")
-	if err != nil {
+	if err = e.loadRecords(); err != nil {
+		cancel()
 		db.Close()
 		return nil, err
 	}
-	for rows.Next() {
-		var b []byte
-		if err = rows.Scan(&b); err != nil {
-			break
-		}
-		var r record
-		if err = json.Unmarshal(b, &r); err != nil {
-			break
-		}
-		e.records[r.Transfer.ID] = &r
-	}
-	if rowErr := rows.Err(); err == nil {
-		err = rowErr
-	}
-	rows.Close()
-	if err != nil {
+	if err = e.migrateLegacyRecords(); err != nil {
+		cancel()
 		db.Close()
 		return nil, err
 	}
 	// A process restart never asserts a live network connection. Confirmed data
 	// remains resumable; callers explicitly resume after reconnecting.
 	for _, r := range e.records {
+		oldState := r.Transfer.State
+		recoverFiles := r.Transfer.Direction == "receive" && r.Transfer.State != "offered" && !terminal(r.Transfer.State)
 		if r.Transfer.State == "running" || r.Transfer.State == "verifying" || r.Transfer.State == "queued" || r.Transfer.State == "checkingDuplicate" {
 			r.Transfer.State = "reconnecting"
 			r.Transfer.BytesPerSecond = 0
@@ -164,7 +155,13 @@ CREATE TABLE IF NOT EXISTS chunks(transfer_id TEXT NOT NULL,file_id TEXT NOT NUL
 				r.Transfer.Error = "Destination recovery: " + recoverErr.Error()
 			}
 		}
-		if err = e.saveLocked(r); err != nil {
+		if recoverFiles {
+			err = e.saveLocked(r)
+		} else if oldState != r.Transfer.State {
+			err = e.saveStateLocked(r)
+		}
+		if err != nil {
+			cancel()
 			db.Close()
 			return nil, err
 		}
@@ -219,6 +216,8 @@ func (e *Engine) SetReceiveDirectory(p string) error {
 	return nil
 }
 func clone(t model.Transfer) model.Transfer {
+	t.Problem = model.DescribeTransferError(t.Error)
+	t.Retryable = model.CanRetryTransfer(t)
 	t.Files = append([]model.File{}, t.Files...)
 	for i := range t.Files {
 		t.Files[i].DuplicateCandidates = append([]model.DuplicateCandidate(nil), t.Files[i].DuplicateCandidates...)
@@ -263,15 +262,6 @@ func identifier() string {
 		panic(err)
 	}
 	return hex.EncodeToString(b[:])
-}
-func (e *Engine) saveLocked(r *record) error {
-	r.Transfer.UpdatedAt = now()
-	b, err := json.Marshal(r)
-	if err != nil {
-		return err
-	}
-	_, err = e.db.Exec("INSERT INTO transfers(id,document) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET document=excluded.document", r.Transfer.ID, b)
-	return err
 }
 func fileIndex(t *model.Transfer, id string) (int, error) {
 	for i := range t.Files {
@@ -504,7 +494,7 @@ func (e *Engine) scheduleLocked() error {
 			continue
 		}
 		r.Transfer.State = "running"
-		if err := e.saveLocked(r); err != nil {
+		if err := e.saveStateLocked(r); err != nil {
 			return err
 		}
 		active[r.Transfer.Direction]++
@@ -540,11 +530,11 @@ func (e *Engine) stateChange(id, state, reason string) error {
 	// cancellation that unexpectedly resurrects after restart. Readers cannot
 	// commit between this transaction and the following context cancellation.
 	updated := *r
-	updated.Transfer = clone(r.Transfer)
+	updated.Transfer = r.Transfer
 	updated.Transfer.State = state
 	updated.Transfer.Error = reason
 	updated.Transfer.BytesPerSecond = 0
-	if err = e.saveLocked(&updated); err != nil {
+	if err = e.saveStateLocked(&updated); err != nil {
 		return err
 	}
 	*r = updated
@@ -562,6 +552,16 @@ func (e *Engine) Resume(id string) error {
 	if err != nil {
 		return err
 	}
+	if model.CanRetryTransfer(r.Transfer) {
+		updated := *r
+		updated.Transfer = r.Transfer
+		updated.Transfer.State = "reconnecting"
+		updated.Transfer.Error = ""
+		if err = e.saveStateLocked(&updated); err != nil {
+			return err
+		}
+		*r = updated
+	}
 	if r.Transfer.State == "offered" && r.Transfer.Direction == "send" {
 		return e.acceptLocked(r)
 	}
@@ -572,7 +572,7 @@ func (e *Engine) Resume(id string) error {
 		if f.DuplicateState == "pending" {
 			r.Transfer.State = "waitingDuplicate"
 			r.Transfer.Error = ""
-			if err = e.saveLocked(r); err != nil {
+			if err = e.saveStateLocked(r); err != nil {
 				return err
 			}
 			return e.scheduleLocked()
@@ -580,7 +580,7 @@ func (e *Engine) Resume(id string) error {
 	}
 	r.Transfer.State = "queued"
 	r.Transfer.Error = ""
-	if err = e.saveLocked(r); err != nil {
+	if err = e.saveStateLocked(r); err != nil {
 		return err
 	}
 	return e.scheduleLocked()
@@ -631,7 +631,7 @@ func (e *Engine) WriteChunk(ctx context.Context, id, fileID string, index int64,
 		e.mu.Unlock()
 		return 0, err
 	}
-	i, err := fileIndex(&r.Transfer, fileID)
+	i, err := r.fileIndex(fileID)
 	if err != nil {
 		e.mu.Unlock()
 		return 0, err
@@ -690,7 +690,7 @@ func (e *Engine) WriteChunk(ctx context.Context, id, fileID string, index int64,
 	if err != nil {
 		return 0, err
 	}
-	i, err = fileIndex(&r.Transfer, fileID)
+	i, err = r.fileIndex(fileID)
 	if err != nil {
 		return 0, err
 	}
@@ -740,15 +740,12 @@ func (e *Engine) WriteChunk(ctx context.Context, id, fileID string, index int64,
 	}
 	// Bytes hit stable storage before the block and offset are committed together.
 	updated := *r
-	updated.Transfer = clone(r.Transfer)
-	updated.Transfer.Files[i].Received = offset + expected
+	updated.Transfer = r.Transfer
+	nextFile := f
+	nextFile.Received = offset + expected
 	updated.Transfer.CompletedBytes += expected
 	updated.Transfer.BytesPerSecond = float64(expected) / max(time.Since(start).Seconds(), 0.001)
 	updated.Transfer.UpdatedAt = now()
-	doc, err := json.Marshal(&updated)
-	if err != nil {
-		return f.Received, err
-	}
 	tx, err := e.db.Begin()
 	if err != nil {
 		return f.Received, err
@@ -757,12 +754,13 @@ func (e *Engine) WriteChunk(ctx context.Context, id, fileID string, index int64,
 	if _, err = tx.Exec("INSERT INTO chunks(transfer_id,file_id,idx,hash,size) VALUES(?,?,?,?,?)", id, fileID, index, hash, expected); err != nil {
 		return f.Received, err
 	}
-	if _, err = tx.Exec("UPDATE transfers SET document=? WHERE id=?", doc, id); err != nil {
+	if err = writeFileCheckpoint(tx, &updated, i, nextFile, nil); err != nil {
 		return f.Received, err
 	}
 	if err = tx.Commit(); err != nil {
 		return f.Received, err
 	}
+	updated.Transfer.Files[i] = nextFile
 	*r = updated
 	return offset + expected, nil
 }
@@ -783,7 +781,7 @@ func (e *Engine) CompleteFile(ctx context.Context, id, fileID, hash string) erro
 		e.mu.Unlock()
 		return err
 	}
-	i, err := fileIndex(&r.Transfer, fileID)
+	i, err := r.fileIndex(fileID)
 	if err != nil {
 		e.mu.Unlock()
 		return err
@@ -806,7 +804,7 @@ func (e *Engine) CompleteFile(ctx context.Context, id, fileID, hash string) erro
 	}
 	r.Transfer.State = "verifying"
 	r.Transfer.Files[i].SHA256 = hash
-	if err = e.saveLocked(r); err != nil {
+	if err = e.saveFileLocked(r, i); err != nil {
 		e.mu.Unlock()
 		return err
 	}
@@ -859,7 +857,7 @@ func (e *Engine) CompleteFile(ctx context.Context, id, fileID, hash string) erro
 		}
 		r.LegacyVerified[fileID] = hash
 		r.Transfer.State = "checkingDuplicate"
-		if err = e.saveLocked(r); err != nil {
+		if err = e.saveFileLocked(r, i); err != nil {
 			return err
 		}
 		e.mu.Unlock()
@@ -875,7 +873,7 @@ func (e *Engine) CompleteFile(ctx context.Context, id, fileID, hash string) erro
 		if checkErr != nil {
 			r.Transfer.State = "running"
 			r.Transfer.Error = "Duplicate check interrupted; retry completion."
-			_ = e.saveLocked(r)
+			_ = e.saveFileLocked(r, i)
 			return checkErr
 		}
 		if candidate != nil {
@@ -884,7 +882,7 @@ func (e *Engine) CompleteFile(ctx context.Context, id, fileID, hash string) erro
 		}
 		r.Transfer.Files[i].DuplicateState = "checked"
 		r.Transfer.State = "verifying"
-		if err = e.saveLocked(r); err != nil {
+		if err = e.saveFileLocked(r, i); err != nil {
 			return err
 		}
 	}
@@ -918,7 +916,7 @@ func (e *Engine) CompleteFile(ctx context.Context, id, fileID, hash string) erro
 	if allComplete(r.Transfer.Files) {
 		r.Transfer.State = "completed"
 	}
-	if err = e.saveLocked(r); err != nil {
+	if err = e.saveFileLocked(r, i); err != nil {
 		return err
 	}
 	if r.DirectReceive {
@@ -949,7 +947,7 @@ func (e *Engine) verificationError(id string, op *verificationOperation, cause e
 		if r.Transfer.State == "verifying" {
 			r.Transfer.State = "running"
 			r.Transfer.Error = cause.Error()
-			_ = e.saveLocked(r)
+			_ = e.saveStateLocked(r)
 		}
 	}
 	return cause
@@ -958,7 +956,7 @@ func (e *Engine) failLocked(r *record, cause error) error {
 	e.cancelVerificationLocked(r.Transfer.ID)
 	r.Transfer.State = "failed"
 	r.Transfer.Error = cause.Error()
-	_ = e.saveLocked(r)
+	_ = e.saveStateLocked(r)
 	_ = e.scheduleLocked()
 	return cause
 }
@@ -1241,7 +1239,7 @@ func (e *Engine) MarkOutgoingProgress(id, fileID string, received int64, hash st
 	if err != nil {
 		return err
 	}
-	i, err := fileIndex(&r.Transfer, fileID)
+	i, err := r.fileIndex(fileID)
 	if err != nil {
 		return err
 	}
@@ -1278,7 +1276,7 @@ func (e *Engine) MarkOutgoingProgress(id, fileID string, received int64, hash st
 	if hash != "" {
 		f.SHA256 = hash
 	}
-	return e.saveLocked(r)
+	return e.saveFileLocked(r, i)
 }
 func (e *Engine) CompleteOutgoingFile(id, fileID, hash string) error {
 	if !validHash(hash) {
@@ -1290,7 +1288,7 @@ func (e *Engine) CompleteOutgoingFile(id, fileID, hash string) error {
 	if err != nil {
 		return err
 	}
-	i, err := fileIndex(&r.Transfer, fileID)
+	i, err := r.fileIndex(fileID)
 	if err != nil {
 		return err
 	}
@@ -1310,7 +1308,7 @@ func (e *Engine) CompleteOutgoingFile(id, fileID, hash string) error {
 		r.Transfer.State = "completed"
 		r.Transfer.BytesPerSecond = 0
 	}
-	if err = e.saveLocked(r); err != nil {
+	if err = e.saveFileLocked(r, i); err != nil {
 		return err
 	}
 	return e.scheduleLocked()

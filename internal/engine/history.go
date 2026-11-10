@@ -51,6 +51,9 @@ func (e *Engine) removeHistoryLocked(ids []string) error {
 	}
 	defer tx.Rollback()
 	for _, id := range ids {
+		if _, err = tx.Exec("DELETE FROM transfer_files WHERE transfer_id=?", id); err != nil {
+			return err
+		}
 		if _, err = tx.Exec("DELETE FROM chunks WHERE transfer_id=?", id); err != nil {
 			return err
 		}

@@ -170,7 +170,11 @@ type peerHTTPError struct {
 func (e *peerHTTPError) Error() string { return fmt.Sprintf("peer HTTP %d: %s", e.Code, e.Message) }
 
 func requestJSON(ctx context.Context, client *http.Client, method, raw, token string, value any, out any) error {
-	if !strings.HasSuffix(raw, "/complete") && !strings.HasSuffix(raw, "/prepare") {
+	requestPath := raw
+	if u, err := url.Parse(raw); err == nil {
+		requestPath = u.Path
+	}
+	if !strings.HasSuffix(requestPath, "/complete") && !strings.HasSuffix(requestPath, "/prepare") {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()

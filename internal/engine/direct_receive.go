@@ -363,7 +363,7 @@ func (e *Engine) publishDirectLocked(r *record, index int) error {
 		}
 		if chosen != destination(r.Transfer.Files[index]) {
 			r.Transfer.Files[index].DestinationPath = chosen
-			if err = e.saveLocked(r); err != nil {
+			if err = e.saveFileLocked(r, index); err != nil {
 				return err
 			}
 		}

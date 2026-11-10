@@ -623,6 +623,15 @@ QWidget *MainWindow::buildSettings() {
   updateFeedback = label("", page);
   updates->addRow(updateFeedback);
   auto *about = formPage(text("Info", "About"));
+  about->addRow(
+      button(text("Diagnosebericht speichern …", "Save diagnostic report …"),
+             page, [this] { exportDiagnostics(); }));
+  about->addRow(
+      label(text("Lokaler Bericht ohne Dateinamen, private Pfade, "
+                 "Geräteadressen, Zugangsdaten oder Zwischenablageinhalte.",
+                 "Local report without file names, private paths, device "
+                 "addresses, credentials or clipboard content."),
+            page));
   about->addRow(label("AirLink " + QString::fromLatin1(Version), page));
   about->addRow(label("Copyright © 2026 Lucas Kleinsteuber · MIT", page));
   about->addRow(
@@ -903,7 +912,14 @@ void MainWindow::renderTransfers(QTableWidget *table, const QJsonArray &rows) {
     table->item(row, 0)->setText(transferTitle(t) + "\n" +
                                  t["deviceName"].toString());
     table->item(row, 0)->setToolTip(transferTitle(t));
-    table->item(row, 1)->setText(stateLabel(t["state"].toString(), english()));
+    const auto advice = t["problem"].toObject();
+    table->item(row, 1)->setText(
+        stateLabel(t["state"].toString(), english()) +
+        (advice.isEmpty()
+             ? QString()
+             : "\n" + advice[english() ? "titleEN" : "titleDE"].toString()));
+    table->item(row, 1)->setToolTip(
+        advice[english() ? "recoveryEN" : "recoveryDE"].toString());
     const double total = t["totalBytes"].toDouble(),
                  done = t["completedBytes"].toDouble() +
                         t["skippedBytes"].toDouble();
@@ -921,7 +937,8 @@ void MainWindow::renderTransfers(QTableWidget *table, const QJsonArray &rows) {
     table->item(row, 0)->setData(Qt::UserRole + 1, t);
     if (previous.isEmpty() || previous["state"] != t["state"] ||
         previous["direction"] != t["direction"] ||
-        previous["hasContent"] != t["hasContent"]) {
+        previous["hasContent"] != t["hasContent"] ||
+        previous["retryable"] != t["retryable"]) {
       auto *actions = new QWidget(table);
       auto *layout = new QHBoxLayout(actions);
       layout->setContentsMargins(2, 0, 2, 0);
@@ -943,7 +960,7 @@ void MainWindow::renderTransfers(QTableWidget *table, const QJsonArray &rows) {
       }));
       table->setCellWidget(row, 4, actions);
     }
-    table->setRowHeight(row, 60);
+    table->setRowHeight(row, advice.isEmpty() ? 60 : 84);
   }
 }
 void MainWindow::issue(const QString &error) {
@@ -1062,6 +1079,9 @@ void MainWindow::transferMenu(const QJsonObject &t) {
         text("Annehmen und künftig automatisch empfangen",
              "Accept and automatically receive in future"),
         this, [this, id] { action("transfer.acceptTrusted", {{"id", id}}); });
+  if (t["retryable"].toBool())
+    menu.addAction(text("Erneut versuchen", "Try again"), this,
+                   [this, id] { action("transfer.resume", {{"id", id}}); });
   if (!terminal(state)) {
     if (state == "paused" || state == "reconnecting")
       menu.addAction(text("Fortsetzen", "Resume"), this,
@@ -1083,7 +1103,19 @@ void MainWindow::transferDetails(const QJsonObject &t) {
   dialog->resize(720, 480);
   auto *layout = new QVBoxLayout(dialog);
   layout->addWidget(label(transferTitle(t), dialog, true));
-  layout->addWidget(label(t["error"].toString(), dialog));
+  const auto advice = t["problem"].toObject();
+  if (!advice.isEmpty()) {
+    layout->addWidget(label(
+        advice[english() ? "titleEN" : "titleDE"].toString(), dialog, true));
+    layout->addWidget(label(
+        advice[english() ? "recoveryEN" : "recoveryDE"].toString(), dialog));
+  }
+  auto *technical =
+      new QGroupBox(text("Technische Details", "Technical details"), dialog);
+  auto *technicalLayout = new QVBoxLayout(technical);
+  technicalLayout->addWidget(label(t["error"].toString(), technical));
+  technical->setVisible(!t["error"].toString().isEmpty());
+  layout->addWidget(technical);
   auto *files = new QTreeWidget(dialog);
   files->setHeaderLabels(
       {text("Datei", "File"), text("Größe", "Size"), text("Status", "State")});
@@ -2419,5 +2451,40 @@ void MainWindow::installAppImage() {
           "du es dort starten und die heruntergeladene Datei entfernen.",
           "AirLink is in the application menu. After quitting, launch it "
           "there; you can remove the downloaded copy."));
+}
+
+void MainWindow::exportDiagnostics() {
+  QPointer<MainWindow> self(this);
+  auto save = [self](QJsonValue value, QString error) {
+    if (!self)
+      return;
+    if (!error.isEmpty()) {
+      self->issue(error);
+      return;
+    }
+    const auto path = QFileDialog::getSaveFileName(
+        self, self->text("Diagnosebericht speichern", "Save diagnostic report"),
+        "AirLink-Diagnose.json", "JSON (*.json)");
+    if (path.isEmpty())
+      return;
+    QSaveFile output(path);
+    const auto data =
+        QJsonDocument(value.toObject()).toJson(QJsonDocument::Indented);
+    if (!output.open(QIODevice::WriteOnly) ||
+        output.write(data) != data.size() || !output.commit()) {
+      self->issue(
+          self->text("Der Diagnosebericht konnte nicht gespeichert werden.",
+                     "Could not save the diagnostic report."));
+    }
+  };
+  if (client.ready())
+    client.request("diagnostics.export", {}, save);
+  else
+    save(QJsonObject{{"schemaVersion", 1},
+                     {"version", QString::fromLatin1(Version)},
+                     {"platform", "linux"},
+                     {"service", "unavailable"},
+                     {"privacy", "No raw logs or personal data included."}},
+         {});
 }
 } // namespace AirLink

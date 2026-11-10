@@ -35,7 +35,7 @@ func (e *Engine) sourceSnapshot(id, fileID string) (source, model.File, error) {
 	if err != nil {
 		return source{}, model.File{}, err
 	}
-	index, err := fileIndex(&r.Transfer, fileID)
+	index, err := r.fileIndex(fileID)
 	if err != nil {
 		return source{}, model.File{}, err
 	}
@@ -128,7 +128,7 @@ func (e *Engine) persistSourceAnchor(ctx context.Context, id, fileID string, ori
 	if err != nil {
 		return err
 	}
-	index, err := fileIndex(&r.Transfer, fileID)
+	index, err := r.fileIndex(fileID)
 	if err != nil {
 		return err
 	}
@@ -150,18 +150,25 @@ func (e *Engine) persistSourceAnchor(ctx context.Context, id, fileID string, ori
 	}
 	check.Close()
 	updated := *r
-	updated.Transfer = clone(r.Transfer)
-	updated.Sources = make(map[string]source, len(r.Sources))
-	for key, value := range r.Sources {
-		updated.Sources[key] = value
-	}
-	updated.Sources[fileID] = original
+	updated.Transfer = r.Transfer
+	file := r.Transfer.Files[index]
 	if hash != "" {
-		updated.Transfer.Files[index].SHA256 = hash
+		file.SHA256 = hash
 	}
-	if err = e.saveLocked(&updated); err != nil {
+	updated.Transfer.UpdatedAt = now()
+	tx, err := e.db.Begin()
+	if err != nil {
 		return err
 	}
+	defer tx.Rollback()
+	if err = writeFileCheckpoint(tx, &updated, index, file, &original); err != nil {
+		return err
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	updated.Transfer.Files[index] = file
+	updated.Sources[fileID] = original
 	*r = updated
 	return nil
 }

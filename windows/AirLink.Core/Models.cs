@@ -109,8 +109,16 @@ public sealed class PairRequest
     public string CreatedAt { get; set; } = "";
 }
 
+public sealed class TransferProblem
+{
+ public string Code { get; set; } = "";
+ public string TitleDE { get; set; } = ""; public string TitleEN { get; set; } = "";
+ public string RecoveryDE { get; set; } = ""; public string RecoveryEN { get; set; } = "";
+}
 public sealed class Transfer
 {
+ public TransferProblem? Problem { get; set; }
+ public bool Retryable { get; set; }
     public string Id { get; set; } = "";
     public string DeviceId { get; set; } = "";
     public string DeviceName { get; set; } = "";

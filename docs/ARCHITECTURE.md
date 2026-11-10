@@ -20,6 +20,10 @@ There are two outgoing and two incoming file slots by default. Blocks are at mos
 
 Per-block SHA-256, full-source identity/content checks, durable receipts and final full-file verification remain enabled. Acknowledged data is synced before progress is treated as durable. Repeated requests are idempotent; pause, disconnect and restart resume from confirmed blocks. Partial data stays privately marked until safe publication. Missing/changed sources and destination failures cannot publish a corrupt result.
 
+Starting with 0.12.0-beta.2, SQLite keeps a compact transfer header and individual `transfer_files` checkpoints. A confirmed block commits its receipt, file checkpoint and header in one transaction after the payload has been synced. It does not serialize or rewrite the other files in a large manifest. State-only transitions update the header. File lookup and per-file prepare/complete responses avoid full manifest copies; older peers retain the original full response unless they explicitly request `fileOnly=1`.
+
+Existing inline transfer records migrate in one durable transaction, preserving source identities, progress, offer replay IDs and activity timestamps. Failure rolls back the migration. A format prefix causes older services to refuse the new store rather than misinterpret a header as a complete transfer. **An upgraded data directory cannot be opened by Beta 1 or older.** Upgrades preserve pairings, settings and received files; downgrading an upgraded transfer database is unsupported. No received file or source is copied as part of migration.
+
 Historical receive destinations remain authoritative. Changing settings affects new transfers, and removing history affects metadata rather than originals/received files. Only verified managed receives enter the duplicate index. Optional duplicate detection and extension sorting start off; Skip never deletes an indexed existing file, and transferred folders stay together.
 
 ## Responsive control and native state
@@ -31,6 +35,8 @@ Preparation is an asynchronous, bounded job with a replay identity and explicit 
 Each send binds an immutable recipient/source snapshot before the picker/drop submission. Later navigation and source additions/reselection cannot alter it or be removed by its acknowledgment. Settings use a baseline plus a deliberate draft and apply edited fields to the newest saved snapshot. Request/mutation generations reject stale tool results; transfer timestamps prevent a delayed summary from reactivating a newer completed record. Hidden windows defer transfer-list work and refresh when reopened, while services, notifications and tray state continue.
 
 The [0.12 protocol additions](API-0.12.md) define the private methods and TLS comparison-code flow. Earlier [API](API.md), [shares/clipboard](API-0.2.md), [relay/history/limits](API-0.3.md) and [organization](API-0.4.md) contracts remain available.
+
+The native About settings offer an explicit local diagnostic export. Its private-pipe report is constructed from an allowlist of version/platform information, a Go heap sample and aggregate transfer/device counts. It contains no file/device names, addresses, private paths, identifiers, content hashes, credentials, clipboard text or raw logs, and is never uploaded automatically. Heap allocation is not total process RSS. Recoverable sender failures expose fixed localized guidance and an explicit retry action; the action retains the same sources, transfer ID and remote checkpoints. Changed sources, integrity failures, cancellation and terminal receiver failures require a new explicit send.
 
 ## Trust and shared content
 

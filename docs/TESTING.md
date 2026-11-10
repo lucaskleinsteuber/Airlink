@@ -2,6 +2,12 @@
 
 AirLink uses background unit, protocol, subprocess, filesystem, and HTTPS integration tests. The test suite does not automate Finder, click application windows, launch a simulator, or take control of the user's desktop. Interactive runtime acceptance is recorded separately from automated test results.
 
+## 0.12.0 Beta 2 — candidate checks
+
+`main` is preparing Beta 2; the published Beta 1 packages and live update feeds remain unchanged until the new release is verified. The candidate adds per-file durable checkpoints, compact file replies, local aggregate diagnostics and explicit retry guidance. Its tests cover a 10,000-file manifest without rewriting untouched checkpoints, failed transaction rollback and restart/replay, atomic legacy migration, incomplete manifests, private report redaction, legacy/compact reply compatibility, ownership and an actual two-service retry from a previously confirmed block. Native helper contract tests derive the current source version instead of retaining a previous beta's literal.
+
+The manual **Background transfer comparison** workflow compares the immutable Beta 1 tag with the candidate under identical Linux-runner conditions: three 300-MiB runs each, three 4-GiB runs each, one matched 10,000-file run each, separate restart/recovery and concurrent sending/receiving. Payloads are real, results use independent SHA-256 checks and both services' RSS is sampled. This hosted measurement keeps local large-file activity off the user's Mac while device acceptance is running. It does not establish Mac↔Arch WLAN throughput. Results are recorded after completion; no candidate speedup is inferred from the unit tests.
+
 ## 0.12.0 Beta 1 — stabilization evidence, 2026-11-10
 
 The beta is [published](https://github.com/lucaskleinsteuber/Airlink/releases/tag/v0.12.0-beta.1). Application/package sources were frozen at `b52dca9`; the final complete background run at `95d19a6` adds only test-helper startup synchronization. The release tag preserves that tested source. Later documentation/feed and test-fixture corrections do not change the released application packages.

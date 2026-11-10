@@ -216,6 +216,17 @@ internal sealed class SettingsPage : Grid
     {
         var panel = Section("AirLink " + c.Version, c.T("Dateien im lokalen Netzwerk teilen.", "Share files on your local network."));
         panel.Children.Add(Theme.Text("Beta · MIT · Copyright © 2026 Lucas Kleinsteuber", 13, secondary: true));
+        panel.Children.Add(Theme.Button(c.T("Diagnosebericht speichern …", "Save diagnostic report …"), () => _ = c.RunAsync(async () => {
+            var report = c.Ready ? await c.RequestAsync("diagnostics.export") : System.Text.Json.JsonSerializer.SerializeToElement(new { schemaVersion = 1, version = c.Version, platform = "windows", service = "unavailable", privacy = "No raw logs or personal data included." });
+            var dialog = new SaveFileDialog { Title = c.T("Diagnosebericht speichern", "Save diagnostic report"), FileName = "AirLink-Diagnose.json", Filter = "JSON (*.json)|*.json", DefaultExt = ".json", AddExtension = true };
+            if (dialog.ShowDialog(owner) == true) {
+                var text = System.Text.Json.JsonSerializer.Serialize(report, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                var temporary = dialog.FileName + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                try { await File.WriteAllTextAsync(temporary, text); File.Move(temporary, dialog.FileName, true); }
+                finally { if (File.Exists(temporary)) File.Delete(temporary); }
+            }
+        })));
+        panel.Children.Add(Theme.Text(c.T("Lokaler Bericht ohne Dateinamen, private Pfade, Geräteadressen, Zugangsdaten oder Zwischenablageinhalte.", "Local report without file names, private paths, device addresses, credentials or clipboard content."), 12, secondary: true));
         var releases = Theme.Button(c.T("Downloads auf GitHub öffnen", "Open GitHub downloads"), () => _ = c.RunAsync(() => { Shell.OpenUrl("https://github.com/lucaskleinsteuber/Airlink/releases"); return System.Threading.Tasks.Task.CompletedTask; })); panel.Children.Add(releases);
         var licenses = Theme.Button(c.T("Lizenzen", "Licenses"), () => NativeLicenses.Show(owner, c)); licenses.HorizontalAlignment = HorizontalAlignment.Left; licenses.Margin = new Thickness(0, 20, 0, 0); panel.Children.Add(licenses);
         return panel;

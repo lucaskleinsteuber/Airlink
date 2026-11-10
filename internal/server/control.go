@@ -53,6 +53,8 @@ func (s *Server) Control(method string, params json.RawMessage) (any, error) {
 	switch method {
 	case "status":
 		return s.Status(), nil
+	case "diagnostics.export":
+		return s.diagnostics(), nil
 	case "status.summary":
 		return s.summaryStatus(), nil
 	case "statistics.get":

@@ -8,6 +8,8 @@ AirLink sends files and folders directly between devices on the same local netwo
 
 **[0.12.0 Beta 1 is available](https://github.com/lucaskleinsteuber/Airlink/releases/tag/v0.12.0-beta.1).** The background and package checks passed. This is beta software: physical Mac↔Arch WLAN, desktop rendering and the new 100-GB acceptance run remain separate, open checks. [Verification records](docs/TESTING.md) distinguish tests, builds, packages and physical devices; [1.0 readiness](docs/RELEASE-READINESS.md) remains a separate gate.
 
+The `main` branch is preparing **0.12.0-beta.2** (build 15); the downloads below remain the published Beta 1. See the [changelog](CHANGELOG.md) for development changes.
+
 ## Get AirLink
 
 Use the packages from the matching [GitHub beta release](https://github.com/lucaskleinsteuber/Airlink/releases). All applications in a transfer should use the same beta when testing the new comparison-code flow.
@@ -33,7 +35,9 @@ These betas are **ad hoc signed and not notarized**. macOS may require an explic
 
 ### Linux
 
-For the AppImage, make it executable and open it. Its **Add to application menu** action copies it into the user application directory and adds a launcher. After starting the installed copy successfully, the original download can be removed. A desktop session with a private `XDG_RUNTIME_DIR` is required. On systems without usable FUSE support, the AppImage runtime also supports `--appimage-extract-and-run`.
+On Arch, use the native `.pkg.tar.zst` package and `pacman -U` below for normal installation with an application-menu entry.
+
+For the AppImage, mark it executable in Dolphin → Properties → Permissions, or run `chmod +x ./AirLink-0.12.0-beta.1-linux-x64.AppImage` in its folder. Start it with `./AirLink-0.12.0-beta.1-linux-x64.AppImage`. Its **Add to application menu** action copies it into the user application directory and adds a launcher. After starting the installed copy successfully, the original download can be removed. A desktop session with a private `XDG_RUNTIME_DIR` is required. On systems without usable FUSE support, the AppImage runtime also supports `--appimage-extract-and-run`.
 
 Install the native package using its package manager:
 

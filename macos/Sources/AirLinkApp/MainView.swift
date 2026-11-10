@@ -225,7 +225,7 @@ struct TransferRow: View {
                 }
                 Menu {
                     Button(model.text("Details", "Details")) { details = true }
-                    if transfer.state == "paused" || transfer.state == "reconnecting" || transfer.state == "failed" {
+                    if transfer.state == "paused" || transfer.state == "reconnecting" || transfer.retryable == true {
                         Button(model.text("Fortsetzen", "Resume")) { model.command("transfer.resume", params: ["id": transfer.id]) }
                     } else if transfer.isActive {
                         Button(model.text("Pausieren", "Pause")) { model.command("transfer.pause", params: ["id": transfer.id]) }
@@ -253,7 +253,13 @@ struct TransferRow: View {
             if transfer.state == "waitingDuplicate" {
                 Button(model.text("Duplikate prüfen …", "Review duplicates …")) { details = true }
             }
-            if let error = transfer.error, !error.isEmpty { Text(error).font(.callout).foregroundStyle(.red).lineLimit(3) }
+            if let problem = transfer.problem {
+                Text(model.text(problem.titleDE, problem.titleEN)).font(.callout).foregroundStyle(.red)
+                Text(model.text(problem.recoveryDE, problem.recoveryEN)).font(.caption).foregroundStyle(.secondary)
+            } else if let error = transfer.error, !error.isEmpty { Text(error).font(.callout).foregroundStyle(.red).lineLimit(3) }
+            if transfer.retryable == true {
+                Button(model.text("Erneut versuchen", "Try again")) { model.command("transfer.resume", params: ["id": transfer.id]) }
+            }
             if let issue { Text(issue).font(.callout).foregroundStyle(.red) }
         }.padding(16).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
             .sheet(isPresented: $details) { TransferDetailsSheet(transfer: transfer).environmentObject(model) }

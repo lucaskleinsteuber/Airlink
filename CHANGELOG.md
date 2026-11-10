@@ -2,6 +2,14 @@
 
 AirLink uses MAJOR.MINOR.PATCH versions. Entries describe implemented changes; distribution and verification status are recorded separately.
 
+## 0.12.0-beta.2 — in development
+
+- Store immutable manifests and individual file checkpoints separately. Block receipts, the file offset and the compact transfer header commit in one SQLite transaction after data fsync. Existing records migrate atomically; older clients fail closed on the new private storage format rather than ignoring checkpoints. Downgrading an upgraded data directory to Beta 1 is unsupported.
+- Avoid full-manifest copies in worker status/file reads and source anchoring. Native senders request bounded per-file preparation/completion responses; older peers retain the original response shape.
+- Add a manually saved local diagnostic report in macOS, Linux and Windows settings. The service exports a strict aggregate schema with no raw logs, identifiers, names, addresses, paths, credentials, clipboard text or file hashes. Unavailable services permit a minimal client-only report.
+- Present German/English recovery advice separately from technical details. Retry recognized recoverable sender failures using the same transfer/source identity and the receiver's durable offsets; source changes, integrity failures, cancellation and completed jobs do not silently restart.
+- Build 15. Large comparative measurements run only on isolated hosted runners while device acceptance continues on the published Beta 1. No local installation or existing release/feed replacement is part of source preparation.
+
 ## 0.12.0-beta.1 — 2026-11-10
 
 - Add a native Qt 6.4+ Linux desktop with setup, device sidebar, direct sends, cancellable preparation, paged transfers, shares, clipboard, browser setup, notifications, single instance and tray operation. Provide AppImage, DEB, RPM and Arch packaging with a tracked PKGBUILD.

@@ -45,11 +45,12 @@ internal sealed class TransferRow : Border
         progress.Value = t.Progress; progress.Visibility = t.IsActive ? Visibility.Visible : Visibility.Collapsed;
         var speed = double.IsFinite(t.BytesPerSecond) && t.BytesPerSecond > 0 ? t.BytesPerSecond : 0;
         detail.Text = t.State == "completed" ? c.Bytes(t.CompletedBytes) + (t.SkippedBytes > 0 ? " · " + c.Bytes(t.SkippedBytes) + c.T(" übersprungen", " skipped") : "") : c.Bytes(t.CompletedBytes) + " / " + c.Bytes(t.TotalBytes) + (speed > 0 && t.State == "running" ? " · " + c.Bytes((long)Math.Min(speed, long.MaxValue)) + "/s" : "");
-        problem.Text = t.Error ?? ""; problem.Visibility = string.IsNullOrWhiteSpace(t.Error) ? Visibility.Collapsed : Visibility.Visible;
+        problem.Text = t.Problem is { } advice ? c.T(advice.TitleDE, advice.TitleEN) + "\n" + c.T(advice.RecoveryDE, advice.RecoveryEN) : t.Error ?? ""; problem.Visibility = string.IsNullOrWhiteSpace(t.Error) ? Visibility.Collapsed : Visibility.Visible;
         if (DesktopTransferSelection.Remaining(t) is { } left) detail.Text += " · " + (left.TotalMinutes >= 1 ? Math.Ceiling(left.TotalMinutes) + c.T(" Min. übrig", " min left") : Math.Ceiling(left.TotalSeconds) + c.T(" Sek. übrig", " sec left"));
-        var key = t.HasContent + ":" + t.State + ":" + c.Ready + ":" + c.RemovingHistory + ":" + string.Join('|', t.Files.Select(f => f.Id + f.Completed + f.Skipped + f.DuplicateState));
+        var key = t.Retryable + ":" + t.HasContent + ":" + t.State + ":" + c.Ready + ":" + c.RemovingHistory + ":" + string.Join('|', t.Files.Select(f => f.Id + f.Completed + f.Skipped + f.DuplicateState));
         if (key == actionKey) return; actionKey = key; actions.Children.Clear(); files.Children.Clear();
         ContextMenu = null;
+        if (t.Retryable) actions.Children.Add(Action(c.T("Erneut versuchen", "Try again"), () => c.CommandAsync("transfer.resume", current.Id)));
         if (t.State == "offered" && t.Direction == "receive")
         {
             var trust = new CheckBox { Content = c.T("Für dieses Gerät künftig automatisch", "Automatically receive from this device in future"), Margin = new Thickness(0, 8, 0, 8) };

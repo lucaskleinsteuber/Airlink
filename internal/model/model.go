@@ -1,6 +1,6 @@
 package model
 
-const Version = "0.12.0-beta.1"
+const Version = "0.12.0-beta.2"
 const ChunkSize int64 = 8 * 1024 * 1024
 
 type File struct {
@@ -18,24 +18,26 @@ type File struct {
 	DuplicateCandidates []DuplicateCandidate `json:"duplicateCandidates,omitempty"`
 }
 type Transfer struct {
-	ID             string  `json:"id"`
-	DeviceID       string  `json:"deviceId"`
-	DeviceName     string  `json:"deviceName"`
-	Direction      string  `json:"direction"`
-	State          string  `json:"state"`
-	Files          []File  `json:"files"`
-	TotalBytes     int64   `json:"totalBytes"`
-	CompletedBytes int64   `json:"completedBytes"`
-	BytesPerSecond float64 `json:"bytesPerSecond"`
-	CreatedAt      string  `json:"createdAt"`
-	UpdatedAt      string  `json:"updatedAt"`
-	Error          string  `json:"error,omitempty"`
-	Destination    string  `json:"destination,omitempty"`
-	SkippedBytes   int64   `json:"skippedBytes"`
-	Title          string  `json:"title,omitempty"`
-	FileCount      int     `json:"fileCount,omitempty"`
-	Summary        bool    `json:"summary,omitempty"`
-	HasContent     bool    `json:"hasContent,omitempty"`
+	Retryable      bool             `json:"retryable,omitempty"`
+	Problem        *TransferProblem `json:"problem,omitempty"`
+	ID             string           `json:"id"`
+	DeviceID       string           `json:"deviceId"`
+	DeviceName     string           `json:"deviceName"`
+	Direction      string           `json:"direction"`
+	State          string           `json:"state"`
+	Files          []File           `json:"files"`
+	TotalBytes     int64            `json:"totalBytes"`
+	CompletedBytes int64            `json:"completedBytes"`
+	BytesPerSecond float64          `json:"bytesPerSecond"`
+	CreatedAt      string           `json:"createdAt"`
+	UpdatedAt      string           `json:"updatedAt"`
+	Error          string           `json:"error,omitempty"`
+	Destination    string           `json:"destination,omitempty"`
+	SkippedBytes   int64            `json:"skippedBytes"`
+	Title          string           `json:"title,omitempty"`
+	FileCount      int              `json:"fileCount,omitempty"`
+	Summary        bool             `json:"summary,omitempty"`
+	HasContent     bool             `json:"hasContent,omitempty"`
 }
 type Device struct {
 	ID           string `json:"id"`

@@ -11,9 +11,9 @@
     <Nullable>enable</Nullable>
     <AssemblyName>AirLink</AssemblyName>
     <RootNamespace>AirLink.Windows</RootNamespace>
-    <Version>0.12.0-beta.1</Version>
-    <AssemblyVersion>0.12.0.14</AssemblyVersion>
-    <FileVersion>0.12.0.14</FileVersion>
+    <Version>0.12.0-beta.2</Version>
+    <AssemblyVersion>0.12.0.15</AssemblyVersion>
+    <FileVersion>0.12.0.15</FileVersion>
     <Product>AirLink</Product>
     <Description>Local, encrypted file transfers.</Description>
     <Company>Lucas Kleinsteuber</Company>

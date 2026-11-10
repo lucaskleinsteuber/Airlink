@@ -2,6 +2,12 @@ import Foundation
 import Testing
 @testable import AirLinkCore
 
+private func expectedHelperVersion() throws -> String {
+    if let version = ProcessInfo.processInfo.environment["AIRLINK_TEST_VERSION"] { return version }
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    return try String(contentsOf: root.appendingPathComponent("VERSION"), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
 @Test(.enabled(if: ProcessInfo.processInfo.environment["AIRLINK_TEST_HELPER"] != nil, "Set AIRLINK_TEST_HELPER to run the real helper integration test"))
 func actualHelperStatusAndSettingsUseNativeContract() async throws {
     let path = try #require(ProcessInfo.processInfo.environment["AIRLINK_TEST_HELPER"])
@@ -13,7 +19,7 @@ func actualHelperStatusAndSettingsUseNativeContract() async throws {
     do {
         let data = try await client.request("status")
         let status = try JSONDecoder().decode(HostStatus.self, from: data)
-        #expect(status.version == "0.12.0-beta.1")
+        #expect(status.version == (try expectedHelperVersion()))
         #expect(status.chunkSize == 8 * 1024 * 1024)
         #expect(status.fingerprint.count == 64)
         #expect(!status.urls.isEmpty)
@@ -68,7 +74,8 @@ func actualNativeTrustedPairAndReceivedResultUsePrivateContract() async throws {
         try await receiver.start(executable: URL(fileURLWithPath: path), dataDirectory: directory.appendingPathComponent("receiver-state"), receiveDirectory: directory.appendingPathComponent("receiver-files"), disableDiscovery: true)
         let first = try JSONDecoder().decode(HostStatus.self, from: await source.request("status"))
         let second = try JSONDecoder().decode(HostStatus.self, from: await receiver.request("status"))
-        #expect(first.version == "0.12.0-beta.1" && second.version == "0.12.0-beta.1")
+        let expectedVersion = try expectedHelperVersion()
+        #expect(first.version == expectedVersion && second.version == expectedVersion)
         let address = try #require(second.urls.last(where: { $0.contains("localhost:") }))
         struct Requested: Decodable { var requestId: String }
         let requested = try JSONDecoder().decode(Requested.self, from: await source.request("peer.connectTrusted", params: JSONEncoder().encode(["url": address, "fingerprint": second.fingerprint])))
