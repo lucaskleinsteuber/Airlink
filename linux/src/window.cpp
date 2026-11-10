@@ -1086,7 +1086,7 @@ void MainWindow::transferMenu(const QJsonObject &t) {
     if (state == "paused" || state == "reconnecting")
       menu.addAction(text("Fortsetzen", "Resume"), this,
                      [this, id] { action("transfer.resume", {{"id", id}}); });
-    else
+    else if (state != "offered")
       menu.addAction(text("Pausieren", "Pause"), this,
                      [this, id] { action("transfer.pause", {{"id", id}}); });
     menu.addAction(text("Abbrechen", "Cancel"), this,

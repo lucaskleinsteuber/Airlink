@@ -227,7 +227,7 @@ struct TransferRow: View {
                     Button(model.text("Details", "Details")) { details = true }
                     if transfer.state == "paused" || transfer.state == "reconnecting" || transfer.retryable == true {
                         Button(model.text("Fortsetzen", "Resume")) { model.command("transfer.resume", params: ["id": transfer.id]) }
-                    } else if transfer.isActive {
+                    } else if ["running", "queued", "checkingDuplicate", "waitingDuplicate"].contains(transfer.state) {
                         Button(model.text("Pausieren", "Pause")) { model.command("transfer.pause", params: ["id": transfer.id]) }
                     }
                     if transfer.isActive { Button(model.text("Abbrechen", "Cancel")) { model.command("transfer.cancel", params: ["id": transfer.id]) } }

@@ -10,6 +10,8 @@ AirLink sends files and folders directly between devices on the same local netwo
 
 Beta 2 (build 15) improves small-file transfers, adds manually saved local diagnostics and clearer recovery actions. See the [changelog](CHANGELOG.md) and the measured results in [TESTING.md](docs/TESTING.md). Upgrading migrates transfer metadata; Beta 1 and older cannot reopen the upgraded transfer database. Pairings, settings, confirmed progress and received files are preserved.
 
+`main` is preparing Beta 3 (build 16), correcting the sender's waiting status after reconnect. Published downloads and live update feeds remain Beta 2 until the candidate passes its checks.
+
 ## Get AirLink
 
 Use the packages from the matching [GitHub beta release](https://github.com/lucaskleinsteuber/Airlink/releases). All applications in a transfer should use the same beta when testing the new comparison-code flow.
@@ -49,6 +51,14 @@ sudo dnf install ./AirLink-0.12.0-beta.2-linux-x64.rpm
 ```
 
 Use only the command for your distribution. The [PKGBUILD](linux/packaging/PKGBUILD) also builds the app from the checked-out source. Packages install the desktop launcher, app and private helper; they do not install a system-wide network service. AirLink runs under your user account and keeps existing Linux service data.
+
+If a computer appears in AirLink but cannot receive files, check its firewall. Discovery and a successful pairing initiated from that computer do not prove incoming transfer connections are permitted. AirLink normally listens on **TCP 43871**; if that port is occupied, it can use another available port shown in its connection address. Permit the actual TLS port from the intended local subnet, keeping the firewall enabled. For example, on a UFW system whose home network is `192.168.1.0/24`:
+
+```sh
+sudo ufw allow proto tcp from 192.168.1.0/24 to any port 43871 comment 'AirLink local network'
+```
+
+Replace the example subnet and port with the actual values. This is a local firewall rule, not a router/Internet port forwarding rule. AirLink still requires trusted-device permissions and incoming acceptance unless automatic receiving was explicitly enabled. The separate plain-HTTP browser certificate-setup address can use another port; browser onboarding needs that displayed address reachable too.
 
 ### Windows
 

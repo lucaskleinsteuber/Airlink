@@ -169,8 +169,10 @@ func (s *Server) sendTransfer(ctx context.Context, t model.Transfer, rec deviceR
 			return
 		}
 		if target.State != "running" && target.State != "completed" {
-			if target.State == "checkingDuplicate" || target.State == "waitingDuplicate" {
-				_ = s.engine.MarkOutgoingWaiting(t.ID, target.State)
+			if target.State == "offered" || target.State == "checkingDuplicate" || target.State == "waitingDuplicate" {
+				if err := s.engine.MarkOutgoingWaiting(t.ID, target.State); err != nil {
+					return
+				}
 			}
 			if !sleepContext(ctx, time.Second) {
 				return

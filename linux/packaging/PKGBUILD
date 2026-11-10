@@ -1,6 +1,6 @@
 # Build from the release source tree; no AUR publication is required.
 pkgname=airlink
-pkgver=0.12.0beta2
+pkgver=0.12.0beta3
 pkgrel=1
 pkgdesc='Local encrypted file transfers with a native Qt desktop'
 arch=('x86_64')

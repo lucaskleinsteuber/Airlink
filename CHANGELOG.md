@@ -2,6 +2,13 @@
 
 AirLink uses MAJOR.MINOR.PATCH versions. Entries describe implemented changes; distribution and verification status are recorded separately.
 
+## 0.12.0-beta.3 — in development
+
+- Replace a stale reconnect error with the receiver's actual waiting-for-acceptance state as soon as a trusted connection succeeds. Keep the same offer/checkpoints, persist the transition before displaying it, and preserve pause/cancellation if a response arrives late.
+- Avoid rewriting unchanged waiting status on every peer poll. Hide unsupported Pause actions while an offer is still awaiting acceptance on macOS and Linux.
+- Document the local-network firewall requirement for Linux. A real CachyOS investigation confirmed UFW blocking the service while device discovery and pairing remained visible; allowing the TLS port from the local subnet restored the verified connection.
+- Build 16. Existing releases and feeds remain unchanged while the candidate is checked.
+
 ## 0.12.0-beta.2 — 2026-11-10
 
 - Store immutable manifests and individual file checkpoints separately. Block receipts, the file offset and the compact transfer header commit in one SQLite transaction after data fsync. Existing records migrate atomically; older clients fail closed on the new private storage format rather than ignoring checkpoints. Downgrading an upgraded data directory to Beta 1 is unsupported.

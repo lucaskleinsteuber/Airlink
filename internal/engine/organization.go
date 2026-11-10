@@ -746,7 +746,7 @@ func (e *Engine) schedulePublicationLocked(r *record) {
 	}
 }
 func (e *Engine) MarkOutgoingWaiting(id, state string) error {
-	if state != "checkingDuplicate" && state != "waitingDuplicate" {
+	if state != "offered" && state != "checkingDuplicate" && state != "waitingDuplicate" {
 		return ErrInvalid
 	}
 	e.mu.Lock()
@@ -758,10 +758,17 @@ func (e *Engine) MarkOutgoingWaiting(id, state string) error {
 	if r.Transfer.Direction != "send" || r.Transfer.State == "paused" || terminal(r.Transfer.State) {
 		return ErrConflict
 	}
-	r.Transfer.State = state
-	r.Transfer.BytesPerSecond = 0
-	if err = e.saveLocked(r); err != nil {
+	if r.Transfer.State == state && r.Transfer.Error == "" && r.Transfer.BytesPerSecond == 0 {
+		return nil
+	}
+	updated := *r
+	updated.Transfer = r.Transfer
+	updated.Transfer.State = state
+	updated.Transfer.Error = ""
+	updated.Transfer.BytesPerSecond = 0
+	if err = e.saveStateLocked(&updated); err != nil {
 		return err
 	}
+	*r = updated
 	return e.scheduleLocked()
 }
