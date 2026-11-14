@@ -15,8 +15,11 @@ MAINTAINER = "lucaskleinsteuber"
 COMMIT_EMAIL = "307191020+lucaskleinsteuber@users.noreply.github.com"
 APPROVED_IDENTITIES = {(MAINTAINER, COMMIT_EMAIL), ("lucasfd3", "307191020+lucasfd3@users.noreply.github.com")}
 APPROVED_COPYRIGHT = {"lucasfd3", "lucaskleinsteuber", "lucas kleinsteuber"}
-EXAMPLE_USERS = {"test", "example", "user", "username", "shared", "public"}
+EXAMPLE_USERS = {"test", "example", "user", "username", "shared", "public", "demo"}
 EXAMPLE_DOMAINS = {"example.com", "example.org", "example.net", "localhost", "test.invalid"}
+# Reviewed public no-reply addresses, e.g. the co-author trailer of commits
+# written with an AI assistant. They identify no private person.
+REVIEWED_PUBLIC_EMAILS = {"noreply@anthropic.com"}
 # Reviewed upstream legal texts retain their authors; path/key scans still apply.
 THIRD_PARTY_LICENSES = {
     "windows/AirLink.Windows/ThirdPartyNotices/NetSparkle-LICENSE.md",
@@ -41,7 +44,7 @@ def findings(data, third_party=False):
             found.append((line, "personal home path"))
         for match in EMAIL.finditer(value):
             address = match.group().lower()
-            if not third_party and address not in {email for _, email in APPROVED_IDENTITIES} and address.split("@", 1)[1] not in EXAMPLE_DOMAINS:
+            if not third_party and address not in {email for _, email in APPROVED_IDENTITIES} | REVIEWED_PUBLIC_EMAILS and address.split("@", 1)[1] not in EXAMPLE_DOMAINS:
                 found.append((line, "unreviewed email address"))
         if TOKENS.search(value):
             found.append((line, "credential-shaped token"))
