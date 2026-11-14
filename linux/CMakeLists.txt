@@ -18,7 +18,7 @@ target_link_libraries(airlink_core PUBLIC Qt6::Core Qt6::Network OpenSSL::Crypto
 target_compile_options(airlink_core PRIVATE -Wall -Wextra -Wpedantic -Werror -ffile-prefix-map=${AIRLINK_ROOT}=/AirLink -fdebug-prefix-map=${AIRLINK_ROOT}=/AirLink)
 option(AIRLINK_BUILD_DESKTOP "Compile the desktop application" ON)
 if(AIRLINK_BUILD_DESKTOP)
-  add_executable(airlink src/main.cpp src/window.cpp src/window.h resources.qrc)
+  add_executable(airlink src/main.cpp src/window.cpp src/window.h src/widgets.cpp src/widgets.h src/dialogs.cpp src/dialogs.h src/updatesui.cpp resources.qrc)
   target_link_libraries(airlink PRIVATE airlink_core Qt6::Widgets Qt6::DBus Qt6::Svg)
   target_compile_options(airlink PRIVATE -Wall -Wextra -Wpedantic -Werror -ffile-prefix-map=${AIRLINK_ROOT}=/AirLink -fdebug-prefix-map=${AIRLINK_ROOT}=/AirLink)
   install(TARGETS airlink RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -30,6 +30,10 @@ install(FILES packaging/io.github.lucaskleinsteuber.AirLink.desktop DESTINATION 
 install(FILES ../windows/AirLink.Windows/Assets/AirLink.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps RENAME io.github.lucaskleinsteuber.AirLink.svg)
 install(FILES ../LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/airlink)
 install(FILES packaging/io.github.lucaskleinsteuber.AirLink.metainfo.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
+# "Send with AirLink" in the Dolphin context menu.
+install(FILES packaging/io.github.lucaskleinsteuber.AirLink.send.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/kio/servicemenus)
+# One-line firewalld rule: "sudo firewall-cmd --permanent --add-service=airlink".
+install(FILES packaging/airlink.firewalld.xml DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/firewalld/services RENAME airlink.xml)
 if(BUILD_TESTING)
   find_package(Qt6 6.4 REQUIRED COMPONENTS Test)
   add_executable(airlink_core_tests tests/core_tests.cpp)

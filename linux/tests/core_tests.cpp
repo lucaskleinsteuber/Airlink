@@ -204,6 +204,34 @@ private slots:
     QVERIFY(!parseUpdate(body, sign(body), publicKey, "0.11.0", info, error));
     EVP_PKEY_free(key);
   }
+  void tilesDescribeWhatAComputerIsDoing() {
+    const QJsonObject device{{"id", "d"}, {"name", "Mac"}, {"paired", true}, {"online", true}};
+    QCOMPARE(deviceActivity(device, {}, {}, false, false).label, QString("Bereit"));
+    QCOMPARE(deviceActivity(QJsonObject{{"id", "d"}, {"paired", true}, {"online", false}}, {}, {}, false, true).label, QString("Not reachable"));
+    const QJsonArray running{QJsonObject{{"id", "t"}, {"deviceId", "d"}, {"direction", "send"}, {"state", "running"}, {"totalBytes", 200}, {"completedBytes", 50}}};
+    const auto sending = deviceActivity(device, running, {}, false, false);
+    QCOMPARE(sending.label, QString("Sendet … 25 %"));
+    QVERIFY(sending.busy);
+    QCOMPARE(sending.progress, 0.25);
+    QVERIFY(deviceActivity(device, running, {}, true, false).label.startsWith("Wird"));
+    const QJsonObject nearby{{"id", "n"}, {"name", "Air"}, {"paired", false}, {"outdated", true}};
+    QCOMPARE(deviceActivity(nearby, {}, {}, false, false).label, QString("Braucht Update"));
+    const QJsonArray pairing{QJsonObject{{"peerId", "n"}, {"state", "starting"}}};
+    QVERIFY(deviceActivity(nearby, {}, pairing, false, false).busy);
+  }
+  void transfersAreNamedLikeTheFinder() {
+    const QJsonObject folder{{"files", QJsonArray{QJsonObject{{"path", "Fotos"}, {"directory", true}}, QJsonObject{{"path", "Fotos/a.jpg"}}}}, {"fileCount", 214}};
+    QCOMPARE(describeTransfer(folder, false), QString("Fotos"));
+    const QJsonObject files{{"files", QJsonArray{QJsonObject{{"path", "a.txt"}}, QJsonObject{{"path", "b.txt"}}}}, {"fileCount", 3}};
+    QCOMPARE(describeTransfer(files, true), QString("a.txt and 2 more"));
+    QJsonArray mixed;
+    for (int i = 0; i < 8; ++i)
+      mixed.append(QJsonObject{{"id", QString::number(i)}, {"state", i == 7 ? "running" : "completed"}, {"updatedAt", QString("2026-11-14T10:0%1:00Z").arg(i)}});
+    const auto recent = recentTransfers(mixed, 5);
+    QCOMPARE(recent.size(), 5);
+    QCOMPARE(recent.first().toObject()["id"].toString(), QString("7"));
+    QCOMPARE(recent.at(1).toObject()["id"].toString(), QString("6"));
+  }
   void diagnosticsDoNotExposeCredentials() {
     const auto value =
         redactedDiagnostic("token=very-secret " + QString(48, 'a'));
@@ -222,6 +250,14 @@ private slots:
     QTRY_VERIFY_WITH_TIMEOUT(!changed.isEmpty(), 10000);
     QVERIFY(client.ready());
     QVERIFY(client.status()["summary"].toBool());
+    // A change is pushed as an event; the client reads the status again.
+    const auto before = changed.count();
+    auto settings = client.status()["settings"].toObject();
+    settings["name"] = "Renamed by test";
+    bool saved = false;
+    client.request("settings.update", settings, [&](QJsonValue, QString error) { saved = error.isEmpty(); });
+    QTRY_VERIFY_WITH_TIMEOUT(saved, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(changed.count() > before && client.status()["name"].toString() == "Renamed by test", 5000);
     bool stopped = false, clean = false;
     client.shutdown([&](bool result) {
       clean = result;

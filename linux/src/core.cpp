@@ -268,4 +268,120 @@ QString redactedDiagnostic(QString v) {
             "<redacted>");
   return v.right(4096);
 }
+QString deviceIconName(const QString &, const QString &form) {
+  return form == "laptop" ? QStringLiteral("computer-laptop")
+                          : QStringLiteral("computer");
+}
+QString describeTransfer(const QJsonObject &t, bool en) {
+  const auto files = t["files"].toArray();
+  const QString name = transferTitle(t).section('/', -1);
+  if (files.isEmpty())
+    return name;
+  const auto first = files.first().toObject();
+  if (first["directory"].toBool()) {
+    const QString folder = first["path"].toString() + '/';
+    for (int i = 1; i < files.size(); ++i)
+      if (!files[i].toObject()["path"].toString().startsWith(folder))
+        return en ? name + " and more" : name + " und weitere";
+    return name;
+  }
+  const int count = t["fileCount"].toInt(files.size());
+  if (count <= 1)
+    return name;
+  return en ? QString("%1 and %2 more").arg(name).arg(count - 1)
+            : QString("%1 und %2 weitere").arg(name).arg(count - 1);
+}
+double transferFraction(const QJsonObject &t) {
+  if (t["state"] == "completed")
+    return 1;
+  const double total = t["totalBytes"].toDouble();
+  if (total <= 0)
+    return 0;
+  const double done =
+      t["completedBytes"].toDouble() + std::max(0.0, t["skippedBytes"].toDouble());
+  return std::clamp(done / total, 0.0, 1.0);
+}
+DeviceActivity deviceActivity(const QJsonObject &d, const QJsonArray &transfers,
+                              const QJsonArray &pairings, bool preparing,
+                              bool en) {
+  const auto tr = [en](const char *de, const char *english) {
+    return QString::fromUtf8(en ? english : de);
+  };
+  const QString id = d["id"].toString(), name = d["name"].toString();
+  if (!d["paired"].toBool()) {
+    for (const auto &v : pairings) {
+      const auto p = v.toObject();
+      const auto state = p["state"].toString();
+      if ((state == "starting" || state == "comparing" ||
+           state == "finishing") &&
+          (p["peerId"].toString() == id || p["peerName"].toString() == name))
+        return {tr("Verbindet …", "Connecting …"), -1, true};
+    }
+    if (d["outdated"].toBool())
+      return {tr("Braucht Update", "Needs update")};
+    return {tr("Zum Verbinden klicken", "Click to connect")};
+  }
+  if (preparing)
+    return {tr("Wird vorbereitet …", "Preparing …"), -1, true};
+  QList<QJsonObject> mine;
+  for (const auto &v : transfers) {
+    const auto t = v.toObject();
+    if (t["deviceId"].toString() == id && !terminal(t["state"].toString()))
+      mine.append(t);
+  }
+  if (!mine.isEmpty()) {
+    double total = 0, done = 0;
+    for (const auto &t : mine) {
+      const double size = std::max(0.0, t["totalBytes"].toDouble());
+      total += size;
+      done += std::min(size, transferFraction(t) * size);
+    }
+    const double fraction = total > 0 ? std::min(1.0, done / total) : 0;
+    const int percent = static_cast<int>(fraction * 100);
+    for (const auto &t : mine)
+      if (t["state"] == "running")
+        return {t["direction"] == "send"
+                    ? (en ? QString("Sending … %1%").arg(percent)
+                          : QString("Sendet … %1 %").arg(percent))
+                    : (en ? QString("Receiving … %1%").arg(percent)
+                          : QString("Empfängt … %1 %").arg(percent)),
+                fraction, true};
+    const auto &first = mine.first();
+    const auto state = first["state"].toString();
+    if (state == "paused")
+      return {tr("Angehalten", "Paused"), fraction};
+    if (state == "offered")
+      return first["direction"] == "send"
+                 ? DeviceActivity{tr("Wartet auf Annahme", "Waiting for approval"), -1, true}
+                 : DeviceActivity{tr("Möchte senden", "Wants to send")};
+    return {d["online"].toBool() ? tr("Wartet …", "Waiting …")
+                                 : tr("Wartet auf Verbindung", "Waiting to connect"),
+            fraction > 0 ? fraction : -1, true};
+  }
+  return {d["online"].toBool() ? tr("Bereit", "Ready")
+                               : tr("Nicht erreichbar", "Not reachable")};
+}
+QJsonArray recentTransfers(const QJsonArray &input, int limit) {
+  QList<QJsonObject> active, done;
+  for (const auto &v : input) {
+    const auto t = v.toObject();
+    (terminal(t["state"].toString()) ? done : active).append(t);
+  }
+  const auto newer = [](const QJsonObject &a, const QJsonObject &b) {
+    const auto x = timestampKey(a["updatedAt"].toString()),
+               y = timestampKey(b["updatedAt"].toString());
+    return x == y ? a["id"].toString() > b["id"].toString() : x > y;
+  };
+  std::sort(active.begin(), active.end(), newer);
+  std::sort(done.begin(), done.end(), newer);
+  QJsonArray out;
+  for (const auto &t : active)
+    out.append(t);
+  for (const auto &t : done) {
+    if (out.size() >= std::max(limit, static_cast<int>(active.size())))
+      break;
+    out.append(t);
+  }
+  return out;
+}
 } // namespace AirLink

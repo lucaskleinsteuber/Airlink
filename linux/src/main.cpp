@@ -27,10 +27,26 @@ int main(int argc, char **argv) {
   app.setDesktopFileName("io.github.lucaskleinsteuber.AirLink");
   app.setQuitOnLastWindowClosed(false);
   QStringList paths;
+  bool background = false, demo = false;
+  QString snapshot;
   for (int i = 1; i < argc; ++i) {
     const QString p = QString::fromLocal8Bit(argv[i]);
-    if (QDir::isAbsolutePath(p))
+    if (p == "--background")
+      background = true;
+    else if (p == "--demo")
+      demo = true;
+    else if (p == "--snapshot" && i + 1 < argc)
+      snapshot = QString::fromLocal8Bit(argv[++i]);
+    else if (QDir::isAbsolutePath(p))
       paths.append(p);
+  }
+  // Sample data for screenshots: no service, no single-instance socket.
+  if (demo) {
+    AirLink::MainWindow preview(true);
+    if (!snapshot.isEmpty())
+      return preview.snapshot(snapshot) ? 0 : 1;
+    preview.show();
+    return app.exec();
   }
   const QString runtime =
       QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
@@ -95,7 +111,9 @@ int main(int argc, char **argv) {
                        &QObject::deleteLater);
     }
   });
-  window.show();
+  // Started at login: stay in the system tray until the window is opened.
+  if (!background)
+    window.show();
   window.acceptPaths(paths);
   window.start();
   return app.exec();

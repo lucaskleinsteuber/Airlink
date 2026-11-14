@@ -18,7 +18,9 @@ DaemonClient::DaemonClient(QObject *parent) : QObject(parent) {
   connect(&process, &QProcess::started, this, [this] {
     available = true;
     refresh();
-    poll.start(1000);
+    // The service pushes "status" events; this slow refresh only catches
+    // what has no event, such as a nearby computer that went away.
+    poll.start(15000);
   });
   connect(&process, &QProcess::errorOccurred, this,
           [this](QProcess::ProcessError e) {
@@ -72,8 +74,17 @@ void DaemonClient::start(const QString &helper, const QString &directory,
     args.append({"--receive-dir", receiveDirectory});
   process.start(helper, args, QIODevice::ReadWrite);
 }
+void DaemonClient::showDemo(const QJsonObject &status) {
+  demoMode = true;
+  current = status;
+  emit statusChanged();
+}
 void DaemonClient::request(const QString &method, const QJsonObject &params,
                            Reply callback) {
+  if (demoMode) {
+    callback({}, "This is a preview with sample data.");
+    return;
+  }
   if (!available || process.state() != QProcess::Running ||
       (stopping && method != "shutdown")) {
     callback({}, "AirLink is not ready.");
@@ -131,6 +142,11 @@ void DaemonClient::consume() {
       fail("The AirLink service returned an invalid response.");
       return;
     }
+    if (!object.contains("id") && object["event"].isString()) {
+      if (object["event"].toString() == "status")
+        refresh();
+      continue;
+    }
     const auto id = object["id"].toString();
     auto it = pending.find(id);
     if (it == pending.end())
@@ -141,8 +157,12 @@ void DaemonClient::consume() {
   }
 }
 void DaemonClient::refresh() {
-  if (!ready() || refreshing)
+  if (demoMode || !ready())
     return;
+  if (refreshing) {
+    refreshAgain = true;
+    return;
+  }
   refreshing = true;
   const auto session = generation, requestedRevision = revision;
   request("status.summary", {},
@@ -151,6 +171,7 @@ void DaemonClient::refresh() {
               return;
             refreshing = false;
             if (requestedRevision != revision) {
+              refreshAgain = false;
               refresh();
               return;
             }
@@ -168,11 +189,17 @@ void DaemonClient::refresh() {
               current = next;
               emit statusChanged();
             }
+            // A change arrived while this request ran: read once more.
+            if (refreshAgain) {
+              refreshAgain = false;
+              refresh();
+            }
           });
 }
 void DaemonClient::fail(const QString &message) {
   available = false;
   refreshing = false;
+  refreshAgain = false;
   poll.stop();
   auto callbacks = std::move(pending);
   pending.clear();

@@ -69,6 +69,8 @@ cp -a {stage}/usr %{{buildroot}}/
 /usr/share/applications/io.github.lucaskleinsteuber.AirLink.desktop
 /usr/share/icons/hicolor/scalable/apps/io.github.lucaskleinsteuber.AirLink.svg
 /usr/share/metainfo/io.github.lucaskleinsteuber.AirLink.metainfo.xml
+/usr/share/kio/servicemenus/io.github.lucaskleinsteuber.AirLink.send.desktop
+/usr/lib/firewalld/services/airlink.xml
 %license /usr/share/licenses/airlink/LICENSE
 '''
 write(rpmroot/'SPECS/airlink.spec',spec)

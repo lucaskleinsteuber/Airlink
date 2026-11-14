@@ -16,7 +16,10 @@ public:
   void request(const QString &method, const QJsonObject &params, Reply reply);
   void refresh();
   void shutdown(std::function<void(bool)> done);
-  bool ready() const { return available && !stopping; }
+  bool ready() const { return demoMode || (available && !stopping); }
+  // Sample data without a service, for screenshots.
+  void showDemo(const QJsonObject &status);
+  bool demo() const { return demoMode; }
   const QJsonObject &status() const { return current; }
 signals:
   void statusChanged();
@@ -33,7 +36,8 @@ private:
   QByteArray input;
   QString diagnostics;
   QJsonObject current;
-  bool available = false, stopping = false, refreshing = false;
+  bool available = false, stopping = false, refreshing = false,
+       refreshAgain = false, demoMode = false;
   quint64 generation = 0;
   quint64 revision = 0;
   std::function<void(bool)> stopped;
