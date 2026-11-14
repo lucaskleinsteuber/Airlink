@@ -479,7 +479,7 @@ internal static class DemoData
         var linux = new Device { Id = "demo-linux", Name = "Linux-PC", Kind = "engine", Address = "https://192.0.2.22:43871", Paired = true, Online = false, CanSend = true, CanReceive = true, AutoAccept = true, Platform = "linux", Form = "laptop" };
         var nearby = new Device { Id = "demo-air", Name = "MacBook Air", Kind = "engine", Address = "https://192.0.2.41:43871", Fingerprint = "cc", Platform = "macos", Form = "laptop" };
         var status = new HostStatus { Summary = true, Version = "0.13.0", Id = "demo-self", Name = "Windows-PC", Urls = ["https://192.0.2.30:43871"], Fingerprint = "dd",
-            Settings = new HostSettings { SetupCompleted = scenario != "welcome", Name = "Windows-PC", ReceiveDirectory = @"C:\Users\Demo\Downloads", Language = english ? "en" : "de" } };
+            Settings = new HostSettings { SetupCompleted = scenario != "welcome", Name = "Windows-PC", ReceiveDirectory = WindowsFolders.Downloads(), Language = english ? "en" : "de" } };
         if (scenario is "welcome" or "empty") { status.Devices = [nearby]; return status; }
         status.Devices = scenario == "home" ? [mac, linux, nearby] : [mac, linux];
         status.Transfers = [

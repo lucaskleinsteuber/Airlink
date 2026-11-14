@@ -27,7 +27,7 @@ Historical receive destinations remain authoritative. Changing settings affects 
 
 ## Responsive control and native state
 
-Current apps poll `status.summary` rather than fetching all history/manifests. The summary is generated directly from engine records with bounded previews and separate active counts. History and file details load in 50-entry pages, with a hard maximum of 100 per request. Full share/clipboard/statistics tooling loads on demand. Legacy full status remains for compatible clients.
+The service pushes `{"event":"status"}` lines over the private stdio channel after every visible change (coalesced to at most one per 100 ms, four per second while data moves); the apps then read `status.summary` instead of fetching all history/manifests, with a 15-second safety refresh. The summary is generated directly from engine records with bounded previews and separate active counts. History and file details load in 50-entry pages, with a hard maximum of 100 per request. Full share/clipboard/statistics tooling loads on demand. Legacy full status remains for compatible clients.
 
 Preparation is an asynchronous, bounded job with a replay identity and explicit cancel/status methods. Source walking does not monopolize the serial pipe loop. EOF/shutdown cancels owned operations; a failed graceful stop prevents application replacement.
 

@@ -66,17 +66,16 @@ Run the Setup EXE for your architecture. AirLink installs under `%LOCALAPPDATA%\
 
 ## First transfer
 
-1. Open AirLink on both computers. Setup asks for a recognizable **device name**, your actual **Downloads folder** or another receive folder, and optional notifications/update notices.
-2. Choose **Add device**, select the other computer, compare the **eight-digit code directly on both displays**, and confirm on both computers.
-3. Select the trusted device in the sidebar and drop files or folders onto the send area, or choose them with the picker. Without a selected recipient, files stay prepared until you choose one and send.
-4. Accept the incoming offer. Optionally enable **Automatically accept files from this device** on that receiving computer. The opposite direction has its own independent choice.
-5. Follow progress, speed and remaining time. **Show file / Open folder** opens the verified received result.
+1. Open AirLink. The welcome screen suggests the computer's name and your **Downloads** folder; keep **Open at login** on so your other computers can always reach you, then choose **Get started**.
+2. Open AirLink on the other computer too. Each computer appears on the other as a round tile under **Nearby**. Click it: both screens show the same **eight-digit code**. Confirm **Code matches** on both computers. Files from your own paired computers are accepted without asking by default (changeable per device).
+3. Drag files or folders onto a computer's tile – or click the tile and choose them. That's it: progress appears as a ring around the tile and under **Recent**.
+4. On the receiving computer a notification offers **Show**; the files are in the receive folder.
 
 Files arrive directly in the selected receive folder. A transferred folder retains its hierarchy and empty subfolders. Name collisions receive a distinct name; existing files are never silently overwritten. Source files stay in place. Symbolic links are skipped visibly.
 
-Pause and reconnection resume from confirmed blocks. Source changes, missing write access and unavailable devices produce an actionable error. Removing a finished result from the list removes its history entry and preserves the files. Closing the main window keeps transfers active in the menu bar/tray; **Quit** saves state and stops the owned service.
+Pause, disconnects and restarts resume from the last verified segment. Closing the main window keeps AirLink running in the menu bar/tray; **Quit** saves state and stops the service.
 
-An older desktop can use the explicit manual address/full-fingerprint flow under other connection methods. AirLink never silently switches the comparison-code flow to an unverified connection.
+Sending also works from the file manager: Finder (right-click → Services → **Send with AirLink**, or drop files on the Dock icon), Dolphin (right-click → **Send with AirLink**) and Explorer (right-click → Send to → **AirLink**).
 
 ## Features and platform limits
 
@@ -92,11 +91,11 @@ An older desktop can use the explicit manual address/full-fingerprint flow under
 
 Linux follows system widgets and colors, with KDE/Wayland as the primary desktop target. macOS uses SwiftUI/AppKit, menu-bar operation, Finder Services, configurable shortcut and optional launch at login. Windows has native WPF controls and tray operation.
 
-Phones and tablets are not supported. If a computer is not discovered automatically, **Add device → Other connection options** accepts the other computer's address and fingerprint (shown under **This device**); you still compare the eight-digit code on both screens.
+Phones and tablets are not supported. If a computer is not discovered automatically, choose **Add → Not found? Connect by IP address** and type the IP address shown under **Help** on the other computer; you still compare the eight-digit code on both screens. If a firewall blocks incoming connections on one computer (common on Linux), start connecting from that computer – afterwards sending works in both directions.
 
 ## Settings and updates
 
-Settings are grouped into **General, Receiving, Transfers, Updates and About**, plus **Shortcuts** on macOS. Save/Discard stays visible. Navigation and status refresh preserve intentional edits; untouched fields follow newer saved settings.
+Settings have three areas – **General** (name, receive folder, open at login, notifications, language), **Devices** (per paired computer: accept without asking, share clipboard, permissions, remove) and **Advanced** (speed limits, shortcut on macOS, updates, address, diagnostic report). Changes apply immediately.
 
 **Check for Updates** is available in the app/tray menu and Settings → Updates. **Notify me about new betas** is optional and off by default; when enabled, metadata is checked at most once in 24 hours. Downloads and installation require a click. Transfer use remains independent of update availability.
 
