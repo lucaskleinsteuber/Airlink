@@ -16,9 +16,9 @@ Native Linux packages remain under package-manager control. AirLink downloads an
 
 ## Versions and release contents
 
-`VERSION` is `Major.Minor.Patch-beta.N`; `BUILD_NUMBER` increases across OS builds. macOS short version stays numeric and displays the beta separately; Windows executable/installer numerical fields use `Major.Minor.Patch.Build`. The signed feeds bind those fields to the displayed release. The read-only `scripts/check-version.py` checks the source representations agree.
+Starting with 0.13.0, `VERSION` is a plain `Major.Minor.Patch` (0.13.0, 0.13.1, 0.14.0 …); `BUILD_NUMBER` keeps increasing across OS builds. Whether a release is a beta is decided only by publishing it as a GitHub **pre-release**; the version number carries no `-beta.N` suffix. All updaters still accept older `-beta.N` versions, which sort before the release with the same number (0.12.0-beta.3 < 0.12.0 < 0.13.0). macOS short version and Windows numeric fields (`Major.Minor.Patch.Build`) are unchanged in form. The read-only `scripts/check-version.py` checks that the source representations agree.
 
-For Beta 3, DEB uses `0.12.0~beta.3-1`, RPM `0.12.0~beta.3-1`, and Arch `0.12.0beta3-1`. Package-tool tests check beta 1 < beta 2 < beta 10 < the final version. Lifecycle tests derive an actually newer synthetic beta from the current candidate instead of reinstalling the same version. No epoch is introduced.
+Linux packages use DEB `0.13.0-1`, RPM `0.13.0-1` and Arch `0.13.0-1`. Legacy betas map to `0.12.0~beta.3-1` and `0.12.0beta3-1`, so every package manager upgrades from them. Lifecycle tests install the candidate, then a synthetic next patch version with the same payload. No epoch is introduced.
 
 New catalogs describe exactly eight app packages and five feeds. The schema-2 `UPDATE-SIGNATURES.json` records exact package/feed hashes, lengths and signatures; its detached `.signature` signs the whole manifest. `SHA256SUMS.txt` covers every app package, the manifest and its signature. Mac feed signatures are embedded using Sparkle's signed-feed format; Windows and Linux use detached `.signature` files. The historical three-package schema-1 tests and public-only metadata curation remain separate; old tags/assets are never rewritten by beta publication.
 
@@ -27,7 +27,7 @@ New catalogs describe exactly eight app packages and five feeds. The schema-2 `U
 1. Build/test packages and audit the source, reachable history and decoded package payloads. Inspect binaries, license material, embedded web resources, native metadata and archive ownership.
 2. Sign the sealed packages with the existing local publishing key into a staging output. Public-only verification must accept the exact eight-package set, all feeds, manifest signature and checksum list.
 3. Verify Mac feeds/packages using Sparkle's actual public-only command-line verifier, Windows feeds/Setup files with NetSparkle, and Linux feeds/packages with the Qt/Go verifiers. Synthetic signed successors exercise the update path without a real desktop launch.
-4. Publish only the approved active repository. Upload the beta as a draft/prerelease, fetch assets and verify size/hash/signature before making the release available.
+4. Publish only the approved active repository. Upload a beta as a draft, then mark it as a GitHub pre-release; fetch assets and verify size/hash/signature before making the release available. Stable releases use the same numbering without the pre-release flag.
 5. Publish the tracked update feeds only after matching release downloads are reachable. Check anonymous access and exact bytes. Keep the private archived predecessor private and archived.
 
 This pipeline proves cryptographic compatibility, headless handoff/installation logic and actual uploaded bytes. It does not prove a manual native updater interaction or desktop relaunch under KDE/macOS; those remain device checks. macOS beta downloads are ad hoc signed and not notarized. No app is installed into the developer's Applications directory by automated checking.

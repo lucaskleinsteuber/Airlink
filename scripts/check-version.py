@@ -22,5 +22,6 @@ for name in ('AirLink.Core','AirLink.Windows'):
 manifest=ET.parse(root/'windows/AirLink.Windows/app.manifest')
 identity=manifest.find('{urn:schemas-microsoft-com:asm.v1}assemblyIdentity')
 if identity is None or identity.attrib['version']!=base+'.'+build: raise SystemExit('Windows manifest version differs')
-if match.group(4) and 'pkgver='+base+'beta'+match.group(4) not in (root/'linux/packaging/PKGBUILD').read_text(): raise SystemExit('Arch package version differs')
+arch='pkgver='+base+('beta'+match.group(4) if match.group(4) else '')
+if arch+'\n' not in (root/'linux/packaging/PKGBUILD').read_text(): raise SystemExit('Arch package version differs')
 print('Version consistent: '+version+'; numeric build '+build)

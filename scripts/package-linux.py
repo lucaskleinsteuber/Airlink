@@ -13,9 +13,14 @@ import urllib.request
 root = Path(__file__).resolve().parents[1]
 stage, output, appdir = (Path(v).resolve() for v in sys.argv[1:4])
 version = sys.argv[4]
-match = re.fullmatch(r'(\d+\.\d+\.\d+)-beta\.([1-9]\d*)', version)
-if not match: raise SystemExit('Expected a beta version')
+match = re.fullmatch(r'(\d+\.\d+\.\d+)(?:-beta\.([1-9]\d*))?', version)
+if not match: raise SystemExit('Expected Major.Minor.Patch or a legacy -beta.N version')
 base, beta = match.groups()
+# Releases use plain versions; a release is a "beta" only by its GitHub
+# pre-release flag. Legacy beta versions still sort before their release.
+deb_version = f'{base}~beta.{beta}-1' if beta else f'{base}-1'
+rpm_version = f'{base}~beta.{beta}' if beta else base
+arch_version = f'{base}beta{beta}-1' if beta else f'{base}-1'
 prefix = 'AirLink-'+version+'-linux-x64'
 
 def run(*args, **kwargs): subprocess.run(args, check=True, **kwargs)
@@ -26,7 +31,7 @@ def write(path, content):
 
 # Native packages have neutral ownership and contain no user configuration.
 write(stage/'DEBIAN/control', f'''Package: airlink
-Version: {base}~beta.{beta}-1
+Version: {deb_version}
 Section: net
 Priority: optional
 Architecture: amd64
@@ -45,7 +50,7 @@ spec=f'''%global debug_package %{{nil}}
 %global _build_id_links none
 %global __os_install_post %{{nil}}
 Name: airlink
-Version: {base}~beta.{beta}
+Version: {rpm_version}
 Release: 1
 Summary: Local encrypted file transfers
 License: MIT
@@ -74,7 +79,7 @@ shutil.copyfile(rpms[0],output/(prefix+'.rpm'))
 
 write(stage/'.PKGINFO',f'''pkgname = airlink
 pkgbase = airlink
-pkgver = {base}beta{beta}-1
+pkgver = {arch_version}
 pkgdesc = Local encrypted file transfers
 url = https://github.com/lucaskleinsteuber/Airlink
 builddate = {os.environ['SOURCE_DATE_EPOCH']}
