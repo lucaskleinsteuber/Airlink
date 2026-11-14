@@ -298,6 +298,12 @@ struct FailedDirectSend: Identifiable {
         selectedPairingSessionID = session.id
         await refresh(force: true)
     }
+    /// While "Add device" is open, this Mac accepts pairing requests from
+    /// other computers (the service closes the window after two minutes).
+    func listenForPairing() async {
+        guard isReady else { return }
+        _ = try? await client.request("pairing.listen")
+    }
     func confirmPairing(_ id: String, automatic: Bool) async throws {
         try requireReady()
         guard status?.pairingSessions?.contains(where: { $0.id == id && $0.canConfirm }) == true else { throw NativeError.unavailable(text("Die Verbindung muss erneut geprüft werden.", "The connection needs to be checked again.")) }

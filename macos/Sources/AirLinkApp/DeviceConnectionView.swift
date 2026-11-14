@@ -45,6 +45,7 @@ struct ConnectView: View {
                 Button(model.text("Anderes Gerät wählen", "Choose another device")) { model.selectedPairingSessionID = nil; automatic = false; issue = nil }
             }
         }.padding(26).frame(width: 580).textFieldStyle(.roundedBorder)
+            .task { while !Task.isCancelled { await model.listenForPairing(); try? await Task.sleep(for: .seconds(60)) } }
             .onChange(of: session?.id) { _, _ in automatic = session?.automaticReceive ?? false }
             .onChange(of: session?.state) { _, state in if state == "paired", let session { model.selectedDeviceID = session.peerId; dismiss() } }
             .interactiveDismissDisabled(requesting)
@@ -100,7 +101,7 @@ struct ConnectView: View {
                     }.buttonStyle(.borderedProminent).disabled(!session.canConfirm || requesting || !model.isReady)
                 }
             } else if session.state == "starting" || session.state == "finishing" {
-                HStack(spacing: 10) { ProgressView().controlSize(.small); Text(session.state == "starting" ? model.text("Der andere Computer wird erreicht …", "Contacting the other computer …") : model.text("Verbindung wird gespeichert …", "Saving connection …")) }
+                HStack(spacing: 10) { ProgressView().controlSize(.small); Text(session.state == "starting" ? (session.error == nil ? model.text("Der andere Computer wird erreicht …", "Contacting the other computer …") : model.text("Öffne auf dem anderen Computer „Gerät hinzufügen“, um den Code zu vergleichen.", "Open “Add device” on the other computer to compare the code.")) : model.text("Verbindung wird gespeichert …", "Saving connection …")) }
             } else if session.state == "paired" {
                 Label(model.text("Verbunden. Du kannst jetzt Dateien senden.", "Connected. You can now send files."), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
             } else { Label(session.error ?? model.text("Diese Anfrage ist abgelaufen oder wurde abgebrochen.", "This request expired or was cancelled."), systemImage: "exclamationmark.circle").foregroundStyle(.secondary) }

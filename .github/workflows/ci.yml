@@ -45,15 +45,21 @@ jobs:
           python3 scripts/check-privacy.py --history
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.27.3'
+          go-version: '1.27.4'
           cache-dependency-path: go.sum
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.402'
-      - name: Go unit, security, HTTPS, and race tests
+      - name: Go unit, security, protocol and race tests
         run: |
           go test -race ./...
           go vet ./...
+      - name: Fuzz protocol frames and received names
+        run: |
+          go test -run '^$' -fuzz FuzzParseHeader -fuzztime 30s ./internal/peer/
+          go test -run '^$' -fuzz FuzzLocalPath -fuzztime 30s ./internal/transfer/
+      - name: Known vulnerabilities in Go and dependencies
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
       - name: Windows core tests with the actual helper
         run: |
           mkdir -p build

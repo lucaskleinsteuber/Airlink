@@ -11,47 +11,37 @@ import (
 	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
 
-func TestPreparationIdempotentAndSummaryDoesNotLoadFullHistory(t *testing.T) {
-	s := integrationHost(t)
-	d, _ := integrationDevice(t, s, false)
+func TestPreparationIdempotentAndSummaryStaysCompact(t *testing.T) {
+	a, b := pairedHosts(t)
 	path := filepath.Join(t.TempDir(), "test.bin")
 	if err := os.WriteFile(path, []byte("source bytes"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	input, _ := json.Marshal(preparationInput{DeviceID: d.ID, Paths: []string{path}, RequestID: "0123456789abcdef0123456789abcdef"})
-	value, err := s.Control("preparation.start", input)
+	input, _ := json.Marshal(preparationInput{DeviceID: hostID(b), Paths: []string{path}, RequestID: "0123456789abcdef0123456789abcdef"})
+	value, err := a.Control("preparation.start", input)
 	if err != nil {
 		t.Fatal(err)
 	}
 	job := value.(model.Preparation)
-	if _, err = s.Control("status.summary", nil); err != nil {
-		t.Fatal(err)
-	}
-	value, err = s.Control("preparation.start", input)
+	value, err = a.Control("preparation.start", input)
 	if err != nil || value.(model.Preparation).ID != job.ID {
 		t.Fatal(value, err)
 	}
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		value, err = s.Control("preparation.status", json.RawMessage(`{"id":"`+job.ID+`"}`))
-		if err != nil {
-			t.Fatal(err)
-		}
+	waitFor(t, 5*time.Second, "preparation", func() bool {
+		value, err = a.Control("preparation.status", json.RawMessage(`{"id":"`+job.ID+`"}`))
 		job = value.(model.Preparation)
-		if job.State != "preparing" {
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
-	if job.State != "completed" || job.TransferID == "" || len(s.engine.Transfers(d.ID)) != 1 {
+		return err == nil && job.State != "preparing"
+	})
+	if job.State != "completed" || job.TransferID == "" || len(a.engine.Transfers(hostID(b))) != 1 {
 		t.Fatal(job)
 	}
-	input, _ = json.Marshal(preparationInput{DeviceID: d.ID, Paths: []string{path + "changed"}, RequestID: job.RequestID})
-	if _, err = s.Control("preparation.start", input); err == nil {
+	input, _ = json.Marshal(preparationInput{DeviceID: hostID(b), Paths: []string{path + "changed"}, RequestID: job.RequestID})
+	if _, err = a.Control("preparation.start", input); err == nil {
 		t.Fatal("changed request reused receipt")
 	}
-	status := s.summaryStatus()
-	if !status.Summary || len(status.Transfers) != 1 || !status.Transfers[0].Summary {
+	waitTransfer(t, a, job.TransferID, "completed")
+	status := a.summaryStatus()
+	if !status.Summary || len(status.Transfers) != 1 || !status.Transfers[0].Summary || len(status.Transfers[0].Files) != 1 {
 		t.Fatal(status)
 	}
 	encoded, _ := json.Marshal(status)

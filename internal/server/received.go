@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/lucaskleinsteuber/Airlink/internal/engine"
 	"github.com/lucaskleinsteuber/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/transfer"
 )
 
 // Accepting and saving future receipt permission are explicit local actions.
@@ -17,7 +17,7 @@ func (s *Server) acceptTrusted(id string) (model.Transfer, error) {
 		return model.Transfer{}, err
 	}
 	if t.Direction != "receive" || t.State != "offered" {
-		return model.Transfer{}, engine.ErrConflict
+		return model.Transfer{}, transfer.ErrConflict
 	}
 	s.store.Lock()
 	defer s.store.Unlock()

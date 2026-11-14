@@ -9,8 +9,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/lucaskleinsteuber/Airlink/internal/engine"
 	"github.com/lucaskleinsteuber/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/transfer"
 )
 
 type preparationInput struct {
@@ -34,11 +34,7 @@ func (s *Server) offerControl(ctx context.Context, params json.RawMessage) (mode
 	if !ok || !rec.Device.CanReceive {
 		return model.Transfer{}, errors.New("pair an allowed receiving device first")
 	}
-	t, err := s.engine.OfferWithRequestIDContext(ctx, rec.Device, v.Paths, v.RequestID)
-	if err == nil {
-		s.wakeOutgoing()
-	}
-	return t, err
+	return s.engine.Offer(ctx, rec.Device, v.Paths, v.RequestID)
 }
 
 func (s *Server) preparationSnapshots() []model.Preparation {
@@ -68,13 +64,13 @@ func (s *Server) preparationControl(method string, params json.RawMessage) (any,
 			ID string `json:"id"`
 		}
 		if json.Unmarshal(params, &v) != nil {
-			return nil, engine.ErrInvalid
+			return nil, transfer.ErrInvalid
 		}
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		j := s.preparations[v.ID]
 		if j == nil {
-			return nil, engine.ErrNotFound
+			return nil, transfer.ErrNotFound
 		}
 		switch method {
 		case "preparation.status":
@@ -90,16 +86,16 @@ func (s *Server) preparationControl(method string, params json.RawMessage) (any,
 	}
 	var input preparationInput
 	if json.Unmarshal(params, &input) != nil || len(input.RequestID) != 32 || len(input.Paths) == 0 || len(input.Paths) > 10000 {
-		return nil, engine.ErrInvalid
+		return nil, transfer.ErrInvalid
 	}
 	for _, c := range input.RequestID {
 		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
-			return nil, engine.ErrInvalid
+			return nil, transfer.ErrInvalid
 		}
 	}
 	for i, p := range input.Paths {
 		if !filepath.IsAbs(p) {
-			return nil, engine.ErrInvalid
+			return nil, transfer.ErrInvalid
 		}
 		input.Paths[i] = filepath.Clean(p)
 	}
@@ -116,7 +112,7 @@ func (s *Server) preparationControl(method string, params json.RawMessage) (any,
 		if j.RequestID == input.RequestID {
 			if j.input.DeviceID != input.DeviceID || !reflect.DeepEqual(j.input.Paths, input.Paths) {
 				s.mu.Unlock()
-				return nil, engine.ErrConflict
+				return nil, transfer.ErrConflict
 			}
 			if j.State == "preparing" || j.State == "completed" {
 				result := j.Preparation
@@ -143,7 +139,7 @@ func (s *Server) preparationControl(method string, params json.RawMessage) (any,
 	go func() {
 		defer s.wg.Done()
 		defer cancel()
-		t, err := s.engine.OfferWithRequestIDContext(ctx, rec.Device, input.Paths, input.RequestID)
+		t, err := s.engine.Offer(ctx, rec.Device, input.Paths, input.RequestID)
 		s.mu.Lock()
 		if err == nil {
 			j.State, j.TransferID = "completed", t.ID
@@ -154,9 +150,6 @@ func (s *Server) preparationControl(method string, params json.RawMessage) (any,
 		}
 		j.finished = time.Now()
 		s.mu.Unlock()
-		if err == nil {
-			s.wakeOutgoing()
-		}
 	}()
 	return result, nil
 }

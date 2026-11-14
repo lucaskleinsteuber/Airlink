@@ -45,6 +45,7 @@ func awaitPairing(t *testing.T, s *Server, id, state string) model.PairingSessio
 
 func TestMutualPairingTLSCodeAndDirectionalTrust(t *testing.T) {
 	a, b := integrationHost(t), integrationHost(t)
+	openPairing(t, b)
 	started := pairingCall(t, a, "pairing.start", map[string]string{"url": hostURL(b), "fingerprint": b.fingerprint})
 	ap := awaitPairing(t, a, started.ID, "comparing")
 	bp := awaitPairing(t, b, "", "comparing")
@@ -96,6 +97,7 @@ func TestMutualPairingTLSCodeAndDirectionalTrust(t *testing.T) {
 
 func TestPairingReceiptSurvivesHelperRestartAndLostReplies(t *testing.T) {
 	a, b := integrationHost(t), integrationHost(t)
+	openPairing(t, b)
 	started := pairingCall(t, a, "pairing.start", map[string]string{"url": hostURL(b), "fingerprint": b.fingerprint})
 	ap := awaitPairing(t, a, started.ID, "comparing")
 	bp := awaitPairing(t, b, "", "comparing")
@@ -134,6 +136,7 @@ func TestPairingReceiptSurvivesHelperRestartAndLostReplies(t *testing.T) {
 
 func TestPairingRejectsReplayExpiryAndFailedCommit(t *testing.T) {
 	a, b := integrationHost(t), integrationHost(t)
+	openPairing(t, b)
 	started := pairingCall(t, a, "pairing.start", map[string]string{"url": hostURL(b), "fingerprint": b.fingerprint})
 	awaitPairing(t, a, started.ID, "comparing")
 	bp := awaitPairing(t, b, "", "comparing")
@@ -202,6 +205,7 @@ func TestPairingTLSIntermediaryCannotSupplyMatchingCode(t *testing.T) {
 	proxy.StartTLS()
 	defer proxy.Close()
 	// The provisional discovery hint points at the intermediary identity.
+	openPairing(t, b)
 	started := pairingCall(t, a, "pairing.start", map[string]string{"url": strings.Replace(proxy.URL, "127.0.0.1", "localhost", 1), "fingerprint": identityHost.fingerprint})
 	ap := awaitPairing(t, a, started.ID, "comparing")
 	bp := awaitPairing(t, b, "", "comparing")
@@ -210,5 +214,31 @@ func TestPairingTLSIntermediaryCannotSupplyMatchingCode(t *testing.T) {
 	}
 	if len(a.store.snapshot().Devices) != 0 || len(b.store.snapshot().Devices) != 0 {
 		t.Fatal("intermediary granted trust")
+	}
+}
+
+func openPairing(t *testing.T, s *Server) {
+	t.Helper()
+	if _, err := s.Control("pairing.listen", nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPairingRequestsNeedAnOpenPairingWindow(t *testing.T) {
+	a, b := integrationHost(t), integrationHost(t)
+	started := pairingCall(t, a, "pairing.start", map[string]string{"url": hostURL(b), "fingerprint": b.fingerprint})
+	waitFor(t, 5*time.Second, "closed-window hint", func() bool {
+		got := pairingCall(t, a, "pairing.status", map[string]string{"id": started.ID})
+		return got.State == "starting" && got.Error == pairingClosedHint
+	})
+	if len(b.pairingSnapshots()) != 0 {
+		t.Fatal("request accepted while pairing was closed")
+	}
+	// Opening "Add device" on b lets the waiting request continue.
+	openPairing(t, b)
+	ap := awaitPairing(t, a, started.ID, "comparing")
+	bp := awaitPairing(t, b, "", "comparing")
+	if ap.ComparisonCode != bp.ComparisonCode || ap.Error != "" {
+		t.Fatal(ap, bp)
 	}
 }

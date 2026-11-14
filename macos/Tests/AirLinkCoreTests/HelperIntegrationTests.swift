@@ -65,6 +65,7 @@ func actualNativeTrustedPairAndReceivedResultUsePrivateContract() async throws {
         // Comparison-code pairing: both helpers show the same code and both
         // sides confirm, each choosing automatic receipt for its direction.
         struct Confirmation: Encodable { let id: String; let automaticReceive: Bool }
+        _ = try await receiver.request("pairing.listen")
         let started = try JSONDecoder().decode(PairingSession.self, from: await source.request("pairing.start", params: JSONEncoder().encode(["url": address, "fingerprint": second.fingerprint])))
         let deadline = Date().addingTimeInterval(15)
         var remoteSession: PairingSession?

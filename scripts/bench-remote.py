@@ -164,6 +164,10 @@ def lan_url(status, prefix):
 
 
 def pair(initiator, responder, responder_url, timeout):
+    try:
+        responder.rpc('pairing.listen')  # 0.13+: accept requests only while "Add device" is open
+    except RuntimeError:
+        pass
     session = initiator.rpc('pairing.start', {'url': responder_url, 'fingerprint': responder.status['fingerprint']})
     deadline = time.monotonic() + timeout
     code, remote_session = None, None
@@ -247,6 +251,8 @@ def main():
     parser.add_argument('--timeout', type=int, default=3600)
     parser.add_argument('--poll', type=float, default=0.1)
     parser.add_argument('--label', default='')
+    parser.add_argument('--initiator', choices=['local', 'remote'], default='local',
+                        help='Computer that starts pairing; use remote when the remote computer cannot accept connections')
     parser.add_argument('--report')
     args = parser.parse_args()
 
@@ -282,7 +288,10 @@ def main():
         for host in hosts:
             host.rpc('settings.update', {'sendLimitBytesPerSecond': 0, 'receiveLimitBytesPerSecond': 0})
         started = time.monotonic()
-        code = pair(local, remote, lan_url(remote.status, args.subnet), 120)
+        if args.initiator == 'remote':
+            code = pair(remote, local, lan_url(local.status, args.subnet), 120)
+        else:
+            code = pair(local, remote, lan_url(remote.status, args.subnet), 120)
         pairing_seconds = time.monotonic() - started
         print('paired (%s) in %.2fs: %s %s <-> %s %s' % (code, pairing_seconds, local.status['name'], local.status['version'], remote.status['name'], remote.status['version']), flush=True)
         for case in args.cases.split(','):

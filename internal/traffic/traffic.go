@@ -200,6 +200,14 @@ func (m *Meter) add(n int, direction string) {
 		m.counters.SentBytes += min(int64(n), math.MaxInt64-m.counters.SentBytes)
 	}
 }
+
+// Wait blocks until n bytes fit the configured limit for direction ("send"
+// or "receive"); Add counts n transferred payload bytes.
+func (m *Meter) Wait(ctx context.Context, n int, direction string) error {
+	return m.wait(ctx, n, direction)
+}
+func (m *Meter) Add(n int, direction string) { m.add(n, direction) }
+
 func (m *Meter) WrapReader(ctx context.Context, r io.Reader, direction string) io.Reader {
 	return &reader{m: m, ctx: ctx, r: r, direction: direction}
 }

@@ -76,12 +76,14 @@ func (s *Server) Control(method string, params json.RawMessage) (any, error) {
 		}
 		s.cancelDevicePreparations(id.ID)
 		s.dismissDeviceClipboard(id.ID)
-		s.cancelDeviceRequests(id.ID)
+		// Cancel while the session still exists, so the other device learns
+		// it, then drop the connection; the identity is no longer trusted.
 		for _, t := range s.engine.Transfers(id.ID) {
-			if t.State != "completed" && t.State != "cancelled" {
+			if t.State != "completed" && t.State != "cancelled" && t.State != "failed" {
 				_ = s.engine.Cancel(t.ID)
 			}
 		}
+		s.peers.Disconnect(id.ID, errors.New("device trust revoked"))
 		return map[string]bool{"ok": true}, nil
 	case "transfer.accept":
 		return map[string]bool{"ok": true}, s.engine.Accept(id.ID)
@@ -90,21 +92,11 @@ func (s *Server) Control(method string, params json.RawMessage) (any, error) {
 	case "transfer.received":
 		return s.engine.ReceivedItems(id.ID)
 	case "transfer.pause":
-		s.stopSender(id.ID)
-		err := s.engine.Pause(id.ID)
-		s.stopTransferRequests(id.ID)
-		return map[string]bool{"ok": true}, err
+		return map[string]bool{"ok": true}, s.engine.Pause(id.ID)
 	case "transfer.resume":
-		err := s.engine.Resume(id.ID)
-		if err == nil {
-			s.wakeOutgoing()
-		}
-		return map[string]bool{"ok": true}, err
+		return map[string]bool{"ok": true}, s.engine.Resume(id.ID)
 	case "transfer.cancel":
-		s.stopSender(id.ID)
-		err := s.engine.Cancel(id.ID)
-		s.stopTransferRequests(id.ID)
-		return map[string]bool{"ok": true}, err
+		return map[string]bool{"ok": true}, s.engine.Cancel(id.ID)
 	case "offer":
 		return s.offerControl(s.ctx, params)
 	case "settings.update":
@@ -131,7 +123,7 @@ func (s *Server) Control(method string, params json.RawMessage) (any, error) {
 		v.Organization = model.Organization{Rules: []model.SortRule{}}
 		v.Name = strings.TrimSpace(v.Name)
 		s.store.Lock()
-		e := s.engine.ConfigureIncoming(v.ReceiveDirectory, v.Organization, func() error {
+		e := s.engine.SetReceiveDirectory(v.ReceiveDirectory, func() error {
 			s.store.data.Settings = v
 			if err := s.store.save(); err != nil {
 				s.store.data.Settings = previous
@@ -218,4 +210,14 @@ func (s *Server) Stdio(in io.Reader, out io.Writer) error {
 		}
 	}
 	return scan.Err()
+}
+
+// pauseDisallowedTransfers pauses transfers whose direction the device may
+// no longer use.
+func (s *Server) pauseDisallowedTransfers(device model.Device) {
+	for _, t := range s.engine.Transfers(device.ID) {
+		if t.Direction == "receive" && !device.CanSend || t.Direction == "send" && !device.CanReceive {
+			_ = s.engine.Pause(t.ID)
+		}
+	}
 }

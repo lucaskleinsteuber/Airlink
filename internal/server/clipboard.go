@@ -1,16 +1,14 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
-	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/lucaskleinsteuber/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/peer"
 )
 
 const clipboardMaxBytes = 64 * 1024
@@ -117,26 +115,56 @@ func (s *Server) dismissDeviceClipboard(deviceID string) {
 	}
 	s.clipboardMessages = retained
 }
+
+type clipboardMessage struct {
+	Type string `json:"type"`
+	ID   string `json:"id"`
+	Text string `json:"text"`
+}
+
+type clipboardAck struct {
+	Type  string `json:"type"`
+	ID    string `json:"id"`
+	Error string `json:"error,omitempty"`
+}
+
+// sendClipboard delivers text over the device's session and records it once
+// the other device accepted it. Both devices must allow clipboard text.
 func (s *Server) sendClipboard(deviceID, text string) (model.ClipboardMessage, error) {
 	if e := validateClipboardText(text); e != nil {
 		return model.ClipboardMessage{}, e
 	}
 	record, ok := s.store.snapshot().Devices[deviceID]
-	if !ok || !record.Device.CanClipboard {
+	if !ok || !record.Device.Paired || !record.Device.CanClipboard {
 		return model.ClipboardMessage{}, errors.New("enable clipboard permission for this paired device first")
 	}
+	session := s.peers.Get(deviceID)
+	if session == nil {
+		s.requestConnection(deviceID)
+		return model.ClipboardMessage{}, errors.New("the other device is not connected; open AirLink on it and try again")
+	}
 	id := randomID()
-	if record.Device.Kind == "engine" {
-		if record.OutboundToken == "" {
-			return model.ClipboardMessage{}, errors.New("finish pairing this device first")
+	reply := make(chan string, 1)
+	s.clipboardMu.Lock()
+	s.clipboardWaits[id] = reply
+	s.clipboardMu.Unlock()
+	defer func() {
+		s.clipboardMu.Lock()
+		delete(s.clipboardWaits, id)
+		s.clipboardMu.Unlock()
+	}()
+	if err := session.Send(clipboardMessage{Type: "clipboard", ID: id, Text: text}); err != nil {
+		return model.ClipboardMessage{}, fmt.Errorf("clipboard delivery failed: %w", err)
+	}
+	select {
+	case problem := <-reply:
+		if problem != "" {
+			return model.ClipboardMessage{}, fmt.Errorf("the other device did not accept the text: %s", problem)
 		}
-		ctx, cancel := context.WithTimeout(s.ctx, 10*time.Second)
-		defer cancel()
-		var response model.ClipboardMessage
-		err := requestJSON(ctx, pinnedClient(record.Device.Fingerprint), http.MethodPost, strings.TrimRight(record.Device.Address, "/")+"/api/v1/clipboard", record.OutboundToken, map[string]string{"id": id, "text": text}, &response)
-		if err != nil {
-			return model.ClipboardMessage{}, fmt.Errorf("clipboard delivery failed; enable clipboard on both devices and use AirLink 0.2 or newer: %w", err)
-		}
+	case <-session.Done():
+		return model.ClipboardMessage{}, errors.New("clipboard delivery failed: connection interrupted")
+	case <-time.After(10 * time.Second):
+		return model.ClipboardMessage{}, errors.New("clipboard delivery failed: no answer from the other device")
 	}
 	fresh, ok := s.store.snapshot().Devices[deviceID]
 	if !ok || !fresh.Device.CanClipboard {
@@ -144,6 +172,41 @@ func (s *Server) sendClipboard(deviceID, text string) (model.ClipboardMessage, e
 	}
 	return s.recordClipboard(fresh.Device, "send", id, text)
 }
+
+func (s *Server) receiveClipboard(session *peer.Session, e peer.Envelope) {
+	var m clipboardMessage
+	if e.Decode(&m) != nil {
+		return
+	}
+	ack := clipboardAck{Type: "clipboard.ack", ID: m.ID}
+	record, ok := s.store.snapshot().Devices[session.PeerID()]
+	if !ok || !record.Device.Paired || !record.Device.CanClipboard {
+		ack.Error = "clipboard text is not allowed from this device"
+	} else if _, err := s.recordClipboard(record.Device, "receive", m.ID, m.Text); err != nil {
+		ack.Error = err.Error()
+	}
+	if len(ack.ID) > 100 {
+		return
+	}
+	_ = session.Send(ack)
+}
+
+func (s *Server) clipboardAcknowledged(e peer.Envelope) {
+	var m clipboardAck
+	if e.Decode(&m) != nil {
+		return
+	}
+	s.clipboardMu.Lock()
+	reply := s.clipboardWaits[m.ID]
+	s.clipboardMu.Unlock()
+	if reply != nil {
+		select {
+		case reply <- m.Error:
+		default:
+		}
+	}
+}
+
 func (s *Server) clipboardControl(method string, params json.RawMessage) (any, error) {
 	switch method {
 	case "clipboard.list":
@@ -168,46 +231,4 @@ func (s *Server) clipboardControl(method string, params json.RawMessage) (any, e
 	default:
 		return nil, errors.New("unknown clipboard method")
 	}
-}
-func (s *Server) handleClipboardAPI(w http.ResponseWriter, r *http.Request, d model.Device) bool {
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/")
-	if path != "clipboard" && !strings.HasPrefix(path, "clipboard/") {
-		return false
-	}
-	if strings.HasPrefix(path, "clipboard/") && r.Method == http.MethodDelete {
-		id := strings.TrimPrefix(path, "clipboard/")
-		if e := s.dismissClipboard(id, d.ID); e != nil {
-			fail(w, 404, e)
-		} else {
-			respond(w, 200, map[string]bool{"ok": true})
-		}
-		return true
-	}
-	if !d.CanClipboard {
-		fail(w, 403, errors.New("clipboard permission is disabled on the host"))
-		return true
-	}
-	if path == "clipboard" && r.Method == http.MethodPost {
-		var v struct {
-			ID   string `json:"id,omitempty"`
-			Text string `json:"text"`
-		}
-		if !decode(w, r, &v) {
-			return true
-		}
-		fresh, ok := s.store.snapshot().Devices[d.ID]
-		if !ok || !fresh.Device.CanClipboard {
-			fail(w, 403, errors.New("clipboard permission revoked"))
-			return true
-		}
-		message, e := s.recordClipboard(fresh.Device, "receive", v.ID, v.Text)
-		if e != nil {
-			fail(w, 400, e)
-			return true
-		}
-		respond(w, 201, message)
-		return true
-	}
-	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	return true
 }

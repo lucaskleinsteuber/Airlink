@@ -19,8 +19,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lucaskleinsteuber/Airlink/internal/engine"
 	"github.com/lucaskleinsteuber/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/transfer"
 )
 
 // All pairing receipts are private persisted host data. The local comparison
@@ -125,6 +125,12 @@ func trimPairings(p *persisted) {
 	}
 }
 
+// Requests from other devices are accepted only while the local user has
+// "Add device" open; apps renew this window while that view is visible.
+const pairingWindow = 2 * time.Minute
+
+const pairingClosedHint = "Open “Add device” on the other computer to continue."
+
 func (s *Server) pairingControl(method string, params json.RawMessage) (any, error) {
 	if method == "pairing.start" {
 		var in struct {
@@ -132,12 +138,12 @@ func (s *Server) pairingControl(method string, params json.RawMessage) (any, err
 			Fingerprint string `json:"fingerprint"`
 		}
 		if json.Unmarshal(params, &in) != nil || !validPeerURL(in.URL) {
-			return nil, engine.ErrInvalid
+			return nil, transfer.ErrInvalid
 		}
 		in.URL = strings.TrimRight(in.URL, "/")
 		in.Fingerprint = strings.ToLower(strings.TrimSpace(in.Fingerprint))
 		if !pairingHex(in.Fingerprint, 32) {
-			return nil, engine.ErrInvalid
+			return nil, transfer.ErrInvalid
 		}
 		id := randomID()
 		err := s.editPairings(func(p *persisted) error {
@@ -164,24 +170,40 @@ func (s *Server) pairingControl(method string, params json.RawMessage) (any, err
 		}
 		return s.store.snapshot().Pairings[id].snapshot(), nil
 	}
+	if method == "pairing.listen" {
+		// The local user opened "Add device": accept requests from other
+		// devices for a limited time only.
+		var v struct {
+			Seconds int `json:"seconds"`
+		}
+		_ = json.Unmarshal(params, &v)
+		if v.Seconds <= 0 {
+			v.Seconds = int(pairingWindow / time.Second)
+		}
+		until := time.Now().Add(time.Duration(min(max(v.Seconds, 30), 600)) * time.Second)
+		s.mu.Lock()
+		s.pairingOpenUntil = until
+		s.mu.Unlock()
+		return map[string]string{"openUntil": until.UTC().Format(time.RFC3339)}, nil
+	}
 	var in struct {
 		ID        string `json:"id"`
 		Automatic bool   `json:"automaticReceive"`
 	}
 	if json.Unmarshal(params, &in) != nil {
-		return nil, engine.ErrInvalid
+		return nil, transfer.ErrInvalid
 	}
 	if method == "pairing.status" {
 		r, ok := s.store.snapshot().Pairings[in.ID]
 		if !ok {
-			return nil, engine.ErrNotFound
+			return nil, transfer.ErrNotFound
 		}
 		return r.snapshot(), nil
 	}
 	err := s.editPairings(func(p *persisted) error {
 		r, ok := p.Pairings[in.ID]
 		if !ok {
-			return engine.ErrNotFound
+			return transfer.ErrNotFound
 		}
 		if method == "pairing.cancel" {
 			if r.LocalConfirmed || r.Granted {
@@ -247,13 +269,18 @@ func (s *Server) pairingBegin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.rate[ip] = append(recent, now)
+	open := now.Before(s.pairingOpenUntil)
 	s.mu.Unlock()
+	if !open {
+		fail(w, http.StatusForbidden, errors.New("pairing is not open on this device"))
+		return
+	}
 	var in pairingBeginInput
 	if !decode(w, r, &in) {
 		return
 	}
 	if !pairingHex(in.ID, 24) || !validDiscoveryName(in.Name) || !validPeerURL(in.Address) || !pairingHex(in.Fingerprint, 32) || !pairingHex(in.Nonce, 24) || !pairingHex(in.Secret, 24) || !pairingHex(in.AttemptID, 24) {
-		fail(w, 400, engine.ErrInvalid)
+		fail(w, 400, transfer.ErrInvalid)
 		return
 	}
 	var reply pairingBeginReply
@@ -300,13 +327,14 @@ func (s *Server) pairingRemote(w http.ResponseWriter, r *http.Request) {
 	}
 	action := strings.TrimPrefix(r.URL.Path, "/api/v1/pair/v2/")
 	var reply pairingRemoteReply
+	granted := ""
 	err := s.editPairings(func(p *persisted) error {
 		pair, ok := p.Pairings[in.ID]
 		if !ok || pair.Initiator || !pairingHex(in.Secret, 24) || !hmac.Equal([]byte(pair.SecretHash), []byte(digest([]byte(in.Secret)))) {
-			return engine.ErrNotFound
+			return transfer.ErrNotFound
 		}
 		if !pair.Granted && time.Now().After(pair.Expires) {
-			return engine.ErrNotFound
+			return transfer.ErrNotFound
 		}
 		if pair.State == "cancelled" || pair.State == "denied" {
 			reply.State = pair.State
@@ -315,43 +343,44 @@ func (s *Server) pairingRemote(w http.ResponseWriter, r *http.Request) {
 		switch action {
 		case "cancel":
 			if pair.Granted {
-				return engine.ErrConflict
+				return transfer.ErrConflict
 			}
 			pair.State = "cancelled"
 		case "confirm":
 			if !pairingHex(in.ReturnToken, 24) {
-				return engine.ErrInvalid
+				return transfer.ErrInvalid
 			}
 			if pair.ReturnToken != "" && pair.ReturnToken != in.ReturnToken {
-				return engine.ErrConflict
+				return transfer.ErrConflict
 			}
 			pair.RemoteConfirmed, pair.ReturnToken = true, in.ReturnToken
 		case "poll":
 		case "ack":
 			if !pair.Granted {
-				return engine.ErrConflict
+				return transfer.ErrConflict
 			}
 			if _, exists := p.Devices[pair.Peer.ID]; !exists {
-				return engine.ErrNotFound
+				return transfer.ErrNotFound
 			}
 			pair.State = "paired"
 		default:
-			return engine.ErrInvalid
+			return transfer.ErrInvalid
 		}
 		if pair.LocalConfirmed && pair.RemoteConfirmed && !pair.Granted && pair.State != "cancelled" {
 			if _, exists := p.Devices[pair.Peer.ID]; exists {
-				return engine.ErrConflict
+				return transfer.ErrConflict
 			}
 			pair.Granted, pair.State, pair.GrantToken = true, "finishing", randomID()
 			d := pair.Peer
 			d.Paired = true
 			d.AutoAccept = pair.Automatic
 			p.Devices[d.ID] = deviceRecord{Device: d, TokenHash: digest([]byte(pair.GrantToken)), OutboundToken: pair.ReturnToken}
+			granted = d.ID
 		}
 		if pair.Granted {
 			rec, exists := p.Devices[pair.Peer.ID]
 			if !exists || rec.TokenHash != digest([]byte(pair.GrantToken)) {
-				return engine.ErrNotFound
+				return transfer.ErrNotFound
 			}
 			reply.Token = pair.GrantToken
 		}
@@ -362,6 +391,9 @@ func (s *Server) pairingRemote(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		fail(w, 409, errors.New("pairing request unavailable or no longer valid"))
 		return
+	}
+	if granted != "" {
+		s.requestConnection(granted)
 	}
 	respond(w, 200, reply)
 }
@@ -448,6 +480,18 @@ func (s *Server) pairingStep(id string, p pairingRecord) {
 		content, readErr := io.ReadAll(io.LimitReader(res.Body, 16385))
 		res.Body.Close()
 		var reply pairingBeginReply
+		if res.StatusCode == http.StatusForbidden {
+			// Keep trying until the other user opens "Add device" there.
+			_ = s.editPairings(func(data *persisted) error {
+				current := data.Pairings[id]
+				if current.State == "starting" && current.Error != pairingClosedHint {
+					current.Error = pairingClosedHint
+					data.Pairings[id] = current
+				}
+				return nil
+			})
+			return
+		}
 		if readErr != nil || res.StatusCode != 202 || len(content) > 16384 || json.Unmarshal(content, &reply) != nil || !pairingHex(reply.ID, 24) || !pairingHex(reply.Nonce, 24) {
 			return
 		}
@@ -458,10 +502,10 @@ func (s *Server) pairingStep(id string, p pairingRecord) {
 		_ = s.editPairings(func(data *persisted) error {
 			current, ok := data.Pairings[id]
 			if !ok || current.State != "starting" {
-				return engine.ErrConflict
+				return transfer.ErrConflict
 			}
 			current.Peer.ID, current.Peer.Name, current.Peer.CanSend, current.Peer.CanReceive = info.ID, info.Name, true, true
-			current.RemoteID, current.Code, current.State = reply.ID, code, "comparing"
+			current.RemoteID, current.Code, current.State, current.Error = reply.ID, code, "comparing", ""
 			data.Pairings[id] = current
 			return nil
 		})
@@ -482,10 +526,16 @@ func (s *Server) pairingStep(id string, p pairingRecord) {
 	if err := requestJSON(ctx, client, "POST", base+"pair/v2/"+action, "", pairingRemoteInput{ID: p.RemoteID, Secret: p.Secret, ReturnToken: p.ReturnToken}, &reply); err != nil {
 		return
 	}
+	granted := ""
+	defer func() {
+		if granted != "" {
+			s.requestConnection(granted)
+		}
+	}()
 	_ = s.editPairings(func(data *persisted) error {
 		current, ok := data.Pairings[id]
 		if !ok || current.State != p.State {
-			return engine.ErrConflict
+			return transfer.ErrConflict
 		}
 		current.RemoteConfirmed = reply.Confirmed
 		if reply.State == "denied" || reply.State == "cancelled" {
@@ -493,13 +543,14 @@ func (s *Server) pairingStep(id string, p pairingRecord) {
 		}
 		if current.LocalConfirmed && reply.Confirmed && pairingHex(reply.Token, 24) && !current.Granted {
 			if _, exists := data.Devices[current.Peer.ID]; exists {
-				return engine.ErrConflict
+				return transfer.ErrConflict
 			}
 			d := current.Peer
 			d.Paired = true
 			d.AutoAccept = current.Automatic
 			data.Devices[d.ID] = deviceRecord{Device: d, TokenHash: digest([]byte(current.ReturnToken)), OutboundToken: reply.Token}
 			current.Granted, current.State = true, "finishing"
+			granted = d.ID
 		}
 		if p.Granted && reply.State == "paired" {
 			current.State = "paired"

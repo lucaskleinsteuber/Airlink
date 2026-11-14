@@ -10,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/hex"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
@@ -125,7 +126,7 @@ func identity(dir, name string) (tls.Certificate, string, []byte, error) {
 	}
 	serial, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
 	host, _ := os.Hostname()
-	leaf := &x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: "AirLink"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().AddDate(0, 3, 0), DNSNames: []string{"localhost", host, strings.TrimSuffix(host, ".local") + ".local"}, IPAddresses: localIPs(), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+	leaf := &x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: "AirLink"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().AddDate(0, 3, 0), DNSNames: []string{"localhost", host, strings.TrimSuffix(host, ".local") + ".local"}, IPAddresses: localIPs(), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth}}
 	der, err := x509.CreateCertificate(rand.Reader, leaf, ca, &key.PublicKey, key)
 	if err != nil {
 		return tls.Certificate{}, "", nil, err
@@ -134,6 +135,8 @@ func identity(dir, name string) (tls.Certificate, string, []byte, error) {
 	pair, err := tls.X509KeyPair(chain, keyPEM)
 	return pair, digest(ca.Raw), certPEM, err
 }
+
+var errPeerIdentity = errors.New("peer identity verification failed")
 
 // The TLS root is pinned out of band during pairing. Verification still checks
 // the leaf chain, hostname, expiry and key usages; it never blindly skips TLS.

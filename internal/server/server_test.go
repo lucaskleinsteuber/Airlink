@@ -2,184 +2,308 @@ package server
 
 import (
 	"bytes"
-	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"io"
+	"crypto/rand"
+	"encoding/json"
+	"errors"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/lucaskleinsteuber/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/transfer"
 )
+
+func freePort(t *testing.T) int {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port
+}
 
 func integrationHost(t *testing.T) *Server {
 	t.Helper()
 	base := t.TempDir()
-	s, e := New(Options{DataDir: filepath.Join(base, "state"), ReceiveDir: filepath.Join(base, "received"), NoDiscovery: true})
-	if e != nil {
-		t.Fatal(e)
+	s, err := New(Options{DataDir: filepath.Join(base, "state"), ReceiveDir: filepath.Join(base, "received"), NoDiscovery: true, Port: freePort(t)})
+	if err != nil {
+		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
+
 func hostURL(s *Server) string { return s.urls[len(s.urls)-1] }
-func integrationDevice(t *testing.T, s *Server, auto bool) (model.Device, string) {
+
+func hostID(s *Server) string { return s.store.snapshot().ID }
+
+func waitFor(t *testing.T, timeout time.Duration, what string, cond func() bool) {
 	t.Helper()
-	token := randomID()
-	d := model.Device{ID: randomID(), Name: "Integration peer", Kind: "browser", Paired: true, Online: true, CanSend: true, CanReceive: true, AutoAccept: auto}
-	if e := s.store.put(deviceRecord{Device: d, TokenHash: digest([]byte(token))}); e != nil {
-		t.Fatal(e)
+	deadline := time.Now().Add(timeout)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatal("timeout waiting for " + what)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	return d, token
 }
-func uploadBlock(t *testing.T, s *Server, token, tid, fid string, index int64, data []byte) int {
+
+// pairedHosts returns two connected services that trust each other and
+// receive automatically from each other.
+func pairedHosts(t *testing.T) (*Server, *Server) {
 	t.Helper()
-	req, e := http.NewRequest("PUT", hostURL(s)+"/api/v1/transfers/"+tid+"/files/"+fid+"/chunks/"+stringIndex(index), bytes.NewReader(data))
-	if e != nil {
-		t.Fatal(e)
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("X-Chunk-SHA256", digest(data))
-	res, e := pinnedClient(s.fingerprint).Do(req)
-	if e != nil {
-		t.Fatal(e)
-	}
-	defer res.Body.Close()
-	b, _ := io.ReadAll(res.Body)
-	if res.StatusCode != 200 {
-		t.Log(string(b))
-	}
-	return res.StatusCode
-}
-func stringIndex(v int64) string {
-	if v == 0 {
-		return "0"
-	}
-	b := make([]byte, 0, 20)
-	for v > 0 {
-		b = append([]byte{byte('0' + v%10)}, b...)
-		v /= 10
-	}
-	return string(b)
-}
-func TestNativePeerPairAndDirectTransfer(t *testing.T) {
-	source, target := integrationHost(t), integrationHost(t)
-	pairForTest(t, source, target)
-	rec := source.store.snapshot().Devices[target.store.snapshot().ID]
-	back := target.store.snapshot().Devices[source.store.snapshot().ID]
-	var e error
-	back.Device.AutoAccept = true
-	if e = target.store.put(back); e != nil {
-		t.Fatal(e)
-	}
-	data := bytes.Repeat([]byte("AirLink direct TLS transfer\x00"), 350000)
-	path := filepath.Join(t.TempDir(), "original.bin")
-	if e = os.WriteFile(path, data, 0600); e != nil {
-		t.Fatal(e)
-	}
-	offered, e := source.engine.Offer(rec.Device, []string{path})
-	if e != nil {
-		t.Fatal(e)
-	}
-	deadline := time.Now().Add(25 * time.Second)
-	for time.Now().Before(deadline) {
-		current, _ := source.engine.Get(offered.ID)
-		if current.State == "completed" {
-			got := target.engine.Transfers(source.store.snapshot().ID)
-			if len(got) != 1 || got[0].State != "completed" {
-				t.Fatal("receiver incomplete")
-			}
-			b, e := os.ReadFile(filepath.Join(got[0].Destination, "original.bin"))
-			if e != nil || !bytes.Equal(b, data) {
-				t.Fatal("direct data mismatch", e)
-			}
-			original, _ := os.ReadFile(path)
-			if !bytes.Equal(original, data) {
-				t.Fatal("source modified")
-			}
-			return
+	a, b := integrationHost(t), integrationHost(t)
+	pairForTest(t, a, b)
+	for _, pair := range [][2]*Server{{a, b}, {b, a}} {
+		if err := pair[0].store.edit(hostID(pair[1]), func(r *deviceRecord) { r.Device.AutoAccept = true; r.Device.CanClipboard = true }); err != nil {
+			t.Fatal(err)
 		}
-		if current.State == "failed" {
-			t.Fatal(current.Error)
-		}
-		time.Sleep(30 * time.Millisecond)
 	}
-	t.Fatalf("transfer timeout: %#v receiver %#v", source.engine.Transfers(""), target.engine.Transfers(""))
+	a.requestConnection(hostID(b))
+	waitFor(t, 10*time.Second, "session", func() bool { return a.peers.Get(hostID(b)) != nil && b.peers.Get(hostID(a)) != nil })
+	return a, b
 }
-func TestStdioControlAndPersistedSettings(t *testing.T) {
+
+func offer(t *testing.T, s *Server, to string, paths ...string) model.Transfer {
+	t.Helper()
+	params, _ := json.Marshal(preparationInput{DeviceID: to, Paths: paths})
+	v, err := s.Control("offer", params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v.(model.Transfer)
+}
+
+func waitTransfer(t *testing.T, s *Server, id, state string) model.Transfer {
+	t.Helper()
+	var last model.Transfer
+	waitFor(t, 30*time.Second, "transfer "+state, func() bool {
+		last, _ = s.engine.Header(id)
+		return last.State == state
+	})
+	return last
+}
+
+func randomFile(t *testing.T, path string, size int) []byte {
+	t.Helper()
+	data := make([]byte, size)
+	_, _ = rand.Read(data)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func TestPairedServicesTransferBothDirectionsOverOneSession(t *testing.T) {
+	a, b := pairedHosts(t)
+	folder := filepath.Join(t.TempDir(), "Projekt")
+	want := map[string][]byte{}
+	for i, name := range []string{"a.txt", "sub/b.bin", "sub/deeper/c.dat", "größe.txt"} {
+		want[name] = randomFile(t, filepath.Join(folder, filepath.FromSlash(name)), 1000*(i+1))
+	}
+	out := offer(t, a, hostID(b), folder)
+	waitTransfer(t, a, out.ID, "completed")
+	waitTransfer(t, b, out.ID, "completed")
+	for name, data := range want {
+		got, err := os.ReadFile(filepath.Join(b.opts.ReceiveDir, "Projekt", filepath.FromSlash(name)))
+		if err != nil || !bytes.Equal(got, data) {
+			t.Fatal(name, err)
+		}
+	}
+	single := filepath.Join(t.TempDir(), "reply.pdf")
+	data := randomFile(t, single, 70_000)
+	back := offer(t, b, hostID(a), single)
+	waitTransfer(t, a, back.ID, "completed")
+	waitTransfer(t, b, back.ID, "completed")
+	if got, err := os.ReadFile(filepath.Join(a.opts.ReceiveDir, "reply.pdf")); err != nil || !bytes.Equal(got, data) {
+		t.Fatal("reverse direction", err)
+	}
+	if !a.basicStatus().Devices[0].Online {
+		t.Fatal("connected device not shown online")
+	}
+	result, err := b.Control("transfer.received", json.RawMessage(`{"id":"`+out.ID+`"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := result.(transfer.ReceivedResult).Items
+	if len(items) != 1 || filepath.Base(items[0].Path) != "Projekt" || !items[0].Directory {
+		t.Fatal("received items", items)
+	}
+}
+
+func TestOneWayReachabilityStillDeliversToTheUnreachableSide(t *testing.T) {
+	a, b := integrationHost(t), integrationHost(t)
+	pairForTest(t, a, b)
+	// a cannot reach b (as if a firewall blocked b's port); b can reach a.
+	if err := a.store.edit(hostID(b), func(r *deviceRecord) { r.Device.Address = "https://127.0.0.1:1" }); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.store.edit(hostID(a), func(r *deviceRecord) { r.Device.AutoAccept = true }); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.store.edit(hostID(b), func(r *deviceRecord) { r.Device.AutoAccept = true }); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(t.TempDir(), "to-unreachable.bin")
+	data := randomFile(t, source, 50_000)
+	out := offer(t, a, hostID(b), source)
+	b.requestConnection(hostID(a))
+	waitTransfer(t, b, out.ID, "completed")
+	waitTransfer(t, a, out.ID, "completed")
+	if got, err := os.ReadFile(filepath.Join(b.opts.ReceiveDir, "to-unreachable.bin")); err != nil || !bytes.Equal(got, data) {
+		t.Fatal(err)
+	}
+	if s := a.peers.Get(hostID(b)); s == nil || s.Initiator {
+		t.Fatal("the session should have been opened by the reachable side")
+	}
+}
+
+func TestClipboardOverSessionRequiresBothPermissions(t *testing.T) {
+	a, b := pairedHosts(t)
+	if err := b.store.edit(hostID(a), func(r *deviceRecord) { r.Device.CanClipboard = false }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.sendClipboard(hostID(b), "blocked on the other side"); err == nil {
+		t.Fatal("receiver permission skipped")
+	}
+	if err := b.store.edit(hostID(a), func(r *deviceRecord) { r.Device.CanClipboard = true }); err != nil {
+		t.Fatal(err)
+	}
+	sent, err := a.sendClipboard(hostID(b), "Hallo Welt 🌍\nzweite Zeile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := b.clipboardSnapshot(hostID(a))
+	if len(got) != 1 || got[0].Text != sent.Text || got[0].Direction != "receive" || sent.Direction != "send" {
+		t.Fatal(got, sent)
+	}
+	if err := a.store.edit(hostID(b), func(r *deviceRecord) { r.Device.CanClipboard = false }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.sendClipboard(hostID(b), "no local permission"); err == nil {
+		t.Fatal("sender permission skipped")
+	}
+}
+
+func TestRevokingTrustCancelsAndDisconnects(t *testing.T) {
+	a, b := pairedHosts(t)
+	if err := b.store.edit(hostID(a), func(r *deviceRecord) { r.Device.AutoAccept = false }); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(t.TempDir(), "pending.bin")
+	randomFile(t, source, 1000)
+	out := offer(t, a, hostID(b), source)
+	waitTransfer(t, b, out.ID, "offered")
+	if _, err := a.Control("device.revoke", json.RawMessage(`{"id":"`+hostID(b)+`"}`)); err != nil {
+		t.Fatal(err)
+	}
+	waitTransfer(t, a, out.ID, "cancelled")
+	waitTransfer(t, b, out.ID, "cancelled")
+	waitFor(t, 5*time.Second, "disconnect", func() bool { return a.peers.Get(hostID(b)) == nil })
+	// b still trusts a, but a no longer accepts b's identity.
+	b.requestConnection(hostID(a))
+	time.Sleep(300 * time.Millisecond)
+	if a.peers.Get(hostID(b)) != nil {
+		t.Fatal("revoked device reconnected")
+	}
+}
+
+func TestOnlyInfoAndPairingAreServedOverHTTP(t *testing.T) {
+	s := integrationHost(t)
+	client := pinnedClient(s.fingerprint)
+	for _, route := range []struct {
+		method, path string
+		ok           bool
+	}{{"GET", "/api/v1/info", true}, {"GET", "/", false}, {"GET", "/setup", false}, {"GET", "/certificate.pem", false}, {"POST", "/api/v1/transfers", false}, {"POST", "/api/v1/clipboard", false}, {"GET", "/api/v1/status", false}, {"POST", "/api/v1/pair/request", false}, {"POST", "/api/v1/diagnostics.export", false}} {
+		req, _ := http.NewRequest(route.method, hostURL(s)+route.path, strings.NewReader("{}"))
+		res, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if (res.StatusCode == 200) != route.ok {
+			t.Fatalf("%s %s answered %d", route.method, route.path, res.StatusCode)
+		}
+	}
+	req, _ := http.NewRequest("GET", "https://attacker.invalid/api/v1/info", nil)
+	req.Host = "attacker.invalid:1"
+	req.URL.Host = strings.TrimPrefix(hostURL(s), "https://")
+	res, err := client.Do(req)
+	if err == nil {
+		res.Body.Close()
+		if res.StatusCode != http.StatusForbidden {
+			t.Fatal("DNS rebinding host accepted", res.StatusCode)
+		}
+	}
+}
+
+func TestStdioControlAnswersAndStops(t *testing.T) {
 	s := integrationHost(t)
 	var out bytes.Buffer
-	if e := s.Stdio(strings.NewReader("{\"id\":7,\"method\":\"status\"}\n{\"id\":8,\"method\":\"shutdown\"}\n"), &out); e != nil {
-		t.Fatal(e)
+	if err := s.Stdio(strings.NewReader("{\"id\":7,\"method\":\"status.summary\"}\n{\"id\":8,\"method\":\"share.create\"}\n{\"id\":9,\"method\":\"shutdown\"}\n"), &out); err != nil {
+		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	if len(lines) != 2 || !strings.Contains(lines[0], `"id":7`) {
+	if len(lines) != 3 || !strings.Contains(lines[0], `"id":7`) || !strings.Contains(lines[1], "unknown control method") {
 		t.Fatal(out.String())
 	}
 }
-func TestStreamingAcceptance(t *testing.T) {
-	raw := os.Getenv("AIRLINK_STRESS_GIB")
-	if raw == "" {
-		t.Skip("opt-in: AIRLINK_STRESS_GIB=100 for 100 GiB actual HTTPS payload")
+
+func TestRestartKeepsIdentityAndContinuesWithPeer(t *testing.T) {
+	a, b := pairedHosts(t)
+	opts := b.opts
+	id := hostID(b)
+	if err := b.Close(); err != nil {
+		t.Fatal(err)
 	}
-	count, parseErr := strconv.Atoi(raw)
-	if parseErr != nil || count < 1 || count > 1024 {
-		t.Fatal("invalid stress count")
+	waitFor(t, 5*time.Second, "disconnect after restart", func() bool { return a.peers.Get(id) == nil })
+	restarted, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
 	}
-	s := integrationHost(t)
-	_, token := integrationDevice(t, s, true)
-	client := pinnedClient(s.fingerprint)
-	block := make([]byte, int(model.ChunkSize))
-	for i := range block {
-		block[i] = byte(i % 251)
+	t.Cleanup(func() { _ = restarted.Close() })
+	if hostID(restarted) != id {
+		t.Fatal("identity changed")
 	}
-	blockHash := digest(block)
-	whole := sha256.New()
-	for i := 0; i < 128; i++ {
-		_, _ = whole.Write(block)
+	restarted.requestConnection(hostID(a))
+	waitFor(t, 10*time.Second, "reconnect", func() bool { return a.peers.Get(id) != nil && restarted.peers.Get(hostID(a)) != nil })
+	source := filepath.Join(t.TempDir(), "after-restart.txt")
+	data := randomFile(t, source, 123)
+	out := offer(t, a, id, source)
+	waitTransfer(t, restarted, out.ID, "completed")
+	if got, err := os.ReadFile(filepath.Join(opts.ReceiveDir, "after-restart.txt")); err != nil || !bytes.Equal(got, data) {
+		t.Fatal(errors.Join(err))
 	}
-	wholeHash := hex.EncodeToString(whole.Sum(nil))
-	start := time.Now()
-	var sent int64
-	for batch := 0; batch < count; batch++ {
-		var tr model.Transfer
-		file := model.File{ID: "payload", Path: "payload.bin", Size: 1 << 30}
-		if e := requestJSON(context.Background(), client, "POST", hostURL(s)+"/api/v1/transfers", token, model.Offer{Files: []model.File{file}}, &tr); e != nil {
-			t.Fatal(e)
-		}
-		for index := 0; index < 128; index++ {
-			req, _ := http.NewRequest("PUT", hostURL(s)+"/api/v1/transfers/"+tr.ID+"/files/payload/chunks/"+stringIndex(int64(index)), bytes.NewReader(block))
-			req.Header.Set("Authorization", "Bearer "+token)
-			req.Header.Set("X-Chunk-SHA256", blockHash)
-			res, e := client.Do(req)
-			if e != nil {
-				t.Fatal(e)
-			}
-			_, _ = io.Copy(io.Discard, res.Body)
-			_ = res.Body.Close()
-			if res.StatusCode != 200 {
-				t.Fatal(res.Status)
-			}
-			sent += int64(len(block))
-		}
-		if e := requestJSON(context.Background(), client, "POST", hostURL(s)+"/api/v1/transfers/"+tr.ID+"/files/payload/complete", token, map[string]string{"sha256": wholeHash}, &tr); e != nil {
-			t.Fatal(e)
-		}
-		if tr.State != "completed" {
-			t.Fatal(tr.State)
-		}
-		local, _ := s.engine.Get(tr.ID)
-		if e := os.RemoveAll(local.Destination); e != nil {
-			t.Fatal(e)
-		}
-		if (batch+1)%10 == 0 {
-			t.Logf("verified %d GiB actual HTTPS payload", batch+1)
+}
+
+// integrationDevice stores a paired device record that is not running.
+func integrationDevice(t *testing.T, s *Server, auto bool) (model.Device, string) {
+	t.Helper()
+	token := randomID()
+	d := model.Device{ID: randomID(), Name: "Integration peer", Kind: "engine", Fingerprint: randomID() + randomID()[:16], Paired: true, CanSend: true, CanReceive: true, AutoAccept: auto}
+	if err := s.store.put(deviceRecord{Device: d, TokenHash: digest([]byte(token))}); err != nil {
+		t.Fatal(err)
+	}
+	return d, token
+}
+
+func TestOnlyLocalNetworkAddressesAreAccepted(t *testing.T) {
+	for _, ip := range []string{"127.0.0.1", "::1", "192.168.178.22", "10.1.2.3", "172.20.0.1", "fe80::1", "fd5c:84d4:aa63::1"} {
+		if !localNetworkAddress(net.ParseIP(ip)) {
+			t.Errorf("%s rejected", ip)
 		}
 	}
-	t.Logf("verified bytes=%d duration=%s average=%.1f MiB/s; sequential 1GiB files, no single-100GiB claim", sent, time.Since(start), float64(sent)/(1<<20)/time.Since(start).Seconds())
+	for _, ip := range []string{"8.8.8.8", "1.1.1.1", "2001:4860:4860::8888"} {
+		if localNetworkAddress(net.ParseIP(ip)) {
+			t.Errorf("%s accepted", ip)
+		}
+	}
 }

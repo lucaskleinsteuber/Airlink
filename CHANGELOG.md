@@ -2,6 +2,20 @@
 
 AirLink uses MAJOR.MINOR.PATCH versions. Entries describe implemented changes; distribution and verification status are recorded separately.
 
+## 0.13.0 — in development
+
+Desktop-only and rebuilt for speed and security. Not compatible with 0.12 and older: update all computers. Pairings, settings and received files are kept; finished history is imported, unfinished 0.12 transfers must be sent again.
+
+- **New transfer protocol (protocol 3):** one long-lived, mutually authenticated TLS 1.3 connection per pair of devices instead of one HTTPS request per 8-MiB block. Manifests are streamed, files follow each other without per-file round trips, data is pipelined instead of stop-and-wait, several transfers share the connection fairly. See [PROTOCOL.md](docs/PROTOCOL.md).
+- **One read per file:** sources are no longer hashed before sending; the sender hashes while sending and the receiver verifies every 32-MiB segment (SHA-256) while writing. No second pass over the received file.
+- **Batched durability:** finished files are synced and published in batches (one SQLite transaction and one macOS full flush per batch) instead of fsync plus transaction per block; large files are checkpointed at most once per second. SQLite uses WAL with `synchronous=NORMAL`. Pause, disconnects and restarts resume at the last verified segment.
+- **Measured over Wi-Fi (MacBook ↔ CachyOS laptop, same access point):** 1000 small files 43 s → 1.5 s (Mac→Linux) and 56 s → 0.8 s (Linux→Mac); a 200-MiB folder with 382 files 50 s → 27.5 s and 44.5 s → 15.9 s; first bytes after sending 0.3–2.5 s → 0.1 s. Large files reach the measured Wi-Fi ceiling. Details: `docs/evidence/`.
+- **Works behind one-sided firewalls:** either computer may open the connection; the other sends and receives over it.
+- **Connections are kept and restored automatically** with short backoff; a paired device counts as online while its session exists. The last working address is remembered.
+- **Pairing only while “Add device” is open:** a computer accepts pairing requests only for two minutes after its user opened “Add device”; the requesting computer keeps trying meanwhile. Manual address entry now also uses the comparison code. Windows passed no fingerprint when pairing a discovered computer, so that always failed; fixed.
+- **Removed attack surface:** browser/phone web interface, plain-HTTP certificate setup port, certificate downloads, Quick Share links, browser relay, legacy pairing v1, bearer-token peer API and the localhost admin console. Duplicate detection and extension sorting were removed as well. The service accepts connections only from the local network.
+- Received names are adapted to the receiving platform (Windows-reserved characters and names, decomposed Unicode from macOS composed), never overwrite existing files and keep modification times.
+
 ## 0.12.0-beta.3 — 2026-11-10
 
 - Replace a stale reconnect error with the receiver's actual waiting-for-acceptance state as soon as a trusted connection succeeds. Keep the same offer/checkpoints, persist the transition before displaying it, and preserve pause/cancellation if a response arrives late.

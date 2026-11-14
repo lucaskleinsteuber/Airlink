@@ -1,0 +1,287 @@
+{
+  "purpose": "Protocol 3 (0.13 development) compared with docs/evidence/0.13.0-baseline-wlan.json",
+  "date": "2026-11-14",
+  "devices": "Same MacBook and MSI CachyOS laptop, both on the same 5 GHz access point; helpers built from the working tree, temporary state, no GUI",
+  "firstComparableRun": [
+    {
+      "label": "protocol-3-first",
+      "case": "large:512",
+      "direction": "local-to-remote",
+      "iteration": 1,
+      "sourceVersion": "0.12.0-beta.3",
+      "receiverVersion": "0.12.0-beta.3",
+      "bytes": 536870912,
+      "files": 1,
+      "directories": 0,
+      "seconds": 73.705,
+      "MiBPerSecond": 6.947,
+      "stagesSeconds": {
+        "prepared": 0.105,
+        "firstConfirmedBytes": 0.105,
+        "sourceCompleted": 73.699,
+        "receiverCompleted": 73.705
+      },
+      "verified": true,
+      "pairingSeconds": 0.56
+    },
+    {
+      "label": "protocol-3-first",
+      "case": "large:512",
+      "direction": "remote-to-local",
+      "iteration": 1,
+      "sourceVersion": "0.12.0-beta.3",
+      "receiverVersion": "0.12.0-beta.3",
+      "bytes": 536870912,
+      "files": 1,
+      "directories": 0,
+      "seconds": 38.408,
+      "MiBPerSecond": 13.331,
+      "stagesSeconds": {
+        "prepared": 0.155,
+        "firstConfirmedBytes": 0.155,
+        "sourceCompleted": 38.398,
+        "receiverCompleted": 38.408
+      },
+      "verified": true,
+      "pairingSeconds": 0.56
+    },
+    {
+      "label": "protocol-3-first",
+      "case": "small:1000x8",
+      "direction": "local-to-remote",
+      "iteration": 1,
+      "sourceVersion": "0.12.0-beta.3",
+      "receiverVersion": "0.12.0-beta.3",
+      "bytes": 8192000,
+      "files": 1000,
+      "directories": 20,
+      "seconds": 1.476,
+      "MiBPerSecond": 5.294,
+      "stagesSeconds": {
+        "prepared": 0.102,
+        "firstConfirmedBytes": 0.102,
+        "sourceCompleted": 1.462,
+        "receiverCompleted": 1.476
+      },
+      "verified": true,
+      "pairingSeconds": 0.56
+    },
+    {
+      "label": "protocol-3-first",
+      "case": "small:1000x8",
+      "direction": "remote-to-local",
+      "iteration": 1,
+      "sourceVersion": "0.12.0-beta.3",
+      "receiverVersion": "0.12.0-beta.3",
+      "bytes": 8192000,
+      "files": 1000,
+      "directories": 20,
+      "seconds": 0.828,
+      "MiBPerSecond": 9.432,
+      "stagesSeconds": {
+        "prepared": 0.151,
+        "firstConfirmedBytes": 0.151,
+        "sourceCompleted": 0.807,
+        "receiverCompleted": 0.828
+      },
+      "verified": true,
+      "pairingSeconds": 0.56
+    },
+    {
+      "label": "protocol-3-first",
+      "case": "mixed:200",
+      "direction": "local-to-remote",
+      "iteration": 1,
+      "sourceVersion": "0.12.0-beta.3",
+      "receiverVersion": "0.12.0-beta.3",
+      "bytes": 209715200,
+      "files": 382,
+      "directories": 8,
+      "seconds": 27.502,
+      "MiBPerSecond": 7.272,
+      "stagesSeconds": {
+        "prepared": 0.106,
+        "firstConfirmedBytes": 0.106,
+        "sourceCompleted": 27.492,
+        "receiverCompleted": 27.502
+      },
+      "verified": true,
+      "pairingSeconds": 0.56
+    },
+    {
+      "label": "protocol-3-first",
+      "case": "mixed:200",
+      "direction": "remote-to-local",
+      "iteration": 1,
+      "sourceVersion": "0.12.0-beta.3",
+      "receiverVersion": "0.12.0-beta.3",
+      "bytes": 209715200,
+      "files": 382,
+      "directories": 8,
+      "seconds": 15.892,
+      "MiBPerSecond": 12.585,
+      "stagesSeconds": {
+        "prepared": 0.116,
+        "firstConfirmedBytes": 0.116,
+        "sourceCompleted": 15.878,
+        "receiverCompleted": 15.892
+      },
+      "verified": true,
+      "pairingSeconds": 0.56
+    }
+  ],
+  "bracketedLargeFiles": {
+    "method": "raw TLS ceiling (cmd/airlink-netbench, 8 s) measured directly before and after each 256 MiB transfer in the same direction",
+    "entries": [
+      {
+        "kind": "rawTLSCeiling",
+        "direction": "Mac->Linux",
+        "MiBPerSecond": 7.34
+      },
+      {
+        "kind": "transfer",
+        "case": "large:256",
+        "direction": "local-to-remote",
+        "files": 1,
+        "seconds": 34.74,
+        "MiBPerSecond": 7.37,
+        "firstBytesSeconds": 0.1,
+        "verified": true
+      },
+      {
+        "kind": "rawTLSCeiling",
+        "direction": "Mac->Linux",
+        "MiBPerSecond": 7.12
+      },
+      {
+        "kind": "rawTLSCeiling",
+        "direction": "Linux->Mac",
+        "MiBPerSecond": 12.76
+      },
+      {
+        "kind": "transfer",
+        "case": "large:256",
+        "direction": "remote-to-local",
+        "files": 1,
+        "seconds": 22.46,
+        "MiBPerSecond": 11.4,
+        "firstBytesSeconds": 0.13,
+        "verified": true
+      },
+      {
+        "kind": "rawTLSCeiling",
+        "direction": "Linux->Mac",
+        "MiBPerSecond": 12.94
+      },
+      {
+        "kind": "rawTLSCeiling",
+        "direction": "Mac->Linux",
+        "MiBPerSecond": 7.12
+      },
+      {
+        "kind": "transfer",
+        "case": "large:256",
+        "direction": "local-to-remote",
+        "files": 1,
+        "seconds": 34.62,
+        "MiBPerSecond": 7.39,
+        "firstBytesSeconds": 0.1,
+        "verified": true
+      },
+      {
+        "kind": "rawTLSCeiling",
+        "direction": "Mac->Linux",
+        "MiBPerSecond": 7.36
+      },
+      {
+        "kind": "rawTLSCeiling",
+        "direction": "Linux->Mac",
+        "MiBPerSecond": 12.9
+      },
+      {
+        "kind": "transfer",
+        "case": "large:256",
+        "direction": "remote-to-local",
+        "files": 1,
+        "seconds": 18.8,
+        "MiBPerSecond": 13.62,
+        "firstBytesSeconds": 0.16,
+        "verified": true
+      },
+      {
+        "kind": "rawTLSCeiling",
+        "direction": "Linux->Mac",
+        "MiBPerSecond": 13.73
+      },
+      {
+        "kind": "transfer",
+        "case": "small:10000x8",
+        "direction": "local-to-remote",
+        "files": 10000,
+        "seconds": 11.1,
+        "MiBPerSecond": 7.04,
+        "firstBytesSeconds": 0.34,
+        "verified": true
+      },
+      {
+        "kind": "transfer",
+        "case": "small:10000x8",
+        "direction": "remote-to-local",
+        "files": 10000,
+        "seconds": 9.26,
+        "MiBPerSecond": 8.43,
+        "firstBytesSeconds": 0.44,
+        "verified": true
+      }
+    ]
+  },
+  "tenThousandSmallFiles": [
+    {
+      "label": "small10k",
+      "case": "small:10000x8",
+      "direction": "local-to-remote",
+      "iteration": 1,
+      "sourceVersion": "0.12.0-beta.3",
+      "receiverVersion": "0.12.0-beta.3",
+      "bytes": 81920000,
+      "files": 10000,
+      "directories": 20,
+      "seconds": 11.098,
+      "MiBPerSecond": 7.04,
+      "stagesSeconds": {
+        "prepared": 0.105,
+        "firstConfirmedBytes": 0.339,
+        "sourceCompleted": 11.074,
+        "receiverCompleted": 11.098
+      },
+      "verified": true,
+      "pairingSeconds": 0.642
+    },
+    {
+      "label": "small10k",
+      "case": "small:10000x8",
+      "direction": "remote-to-local",
+      "iteration": 1,
+      "sourceVersion": "0.12.0-beta.3",
+      "receiverVersion": "0.12.0-beta.3",
+      "bytes": 81920000,
+      "files": 10000,
+      "directories": 20,
+      "seconds": 9.265,
+      "MiBPerSecond": 8.432,
+      "stagesSeconds": {
+        "prepared": 0.143,
+        "firstConfirmedBytes": 0.44,
+        "sourceCompleted": 9.078,
+        "receiverCompleted": 9.265
+      },
+      "verified": true,
+      "pairingSeconds": 0.642
+    }
+  ],
+  "oneSidedFirewall": {
+    "setup": "laptop helper on TCP 43890, which ufw drops (Mac connection attempt: i/o timeout); pairing started on the laptop",
+    "result": "both directions completed and verified: 300 small files and a 64 MiB file each way (7.22 MiB/s Mac->Linux, 10.75 MiB/s Linux->Mac)"
+  },
+  "notes": "All received files were verified with an independent SHA-256 inventory. Wi-Fi capacity varied between 7.1 and 13.7 MiB/s during the session; compare transfers with the ceiling measured next to them."
+}

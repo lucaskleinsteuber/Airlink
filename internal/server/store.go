@@ -8,7 +8,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
@@ -131,20 +130,6 @@ func (s *stateStore) edit(id string, fn func(*deviceRecord)) error {
 	fn(&r)
 	s.data.Devices[id] = r
 	return s.save()
-}
-func (s *stateStore) authenticate(token string) (model.Device, bool) {
-	s.Lock()
-	defer s.Unlock()
-	h := digest([]byte(token))
-	for k, r := range s.data.Devices {
-		if r.TokenHash == h && token != "" {
-			r.Device.LastSeen = time.Now().UTC().Format(time.RFC3339)
-			r.Device.Online = true
-			s.data.Devices[k] = r
-			return r.Device, true
-		}
-	}
-	return model.Device{}, false
 }
 func (s *stateStore) updateDevice(d model.Device) error {
 	s.Lock()

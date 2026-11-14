@@ -4,7 +4,9 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Text.Json;
 using System.Windows.Media;
+using System.Windows.Threading;
 using AirLink.Core;
 
 namespace AirLink.Windows;
@@ -25,6 +27,9 @@ internal sealed class PairingWindow : Window
     private Step step;
     private ConnectionDraft draft = new("", "");
     private bool busy;
+    // While this window is open, other computers may start pairing with this
+    // PC; the service closes that window again after two minutes.
+    private readonly DispatcherTimer listen = new() { Interval = TimeSpan.FromSeconds(60) };
 
     public PairingWindow(Window owner, Controller controller, Device? seed)
     {
@@ -45,11 +50,17 @@ internal sealed class PairingWindow : Window
         Content = new ScrollViewer { Content = root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         c.PropertyChanged += StatusChanged;
         Closing += (_, e) => { if (busy) e.Cancel = true; };
-        Closed += (_, _) => c.PropertyChanged -= StatusChanged;
+        Closed += (_, _) => { c.PropertyChanged -= StatusChanged; listen.Stop(); };
+        listen.Tick += (_, _) => Listen();
+        Listen(); listen.Start();
         Render();
         if (seed is { Paired: false, Kind: "engine" }) Loaded += (_, _) => _ = StartAsync(new ConnectionDraft(seed.Address ?? "", seed.Fingerprint ?? ""));
     }
 
+    private async void Listen()
+    {
+        try { await c.RequestAsync<JsonElement>("pairing.listen"); } catch { }
+    }
     private void StatusChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (step == Step.Choose) RefreshNearby();

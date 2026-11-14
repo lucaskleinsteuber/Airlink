@@ -17,9 +17,10 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
-	"github.com/lucaskleinsteuber/Airlink/internal/engine"
 	"github.com/lucaskleinsteuber/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/peer"
 	"github.com/lucaskleinsteuber/Airlink/internal/traffic"
+	"github.com/lucaskleinsteuber/Airlink/internal/transfer"
 )
 
 type Options struct {
@@ -27,31 +28,36 @@ type Options struct {
 	Port                int
 	NoDiscovery         bool
 }
+
 type Server struct {
-	engine            *engine.Engine
+	engine            *transfer.Engine
+	peers             *peer.Manager
 	traffic           *traffic.Meter
 	clipboardMu       sync.Mutex
 	clipboardMessages []model.ClipboardMessage
+	clipboardWaits    map[string]chan string
 	store             *stateStore
 	settingsMu        sync.Mutex
 	opts              Options
 	fingerprint       string
 	certificate       []byte
+	certMu            sync.Mutex
+	currentCert       tls.Certificate
+	certIPs           string
+	port              int
+	boot              string
 	urls              []string
 	lock              *flock.Flock
 	mu                sync.Mutex
 	discovered        map[string]model.Device
 	rate              map[string][]time.Time
-	senders           map[string]bool
-	senderCancels     map[string]context.CancelFunc
-	outgoingWake      chan struct{}
 	discoveryNames    chan struct{}
-	active            map[string]map[string]context.CancelFunc
-	transferRequests  map[string]map[string]context.CancelFunc
-	chunkSlots        chan struct{}
 	preparations      map[string]*preparationJob
 	pairingWorkers    map[string]bool
+	pairingOpenUntil  time.Time
 	pairingSlots      chan struct{}
+	dials             map[string]*dialState
+	dialWake          chan struct{}
 	ctx               context.Context
 	cancel            context.CancelFunc
 	httpServer        *http.Server
@@ -94,28 +100,37 @@ func New(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	eng, err := engine.New(opts.DataDir, p.Settings.ReceiveDirectory)
-	if err != nil {
-		return nil, err
-	}
 	meter, err := traffic.New(opts.DataDir)
 	if err != nil {
-		eng.Close()
 		return nil, err
 	}
 	if err = meter.SetLimits(p.Settings.SendLimitBytesPerSecond, p.Settings.ReceiveLimitBytesPerSecond); err != nil {
-		eng.Close()
 		meter.Close()
 		return nil, err
 	}
-	for _, t := range eng.Transfers("") {
-		if t.Direction == "receive" && t.State == "reconnecting" {
-			_ = eng.Resume(t.ID)
-		}
-	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Server{engine: eng, traffic: meter, store: store, opts: opts, fingerprint: fp, certificate: ca, discovered: map[string]model.Device{}, rate: map[string][]time.Time{}, senders: map[string]bool{}, senderCancels: map[string]context.CancelFunc{}, outgoingWake: make(chan struct{}, 1), discoveryNames: make(chan struct{}, 1), active: map[string]map[string]context.CancelFunc{}, chunkSlots: make(chan struct{}, 2), ctx: ctx, cancel: cancel, lock: lock}
+	s := &Server{traffic: meter, store: store, opts: opts, fingerprint: fp, certificate: ca, currentCert: cert, certIPs: fmt.Sprint(localIPs()), boot: randomID()[:16],
+		clipboardWaits: map[string]chan string{}, discovered: map[string]model.Device{}, rate: map[string][]time.Time{}, discoveryNames: make(chan struct{}, 1),
+		dials: map[string]*dialState{}, dialWake: make(chan struct{}, 1), ctx: ctx, cancel: cancel, lock: lock}
 	s.pairingWorkers, s.pairingSlots = map[string]bool{}, make(chan struct{}, 2)
+	s.peers = peer.NewManager(peer.Config{Certificate: s.certificateNow, Local: s.localHello, Trusted: s.trustedDevice, Handler: s, Opened: s.sessionOpened})
+	s.engine, err = transfer.New(opts.DataDir, p.Settings.ReceiveDirectory, transfer.Options{
+		Session: func(id string) transfer.Conn {
+			if session := s.peers.Get(id); session != nil {
+				return session
+			}
+			return nil
+		},
+		Connect: s.requestConnection,
+		Device:  s.pairedDevice,
+		Wait:    meter.Wait,
+		Add:     meter.Add,
+	})
+	if err != nil {
+		cancel()
+		meter.Close()
+		return nil, err
+	}
 	port := opts.Port
 	if port == 0 {
 		port = 43871
@@ -125,61 +140,87 @@ func New(opts Options) (*Server, error) {
 		listener, err = net.Listen("tcp", ":0")
 	}
 	if err != nil {
-		eng.Close()
+		s.engine.Close()
 		meter.Close()
 		cancel()
 		return nil, err
 	}
-	port = listener.Addr().(*net.TCPAddr).Port
+	s.port = listener.Addr().(*net.TCPAddr).Port
 	for _, ip := range localIPs() {
 		if !ip.IsLoopback() {
-			s.urls = append(s.urls, "https://"+net.JoinHostPort(ip.String(), strconv.Itoa(port)))
+			s.urls = append(s.urls, "https://"+net.JoinHostPort(ip.String(), strconv.Itoa(s.port)))
 		}
 	}
-	s.urls = append(s.urls, "https://localhost:"+strconv.Itoa(port))
-	var certMu sync.Mutex
-	currentCert := cert
-	ips := fmt.Sprint(localIPs())
-	s.httpServer = &http.Server{Handler: s.handler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 32 << 10, TLSConfig: &tls.Config{MinVersion: tls.VersionTLS13, GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
-		certMu.Lock()
-		defer certMu.Unlock()
-		nextIPs := fmt.Sprint(localIPs())
-		if nextIPs != ips {
-			renewed, _, _, e := identity(opts.DataDir, p.Settings.Name)
-			if e != nil {
-				return nil, e
-			}
-			currentCert = renewed
-			ips = nextIPs
-		}
-		return &currentCert, nil
-	}}}
+	s.urls = append(s.urls, "https://localhost:"+strconv.Itoa(s.port))
+	// One TLS port: protocol 3 sessions (ALPN airlink/3, client certificate
+	// required by the session layer) and HTTP/1.1 for device info and pairing.
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS13, ClientAuth: tls.RequestClientCert, NextProtos: []string{peer.ALPN, "http/1.1"},
+		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return s.certificateNow(), nil }}
+	s.httpServer = &http.Server{Handler: s.handler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32 << 10, TLSConfig: tlsConfig,
+		TLSNextProto: map[string]func(*http.Server, *tls.Conn, http.Handler){peer.ALPN: func(_ *http.Server, c *tls.Conn, _ http.Handler) { s.peers.ServeConn(c) }},
+		ErrorLog:     log.New(discard{}, "", 0)}
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		if e := s.httpServer.Serve(tls.NewListener(listener, s.httpServer.TLSConfig)); e != nil && !errors.Is(e, http.ErrServerClosed) {
+		local := localOnlyListener{Listener: listener, allowed: localNetworkAddress}
+		if e := s.httpServer.Serve(tls.NewListener(local, tlsConfig)); e != nil && !errors.Is(e, http.ErrServerClosed) {
 			log.Print(e)
 		}
 	}()
 	if !opts.NoDiscovery {
-		s.discovery(port)
+		s.discovery(s.port)
 	}
-	s.wg.Add(1)
-	go s.outgoingLoop()
-	s.wg.Add(1)
-	go s.heartbeatLoop()
-	s.wg.Add(1)
+	s.wg.Add(3)
+	go s.connectLoop()
 	go s.clipboardLoop()
-	s.wg.Add(1)
 	go s.pairingLoop()
 	success = true
 	return s, nil
 }
+
+type discard struct{}
+
+func (discard) Write(b []byte) (int, error) { return len(b), nil }
+
+// certificateNow returns the TLS certificate, renewing the leaf when the
+// local addresses changed. The identity root stays the same.
+func (s *Server) certificateNow() *tls.Certificate {
+	s.certMu.Lock()
+	defer s.certMu.Unlock()
+	if ips := fmt.Sprint(localIPs()); ips != s.certIPs {
+		if renewed, _, _, err := identity(s.opts.DataDir, s.store.snapshot().Settings.Name); err == nil {
+			s.currentCert, s.certIPs = renewed, ips
+		}
+	}
+	cert := s.currentCert
+	return &cert
+}
+
+func (s *Server) localHello() peer.Hello {
+	p := s.store.snapshot()
+	return peer.Hello{ID: p.ID, Name: p.Settings.Name, Version: model.Version, Boot: s.boot, Port: s.port}
+}
+
+func (s *Server) trustedDevice(fingerprint string) (string, bool) {
+	for id, r := range s.store.snapshot().Devices {
+		if r.Device.Paired && r.Device.Kind == "engine" && r.Device.Fingerprint == fingerprint {
+			return id, true
+		}
+	}
+	return "", false
+}
+
+func (s *Server) pairedDevice(id string) (model.Device, bool) {
+	r, ok := s.store.snapshot().Devices[id]
+	return r.Device, ok && r.Device.Paired
+}
+
 func (s *Server) Close() error {
 	s.cancel()
 	if s.stopDiscovery != nil {
 		s.stopDiscovery()
 	}
+	s.peers.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if s.httpServer != nil {
@@ -198,28 +239,31 @@ func (s *Server) Close() error {
 	}
 	return e
 }
+
 func (s *Server) basicStatus() model.Status {
 	p := s.store.snapshot()
 	ds := []model.Device{}
 	known := map[string]bool{}
+	connected := s.peers.Connected()
 	for _, r := range p.Devices {
 		d := r.Device
-		t, _ := time.Parse(time.RFC3339, d.LastSeen)
-		d.Online = time.Since(t) < 45*time.Second
+		d.Online = connected[d.ID] != nil
 		ds = append(ds, d)
 		known[d.ID] = true
 	}
 	s.mu.Lock()
 	ds = append(ds, s.discoveredDevicesLocked(known, time.Now())...)
 	s.mu.Unlock()
-	return model.Status{Version: model.Version, ID: p.ID, Name: p.Settings.Name, URLs: s.currentURLs(s.urls), Fingerprint: s.fingerprint, ChunkSize: model.ChunkSize, Devices: ds, Settings: p.Settings, ClipboardAllowed: true, CurrentDeviceID: p.ID, Capabilities: []string{"status-summary-v1", "preparation-v1", "history-page-v1"}}
+	return model.Status{Version: model.Version, ID: p.ID, Name: p.Settings.Name, URLs: s.currentURLs(s.urls), Fingerprint: s.fingerprint, ChunkSize: model.ChunkSize, Devices: ds, Settings: p.Settings, ClipboardAllowed: true, CurrentDeviceID: p.ID, Capabilities: []string{"status-summary-v1", "preparation-v1", "history-page-v1", "protocol-3"}}
 }
+
 func (s *Server) Status() model.Status {
 	v := s.basicStatus()
 	v.Transfers, v.Clipboard = s.engine.Transfers(""), s.clipboardSnapshot("")
 	v.Statistics = s.statistics("")
 	return v
 }
+
 func (s *Server) summaryStatus() model.Status {
 	v := s.basicStatus()
 	v.Summary = true
@@ -234,14 +278,17 @@ func (s *Server) summaryStatus() model.Status {
 	v.Capabilities = append(v.Capabilities, "pairing-v2")
 	return v
 }
+
 func respond(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
 }
+
 func fail(w http.ResponseWriter, status int, e error) {
 	respond(w, status, map[string]string{"error": e.Error()})
 }
+
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20))
 	dec.DisallowUnknownFields()
@@ -251,17 +298,19 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 	}
 	return true
 }
+
+// handler serves only device information and comparison-code pairing.
+// Transfers and clipboard text use authenticated protocol 3 sessions.
 func (s *Server) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/info", func(w http.ResponseWriter, r *http.Request) {
 		p := s.store.snapshot()
-		respond(w, 200, map[string]any{"version": model.Version, "id": p.ID, "name": p.Settings.Name, "chunkSize": model.ChunkSize, "fingerprint": s.fingerprint, "urls": s.currentURLs(s.urls), "capabilities": []string{"pairing-v2"}})
+		respond(w, 200, map[string]any{"version": model.Version, "id": p.ID, "name": p.Settings.Name, "fingerprint": s.fingerprint, "urls": s.currentURLs(s.urls), "capabilities": []string{"pairing-v2", "protocol-3"}})
 	})
 	mux.HandleFunc("POST /api/v1/pair/v2/start", s.pairingBegin)
 	for _, action := range []string{"poll", "confirm", "ack", "cancel"} {
 		mux.HandleFunc("POST /api/v1/pair/v2/"+action, s.pairingRemote)
 	}
-	mux.HandleFunc("/api/v1/", s.authenticated)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Cache-Control", "no-store")
@@ -272,6 +321,7 @@ func (s *Server) handler() http.Handler {
 		mux.ServeHTTP(w, r)
 	})
 }
+
 func (s *Server) validHost(h string) bool {
 	host, _, e := net.SplitHostPort(h)
 	if e != nil {
@@ -287,224 +337,4 @@ func (s *Server) validHost(h string) bool {
 	}
 	name, _ := os.Hostname()
 	return strings.EqualFold(host, name) || strings.EqualFold(host, strings.TrimSuffix(name, ".local")+".local")
-}
-func (s *Server) auth(r *http.Request) (model.Device, bool) {
-	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if !ok {
-		return model.Device{}, false
-	}
-	return s.store.authenticate(token)
-}
-func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) {
-	d, ok := s.auth(r)
-	if !ok {
-		fail(w, 401, errors.New("pair this device first"))
-		return
-	}
-	ctx, cancel := context.WithCancel(r.Context())
-	r = r.WithContext(ctx)
-	// Cancelled receive limiters and stalled HTTP bodies must release their
-	// connection as well as their logical transfer state.
-	stopIO := interruptRequestOnCancellation(ctx, w, r)
-	rid := randomID()
-	s.mu.Lock()
-	if s.active[d.ID] == nil {
-		s.active[d.ID] = map[string]context.CancelFunc{}
-	}
-	s.active[d.ID][rid] = cancel
-	s.mu.Unlock()
-	defer func() {
-		stopIO()
-		cancel()
-		s.mu.Lock()
-		delete(s.active[d.ID], rid)
-		if len(s.active[d.ID]) == 0 {
-			delete(s.active, d.ID)
-		}
-		s.mu.Unlock()
-	}()
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/")
-	if s.handleClipboardAPI(w, r, d) {
-		return
-	}
-	if path == "transfers" && r.Method == "POST" {
-		if !d.CanSend {
-			fail(w, 403, errors.New("sending not allowed"))
-			return
-		}
-		var offer model.Offer
-		if !decode(w, r, &offer) {
-			return
-		}
-		t, err := s.engine.CreateIncoming(d, offer.Files)
-		if err != nil {
-			s.engineError(w, err)
-			return
-		}
-		t = publicTransfer(t)
-		respond(w, 201, t)
-		return
-	}
-	parts := strings.Split(path, "/")
-	if len(parts) < 2 || parts[0] != "transfers" {
-		http.NotFound(w, r)
-		return
-	}
-	t, err := s.engine.Header(parts[1])
-	if err != nil {
-		s.engineError(w, err)
-		return
-	}
-	if t.DeviceID != d.ID {
-		fail(w, 404, errors.New("transfer not found"))
-		return
-	}
-	if t.Direction == "receive" && !d.CanSend || t.Direction == "send" && !d.CanReceive {
-		fail(w, 403, errors.New("device permission revoked"))
-		return
-	}
-	if len(parts) >= 5 && parts[2] == "files" {
-		unregister := s.trackTransferRequest(t.ID, rid, cancel)
-		defer unregister()
-	}
-	if len(parts) == 2 && r.Method == "GET" {
-		t, err = s.engine.Get(t.ID)
-		if err != nil {
-			s.engineError(w, err)
-			return
-		}
-		t = publicTransfer(t)
-		respond(w, 200, t)
-		return
-	}
-	if len(parts) == 3 && r.Method == "POST" {
-		switch parts[2] {
-		case "pause":
-			err = s.engine.Pause(t.ID)
-			s.stopSender(t.ID)
-			s.stopTransferRequests(t.ID)
-		case "resume":
-			err = s.engine.Resume(t.ID)
-		case "cancel":
-			err = s.engine.Cancel(t.ID)
-			s.stopSender(t.ID)
-			s.stopTransferRequests(t.ID)
-		default:
-			fail(w, 403, errors.New("action requires local approval"))
-			return
-		}
-		if err != nil {
-			s.engineError(w, err)
-			return
-		}
-		fresh, _ := s.engine.Get(t.ID)
-		fresh = publicTransfer(fresh)
-		respond(w, 200, fresh)
-		return
-	}
-	if len(parts) >= 5 && parts[2] == "files" {
-		fid := parts[3]
-		t, err = s.engine.FileSnapshot(t.ID, fid)
-		if err != nil {
-			s.engineError(w, err)
-			return
-		}
-		if len(parts) == 5 && parts[4] == "prepare" && r.Method == "POST" {
-			var v struct {
-				SHA string `json:"sha256"`
-			}
-			if !decode(w, r, &v) {
-				return
-			}
-			decision, e := s.engine.PrepareFile(r.Context(), t.ID, fid, v.SHA)
-			if e != nil {
-				s.engineError(w, e)
-				return
-			}
-			fresh, err := s.fileResponse(t.ID, fid, r.URL.Query().Get("fileOnly") == "1")
-			if err != nil {
-				s.engineError(w, err)
-				return
-			}
-			respond(w, 200, map[string]any{"decision": decision, "transfer": publicTransfer(fresh)})
-			return
-		}
-		if len(parts) == 6 && parts[4] == "chunks" && r.Method == "PUT" {
-			select {
-			case s.chunkSlots <- struct{}{}:
-				defer func() { <-s.chunkSlots }()
-			case <-r.Context().Done():
-				return
-			}
-			index, e := strconv.ParseInt(parts[5], 10, 64)
-			if e != nil {
-				fail(w, 400, e)
-				return
-			}
-			n, e := s.engine.WriteChunk(r.Context(), t.ID, fid, index, r.Header.Get("X-Chunk-SHA256"), s.traffic.WrapReader(r.Context(), http.MaxBytesReader(w, r.Body, model.ChunkSize+1), "receive"))
-			if e != nil {
-				s.engineError(w, e)
-				return
-			}
-			respond(w, 200, map[string]int64{"received": n})
-			return
-		}
-		if len(parts) == 5 && parts[4] == "complete" && r.Method == "POST" {
-			var v struct {
-				SHA string `json:"sha256"`
-			}
-			if !decode(w, r, &v) {
-				return
-			}
-			if e := s.engine.CompleteFile(r.Context(), t.ID, fid, v.SHA); e != nil {
-				s.engineError(w, e)
-				return
-			}
-			fresh, err := s.fileResponse(t.ID, fid, r.URL.Query().Get("fileOnly") == "1")
-			if err != nil {
-				s.engineError(w, err)
-				return
-			}
-			for _, file := range fresh.Files {
-				if file.ID == fid && !file.Completed {
-					// A legacy sender interprets any 2xx completion as final.
-					// Keep it waiting until the host decides about this duplicate.
-					fail(w, http.StatusConflict, errors.New("recipient must decide about an identical existing file"))
-					return
-				}
-			}
-			fresh = publicTransfer(fresh)
-			respond(w, 200, fresh)
-			return
-		}
-	}
-	http.NotFound(w, r)
-}
-func (s *Server) engineError(w http.ResponseWriter, e error) {
-	var pathError *os.PathError
-	var linkError *os.LinkError
-	if errors.As(e, &pathError) || errors.As(e, &linkError) {
-		log.Printf("Transfer filesystem error: %v", e)
-		if p := model.DescribeTransferError(e.Error()); p != nil && (p.Code == "storage_full" || p.Code == "file_access") {
-			fail(w, 409, errors.New(p.Code+": "+p.TitleEN))
-			return
-		}
-		fail(w, 409, errors.New("source or destination is unavailable; check it on the host"))
-		return
-	}
-	code := 500
-	if errors.Is(e, engine.ErrNotFound) {
-		code = 404
-	} else if errors.Is(e, engine.ErrConflict) {
-		code = 409
-	} else if errors.Is(e, engine.ErrInvalid) || errors.Is(e, engine.ErrIntegrity) {
-		code = 400
-	}
-	fail(w, code, e)
-}
-func (s *Server) fileResponse(id, fileID string, compact bool) (model.Transfer, error) {
-	if compact {
-		return s.engine.FileSnapshot(id, fileID)
-	}
-	return s.engine.Get(id)
 }

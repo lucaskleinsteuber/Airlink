@@ -40,19 +40,3 @@ func (s *Server) addressForPeer(raw string) string {
 	own, _ := url.Parse(s.urls[len(s.urls)-1])
 	return "https://" + net.JoinHostPort(ip.String(), own.Port())
 }
-
-func (s *Server) cancelDeviceRequests(id string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, cancel := range s.active[id] {
-		cancel()
-	}
-}
-
-func (s *Server) stopSender(id string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if cancel := s.senderCancels[id]; cancel != nil {
-		cancel()
-	}
-}

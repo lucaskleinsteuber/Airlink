@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lucaskleinsteuber/Airlink/internal/engine"
 	"github.com/lucaskleinsteuber/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/transfer"
 )
 
 type historyFilter struct {
@@ -130,7 +130,7 @@ func (s *Server) clearHistory(owner string) error {
 func (s *Server) historyControl(method string, params json.RawMessage) (any, error) {
 	switch method {
 	case "history.page":
-		var q engine.SummaryQuery
+		var q transfer.SummaryQuery
 		if len(params) > 0 {
 			if err := json.Unmarshal(params, &q); err != nil {
 				return nil, err
@@ -152,9 +152,9 @@ func (s *Server) historyControl(method string, params json.RawMessage) (any, err
 			ID string `json:"id"`
 		}
 		if err := json.Unmarshal(params, &input); err != nil {
-			return nil, engine.ErrInvalid
+			return nil, transfer.ErrInvalid
 		}
-		if err := s.engine.RemoveHistory("", input.ID); err != nil {
+		if err := s.engine.RemoveHistory(input.ID); err != nil {
 			return nil, err
 		}
 		return map[string]bool{"ok": true}, nil

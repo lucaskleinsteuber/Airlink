@@ -4,20 +4,20 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/lucaskleinsteuber/Airlink/internal/engine"
 	"github.com/lucaskleinsteuber/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/transfer"
 )
 
 type diagnosticReport struct {
-	Schema        int                      `json:"schemaVersion"`
-	Version       string                   `json:"version"`
-	Generated     string                   `json:"generatedAt"`
-	Platform      string                   `json:"platform"`
-	Architecture  string                   `json:"architecture"`
-	PairedDevices int                      `json:"pairedDevices"`
-	GoHeapBytes   uint64                   `json:"goHeapBytes"`
-	Transfers     engine.DiagnosticSummary `json:"transferSummary"`
-	Privacy       string                   `json:"privacy"`
+	Schema        int                        `json:"schemaVersion"`
+	Version       string                     `json:"version"`
+	Generated     string                     `json:"generatedAt"`
+	Platform      string                     `json:"platform"`
+	Architecture  string                     `json:"architecture"`
+	PairedDevices int                        `json:"pairedDevices"`
+	GoHeapBytes   uint64                     `json:"goHeapBytes"`
+	Transfers     transfer.DiagnosticSummary `json:"transferSummary"`
+	Privacy       string                     `json:"privacy"`
 }
 
 func (s *Server) diagnostics() diagnosticReport {

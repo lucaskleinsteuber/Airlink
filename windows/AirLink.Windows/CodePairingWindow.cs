@@ -49,7 +49,9 @@ internal sealed class CodePairingWindow : Window
             peer.Text = session.PeerName; code.Text = session.FormattedCode;
             confirm.IsEnabled = session.CanConfirm && matches.IsChecked == true;
             automatic.IsEnabled = matches.IsEnabled = !session.LocalConfirmed && session.State == "comparing";
-            state.Text = session.Error ?? (session.State == "paired" ? c.T("Gerät verbunden. Du kannst Dateien senden.", "Device paired. You can send files.") : session.State is "cancelled" or "denied" or "expired" ? c.T("Die Kopplung wurde beendet. Starte sie bei Bedarf erneut.", "Pairing ended. Start again if needed.") : session.LocalConfirmed ? c.T("Warte auf die Bestätigung am anderen Computer …", "Waiting for confirmation on the other computer …") : c.T("Bestätigung ist auf beiden Computern erforderlich.", "Confirmation is required on both computers."));
+            state.Text = session.State == "starting" && session.Error is not null
+                ? c.T("Öffne auf dem anderen Computer „Gerät hinzufügen“, um den Code zu vergleichen.", "Open “Add device” on the other computer to compare the code.")
+                : session.Error ?? (session.State == "paired" ? c.T("Gerät verbunden. Du kannst Dateien senden.", "Device paired. You can send files.") : session.State is "cancelled" or "denied" or "expired" ? c.T("Die Kopplung wurde beendet. Starte sie bei Bedarf erneut.", "Pairing ended. Start again if needed.") : session.LocalConfirmed ? c.T("Warte auf die Bestätigung am anderen Computer …", "Waiting for confirmation on the other computer …") : c.T("Bestätigung ist auf beiden Computern erforderlich.", "Confirmation is required on both computers."));
             confirm.Visibility = cancel.Visibility = session.State == "paired" ? Visibility.Collapsed : Visibility.Visible;
             close.Content = session.State == "paired" ? c.T("Fertig", "Done") : c.T("Schließen", "Close");
             if (session.State == "paired") { c.SelectedDeviceId = session.PeerId; timer.Stop(); await c.RefreshAsync(true); }

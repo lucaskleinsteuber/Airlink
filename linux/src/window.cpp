@@ -1387,7 +1387,13 @@ void MainWindow::connectDevice(const QString &session) {
           state == "paired" ? text("Verbunden. Du kannst jetzt Dateien senden.",
                                    "Connected. You can now send files.")
           : state == "starting"
-              ? text("Verbindung wird vorbereitet …", "Preparing connection …")
+              ? (p["error"].toString().isEmpty()
+                     ? text("Verbindung wird vorbereitet …",
+                            "Preparing connection …")
+                     : text("Öffne auf dem anderen Computer „Gerät "
+                            "hinzufügen“, um den Code zu vergleichen.",
+                            "Open “Add device” on the other computer to "
+                            "compare the code."))
           : state == "finishing"
               ? text("Verbindung wird gespeichert …", "Saving connection …")
           : state == "comparing"
@@ -1427,6 +1433,15 @@ void MainWindow::connectDevice(const QString &session) {
     }
   };
   connect(&client, &DaemonClient::statusChanged, dialog, update);
+  // While this dialog is open, other computers may start pairing with this
+  // one; the service closes that window again after two minutes.
+  const auto listen = [this] {
+    client.request("pairing.listen", {}, [](QJsonValue, QString) {});
+  };
+  listen();
+  auto *listenTimer = new QTimer(dialog);
+  connect(listenTimer, &QTimer::timeout, dialog, listen);
+  listenTimer->start(60000);
   const auto begin = [this, guard](QListWidgetItem *item) {
     if (!guard)
       return;

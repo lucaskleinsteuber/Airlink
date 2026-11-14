@@ -29,7 +29,7 @@ func (s *Server) discovery(port int) {
 		// this single owner instead when the user changes the display name.
 		manageDiscoveryAdvertisements(ctx, s.discoveryNames, discoveryRefreshInterval, func() string { return s.store.snapshot().Settings.Name }, func(name string) (func(), error) {
 			registration, err := zeroconf.Register(discoveryInstanceName(name, p.ID), "_airlink._tcp", "local.", port,
-				[]string{"id=" + p.ID, "name=" + name, "fingerprint=" + s.fingerprint, "version=" + model.Version}, nil)
+				[]string{"id=" + p.ID, "name=" + name, "fingerprint=" + s.fingerprint, "version=" + model.Version, "proto=3"}, nil)
 			if err != nil {
 				log.Printf("Device discovery advertisement unavailable: %v; use QR or address", err)
 				return nil, err
@@ -172,9 +172,11 @@ func (s *Server) recordDiscovered(entry *zeroconf.ServiceEntry, selfID string, a
 				current.Device.Name = d.Name
 				current.Device.Address = d.Address
 				current.Device.LastSeen = d.LastSeen
-				current.Device.Online = true
 			}
 		})
+		if s.peers != nil && s.peers.Get(id) == nil {
+			s.requestConnection(id)
+		}
 	}
 }
 
