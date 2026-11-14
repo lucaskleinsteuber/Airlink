@@ -280,3 +280,33 @@ func TestDiscoveryCancellationDrainsBlockedLibraryDelivery(t *testing.T) {
 		t.Fatal("failed startup spun", attempts.Load())
 	}
 }
+
+// The advertisement carries the device type for the symbol and marks devices
+// with an older, incompatible protocol.
+func TestDiscoveryReadsDeviceTypeAndOutdatedVersions(t *testing.T) {
+	s := integrationHost(t)
+	at := time.Now()
+	current := discoveryEntry("current", "fp-current", "192.168.1.20")
+	current.Text = append(current.Text, "proto=3", "os=linux", "form=laptop")
+	old := discoveryEntry("old", "fp-old", "192.168.1.21")
+	odd := discoveryEntry("odd", "fp-odd", "192.168.1.22")
+	odd.Text = append(odd.Text, "proto=3", "os=amiga", "form=tower")
+	for _, e := range []*zeroconf.ServiceEntry{current, old, odd} {
+		s.recordDiscovered(e, s.store.snapshot().ID, at)
+	}
+	s.mu.Lock()
+	got := map[string]model.Device{}
+	for _, d := range s.discoveredDevicesLocked(nil, at) {
+		got[d.ID] = d
+	}
+	s.mu.Unlock()
+	if d := got["current"]; d.Platform != "linux" || d.Form != "laptop" || d.Outdated {
+		t.Fatal("current device", d)
+	}
+	if !got["old"].Outdated {
+		t.Fatal("older protocol not marked", got["old"])
+	}
+	if d := got["odd"]; d.Platform != "" || d.Form != "" {
+		t.Fatal("unknown device type accepted", d)
+	}
+}

@@ -184,6 +184,8 @@ func (s *Server) receiveClipboard(session *peer.Session, e peer.Envelope) {
 		ack.Error = "clipboard text is not allowed from this device"
 	} else if _, err := s.recordClipboard(record.Device, "receive", m.ID, m.Text); err != nil {
 		ack.Error = err.Error()
+	} else {
+		s.changed()
 	}
 	if len(ack.ID) > 100 {
 		return

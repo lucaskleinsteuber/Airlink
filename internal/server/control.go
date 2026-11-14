@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/lucaskleinsteuber/Airlink/internal/model"
 	"github.com/lucaskleinsteuber/Airlink/internal/traffic"
@@ -164,6 +165,13 @@ func (s *Server) Stdio(in io.Reader, out io.Writer) error {
 		return outputError
 	}
 	offerSlots := make(chan struct{}, 2)
+	// Push "status" events instead of letting the app poll: at most every
+	// 100 ms after a change, and four times per second while data moves.
+	workers.Add(1)
+	go func() {
+		defer workers.Done()
+		s.statusEvents(ctx, func() error { return write(map[string]string{"event": "status"}) })
+	}()
 	for scan.Scan() {
 		var req rpcRequest
 		if err := json.Unmarshal(scan.Bytes(), &req); err != nil {
@@ -205,11 +213,61 @@ func (s *Server) Stdio(in io.Reader, out io.Writer) error {
 		if e := write(reply); e != nil {
 			return e
 		}
+		if err == nil && mutating(req.Method) {
+			s.changed()
+		}
 		if req.Method == "shutdown" && err == nil {
 			return nil
 		}
 	}
 	return scan.Err()
+}
+
+const (
+	eventSpacing  = 100 * time.Millisecond
+	progressEvery = 250 * time.Millisecond
+)
+
+func (s *Server) statusEvents(ctx context.Context, emit func() error) {
+	tick := time.NewTicker(progressEvery)
+	defer tick.Stop()
+	var last time.Time
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.changes:
+		case <-tick.C:
+			if !s.engine.Busy() {
+				continue
+			}
+		}
+		if wait := eventSpacing - time.Since(last); wait > 0 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(wait):
+			}
+			select {
+			case <-s.changes:
+			default:
+			}
+		}
+		last = time.Now()
+		if emit() != nil {
+			return
+		}
+	}
+}
+
+// mutating reports whether a control method may change what status shows.
+func mutating(method string) bool {
+	switch method {
+	case "status", "status.summary", "statistics.get", "transfer.files", "transfer.get", "transfer.received",
+		"diagnostics.export", "history.list", "history.page", "clipboard.list", "pairing.status", "preparation.status", "pairing.listen", "shutdown":
+		return false
+	}
+	return true
 }
 
 // pauseDisallowedTransfers pauses transfers whose direction the device may

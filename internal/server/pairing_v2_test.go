@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -234,11 +235,102 @@ func TestPairingRequestsNeedAnOpenPairingWindow(t *testing.T) {
 	if len(b.pairingSnapshots()) != 0 {
 		t.Fatal("request accepted while pairing was closed")
 	}
-	// Opening "Add device" on b lets the waiting request continue.
+	if got := pairingCall(t, a, "pairing.status", map[string]string{"id": started.ID}); got.Problem != problemClosed {
+		t.Fatal("closed window not explained", got)
+	}
+	// Requests while closed are not counted against the attempt limit, so
+	// the request continues at once when AirLink is opened on b.
+	b.mu.Lock()
+	counted := len(b.rate)
+	b.mu.Unlock()
+	if counted != 0 {
+		t.Fatal("closed-window requests counted as pairing attempts")
+	}
 	openPairing(t, b)
 	ap := awaitPairing(t, a, started.ID, "comparing")
 	bp := awaitPairing(t, b, "", "comparing")
-	if ap.ComparisonCode != bp.ComparisonCode || ap.Error != "" {
+	if ap.ComparisonCode != bp.ComparisonCode || ap.Error != "" || ap.Problem != "" || !ap.Initiator || bp.Initiator {
 		t.Fatal(ap, bp)
+	}
+	// Hiding the window closes pairing again at once.
+	if _, err := b.Control("pairing.listen", json.RawMessage(`{"close":true}`)); err != nil {
+		t.Fatal(err)
+	}
+	b.mu.Lock()
+	open := time.Now().Before(b.pairingOpenUntil)
+	b.mu.Unlock()
+	if open {
+		t.Fatal("pairing window stayed open")
+	}
+}
+
+// A computer entered by its IP address: the identity is read over TLS and
+// confirmed by the same comparison code; the device type travels along.
+func TestPairingByAddressReadsIdentityAndComparesCode(t *testing.T) {
+	a, b := integrationHost(t), integrationHost(t)
+	openPairing(t, b)
+	u, _ := url.Parse(hostURL(b))
+	started := pairingCall(t, a, "pairing.start", map[string]string{"address": "127.0.0.1:" + u.Port()})
+	ap := awaitPairing(t, a, started.ID, "comparing")
+	bp := awaitPairing(t, b, "", "comparing")
+	if len(ap.ComparisonCode) != 8 || ap.ComparisonCode != bp.ComparisonCode {
+		t.Fatal("comparison differs", ap, bp)
+	}
+	if got := a.store.snapshot().Pairings[ap.ID].Peer.Fingerprint; got != b.fingerprint {
+		t.Fatal("identity not read from the connection", got)
+	}
+	platform, form := localDevice()
+	if ap.Platform != platform || ap.Form != form || bp.Platform != platform || bp.Form != form || ap.PeerName == "" {
+		t.Fatal("device type missing", ap, bp)
+	}
+	pairingCall(t, a, "pairing.confirm", map[string]any{"id": ap.ID, "automaticReceive": true})
+	pairingCall(t, b, "pairing.confirm", map[string]any{"id": bp.ID, "automaticReceive": true})
+	awaitPairing(t, a, ap.ID, "paired")
+	awaitPairing(t, b, bp.ID, "paired")
+	d := a.store.snapshot().Devices[hostID(b)].Device
+	if d.Fingerprint != b.fingerprint || !d.CanClipboard || !d.AutoAccept || d.Platform != platform {
+		t.Fatal("paired device", d)
+	}
+	// The same address again: already connected.
+	again := pairingCall(t, a, "pairing.start", map[string]string{"address": "127.0.0.1:" + u.Port()})
+	denied := awaitPairing(t, a, again.ID, "denied")
+	if denied.Problem != problemPaired {
+		t.Fatal("already paired not explained", denied)
+	}
+}
+
+func TestPairingExplainsUnreachableComputer(t *testing.T) {
+	a := integrationHost(t)
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := l.Addr().String()
+	_ = l.Close()
+	started := pairingCall(t, a, "pairing.start", map[string]string{"address": address})
+	waitFor(t, 8*time.Second, "unreachable", func() bool {
+		got := pairingCall(t, a, "pairing.status", map[string]string{"id": started.ID})
+		return got.State == "starting" && got.Problem == problemUnreachable
+	})
+}
+
+func TestPeerURLFromAddress(t *testing.T) {
+	for in, want := range map[string]string{
+		"192.168.178.22":          "https://192.168.178.22:43871",
+		" 192.168.178.22:5000 ":   "https://192.168.178.22:5000",
+		"fe80::1":                 "https://[fe80::1]:43871",
+		"[fe80::1]:5000":          "https://[fe80::1]:5000",
+		"linux-pc":                "https://linux-pc.local:43871",
+		"linux-pc.local":          "https://linux-pc.local:43871",
+		"https://10.0.0.2:43871/": "https://10.0.0.2:43871",
+		"a b":                     "",
+		"1.2.3.4:99999":           "",
+		"":                        "",
+		"user@host":               "",
+		"192.168.178.22/admin":    "",
+	} {
+		if got := peerURLFromAddress(in); got != want {
+			t.Errorf("%q: got %q, want %q", in, got, want)
+		}
 	}
 }

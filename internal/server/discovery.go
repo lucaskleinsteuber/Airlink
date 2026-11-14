@@ -19,6 +19,7 @@ const discoveryFreshness = 45 * time.Second
 
 func (s *Server) discovery(port int) {
 	p := s.store.snapshot()
+	platform, form := localDevice()
 	ctx, cancel := context.WithCancel(s.ctx)
 	s.stopDiscovery = cancel
 	s.wg.Add(1)
@@ -29,7 +30,7 @@ func (s *Server) discovery(port int) {
 		// this single owner instead when the user changes the display name.
 		manageDiscoveryAdvertisements(ctx, s.discoveryNames, discoveryRefreshInterval, func() string { return s.store.snapshot().Settings.Name }, func(name string) (func(), error) {
 			registration, err := zeroconf.Register(discoveryInstanceName(name, p.ID), "_airlink._tcp", "local.", port,
-				[]string{"id=" + p.ID, "name=" + name, "fingerprint=" + s.fingerprint, "version=" + model.Version, "proto=3"}, nil)
+				[]string{"id=" + p.ID, "name=" + name, "fingerprint=" + s.fingerprint, "version=" + model.Version, "proto=3", "os=" + platform, "form=" + form}, nil)
 			if err != nil {
 				log.Printf("Device discovery advertisement unavailable: %v; use QR or address", err)
 				return nil, err
@@ -162,10 +163,17 @@ func (s *Server) recordDiscovered(entry *zeroconf.ServiceEntry, selfID string, a
 	if ip == nil || entry.Port < 1 || entry.Port > 65535 {
 		return
 	}
-	d := model.Device{ID: id, Name: values["name"], Kind: "engine", Address: "https://" + net.JoinHostPort(ip.String(), strconv.Itoa(entry.Port)), Fingerprint: values["fingerprint"], Online: true, LastSeen: at.UTC().Format(time.RFC3339Nano)}
+	d := model.Device{ID: id, Name: values["name"], Kind: "engine", Address: "https://" + net.JoinHostPort(ip.String(), strconv.Itoa(entry.Port)), Fingerprint: values["fingerprint"], Online: true, LastSeen: at.UTC().Format(time.RFC3339Nano), Outdated: values["proto"] != "3"}
+	if validPlatform(values["os"]) && validForm(values["form"]) {
+		d.Platform, d.Form = values["os"], values["form"]
+	}
 	s.mu.Lock()
+	previous, seen := s.discovered[id]
 	s.discovered[id] = d
 	s.mu.Unlock()
+	if !seen || previous.Name != d.Name || previous.Address != d.Address || previous.Fingerprint != d.Fingerprint {
+		s.changed()
+	}
 	if rec, ok := s.store.snapshot().Devices[id]; ok && rec.Device.Fingerprint == d.Fingerprint && rec.Device.Kind == "engine" {
 		_ = s.store.edit(id, func(current *deviceRecord) {
 			if current.Device.Fingerprint == d.Fingerprint {

@@ -52,6 +52,12 @@ type Device struct {
 	CanClipboard bool   `json:"canClipboard"`
 	AutoAccept   bool   `json:"autoAccept"`
 	LastSeen     string `json:"lastSeen,omitempty"`
+	// Platform (macos, linux, windows) and Form (laptop, desktop) choose the
+	// device symbol in the apps; both are informational only.
+	Platform string `json:"platform,omitempty"`
+	Form     string `json:"form,omitempty"`
+	// Outdated marks a nearby device that runs an incompatible AirLink.
+	Outdated bool `json:"outdated,omitempty"`
 }
 type Settings struct {
 	SetupCompleted             bool         `json:"setupCompleted"`
@@ -107,6 +113,12 @@ type PairingSession struct {
 	RemoteConfirmed  bool   `json:"remoteConfirmed"`
 	AutomaticReceive bool   `json:"automaticReceive"`
 	Error            string `json:"error,omitempty"`
+	// Problem is a stable reason the apps explain in the user's language:
+	// closed, unreachable, outdated, paired, identity or self.
+	Problem   string `json:"problem,omitempty"`
+	Initiator bool   `json:"initiator,omitempty"`
+	Platform  string `json:"platform,omitempty"`
+	Form      string `json:"form,omitempty"`
 }
 type Offer struct {
 	Files []File `json:"files"`

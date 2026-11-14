@@ -230,6 +230,19 @@ func (e *Engine) Close() error {
 	return e.db.Close()
 }
 
+// Busy reports whether a transfer is moving data right now; the app then
+// receives progress updates several times per second.
+func (e *Engine) Busy() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, r := range e.records {
+		if r.t.State == "running" {
+			return true
+		}
+	}
+	return false
+}
+
 func (e *Engine) changed() {
 	if e.opts.Changed != nil {
 		e.opts.Changed()

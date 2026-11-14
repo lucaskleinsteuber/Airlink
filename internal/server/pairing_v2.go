@@ -6,6 +6,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -16,10 +17,12 @@ import (
 	"net/http"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/lucaskleinsteuber/Airlink/internal/model"
+	"github.com/lucaskleinsteuber/Airlink/internal/peer"
 	"github.com/lucaskleinsteuber/Airlink/internal/transfer"
 )
 
@@ -43,6 +46,7 @@ type pairingRecord struct {
 	Automatic       bool         `json:"automatic"`
 	Granted         bool         `json:"granted"`
 	Error           string       `json:"error,omitempty"`
+	Problem         string       `json:"problem,omitempty"`
 }
 
 func (p pairingRecord) snapshot() model.PairingSession {
@@ -54,7 +58,8 @@ func (p pairingRecord) snapshot() model.PairingSession {
 	if state != "comparing" {
 		code = ""
 	}
-	return model.PairingSession{ID: p.ID, PeerID: p.Peer.ID, PeerName: p.Peer.Name, State: state, ComparisonCode: code, ExpiresAt: p.Expires.UTC().Format(time.RFC3339), LocalConfirmed: p.LocalConfirmed, RemoteConfirmed: p.RemoteConfirmed, AutomaticReceive: p.Automatic, Error: p.Error}
+	return model.PairingSession{ID: p.ID, PeerID: p.Peer.ID, PeerName: p.Peer.Name, State: state, ComparisonCode: code, ExpiresAt: p.Expires.UTC().Format(time.RFC3339), LocalConfirmed: p.LocalConfirmed, RemoteConfirmed: p.RemoteConfirmed, AutomaticReceive: p.Automatic, Error: p.Error,
+		Problem: p.Problem, Initiator: p.Initiator, Platform: p.Peer.Platform, Form: p.Peer.Form}
 }
 
 func (s *Server) pairingSnapshots() []model.PairingSession {
@@ -114,6 +119,7 @@ func (s *Server) editPairings(fn func(*persisted) error) error {
 		s.store.data = old
 		return err
 	}
+	s.changed()
 	return nil
 }
 
@@ -125,31 +131,139 @@ func trimPairings(p *persisted) {
 	}
 }
 
-// Requests from other devices are accepted only while the local user has
-// "Add device" open; apps renew this window while that view is visible.
+// Requests from other devices are accepted only while AirLink is open on this
+// computer: the apps renew this window while their main window is visible
+// and close it when it is hidden.
 const pairingWindow = 2 * time.Minute
 
-const pairingClosedHint = "Open “Add device” on the other computer to continue."
+const pairingClosedHint = "Open AirLink on the other computer to continue."
+
+// Stable pairing problems; the apps explain them in the user's language.
+const (
+	problemClosed      = "closed"
+	problemUnreachable = "unreachable"
+	problemOutdated    = "outdated"
+	problemPaired      = "paired"
+	problemIdentity    = "identity"
+	problemSelf        = "self"
+)
+
+// peerURLFromAddress turns what a person types (an IP address, address:port,
+// a host name or a full https URL) into the device URL used for pairing.
+func peerURLFromAddress(raw string) string {
+	v := strings.TrimSpace(raw)
+	if v == "" || strings.ContainsAny(v, " /?#@") && !strings.HasPrefix(strings.ToLower(v), "https://") {
+		return ""
+	}
+	if strings.HasPrefix(strings.ToLower(v), "https://") {
+		return strings.TrimRight(v, "/")
+	}
+	host, port := v, "43871"
+	if ip := net.ParseIP(strings.Trim(v, "[]")); ip != nil {
+		host = ip.String()
+	} else if h, p, err := net.SplitHostPort(v); err == nil {
+		host, port = strings.Trim(h, "[]"), p
+	}
+	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+		return ""
+	}
+	if net.ParseIP(host) == nil && !strings.Contains(host, ".") && !strings.EqualFold(host, "localhost") {
+		// A bare computer name is reached via multicast DNS.
+		host += ".local"
+	}
+	return "https://" + net.JoinHostPort(host, port)
+}
+
+// probeIdentity reads the identity of a device that was entered by address.
+// The chain must be valid; the comparison code then proves that both sides
+// see the same TLS connection, exactly as for discovered devices.
+func probeIdentity(ctx context.Context, base string) (string, error) {
+	var seen string
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }, Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS13, InsecureSkipVerify: true, VerifyConnection: func(c tls.ConnectionState) error {
+			fp, err := peer.VerifyChain(c.PeerCertificates, x509.ExtKeyUsageServerAuth)
+			seen = fp
+			return err
+		}},
+		DialContext:         (&net.Dialer{Timeout: 4 * time.Second}).DialContext,
+		TLSHandshakeTimeout: 4 * time.Second,
+	}}
+	defer client.CloseIdleConnections()
+	var info struct {
+		Fingerprint string `json:"fingerprint"`
+	}
+	if err := requestJSON(ctx, client, "GET", base+"info", "", nil, &info); err != nil {
+		return "", err
+	}
+	if seen == "" || info.Fingerprint != seen {
+		return "", fmt.Errorf("%w: announced identity differs from the connection", errPeerIdentity)
+	}
+	return seen, nil
+}
+
+// setPairingProblem records why an outgoing request does not progress.
+func (s *Server) setPairingProblem(id, problem, message string, deny bool) {
+	_ = s.editPairings(func(data *persisted) error {
+		current, ok := data.Pairings[id]
+		if !ok || current.State != "starting" {
+			return nil
+		}
+		current.Problem, current.Error = problem, message
+		if deny {
+			current.State = "denied"
+		}
+		data.Pairings[id] = current
+		return nil
+	})
+}
+
+func (s *Server) delayPairing(id string, d time.Duration) {
+	s.mu.Lock()
+	if s.pairingNext == nil {
+		s.pairingNext = map[string]time.Time{}
+	}
+	s.pairingNext[id] = time.Now().Add(d)
+	s.mu.Unlock()
+}
 
 func (s *Server) pairingControl(method string, params json.RawMessage) (any, error) {
 	if method == "pairing.start" {
+		// A discovered device comes with URL and fingerprint; an address typed
+		// by the user has no fingerprint yet: it is read over TLS and then
+		// confirmed by comparing the code on both screens.
 		var in struct {
 			URL         string `json:"url"`
+			Address     string `json:"address"`
 			Fingerprint string `json:"fingerprint"`
+			Name        string `json:"name"`
+			Platform    string `json:"platform"`
+			Form        string `json:"form"`
 		}
-		if json.Unmarshal(params, &in) != nil || !validPeerURL(in.URL) {
+		if json.Unmarshal(params, &in) != nil {
+			return nil, transfer.ErrInvalid
+		}
+		if in.URL == "" {
+			in.URL = peerURLFromAddress(in.Address)
+		}
+		if !validPeerURL(in.URL) {
 			return nil, transfer.ErrInvalid
 		}
 		in.URL = strings.TrimRight(in.URL, "/")
 		in.Fingerprint = strings.ToLower(strings.TrimSpace(in.Fingerprint))
-		if !pairingHex(in.Fingerprint, 32) {
+		if in.Fingerprint != "" && !pairingHex(in.Fingerprint, 32) {
 			return nil, transfer.ErrInvalid
+		}
+		if !validDiscoveryName(in.Name) {
+			in.Name = ""
+		}
+		if !validPlatform(in.Platform) || !validForm(in.Form) {
+			in.Platform, in.Form = "", ""
 		}
 		id := randomID()
 		err := s.editPairings(func(p *persisted) error {
 			trimPairings(p)
 			for _, r := range p.Pairings {
-				if r.Peer.Fingerprint == in.Fingerprint && r.Peer.Address == in.URL && (r.State == "starting" || r.State == "comparing" || r.State == "finishing") && time.Now().Before(r.Expires) {
+				if r.Initiator && r.Peer.Address == in.URL && (in.Fingerprint == "" || r.Peer.Fingerprint == in.Fingerprint) && (r.State == "starting" || r.State == "comparing" || r.State == "finishing") && time.Now().Before(r.Expires) {
 					id = r.ID
 					return nil
 				}
@@ -158,11 +272,11 @@ func (s *Server) pairingControl(method string, params json.RawMessage) (any, err
 				return errors.New("pairing queue is full")
 			}
 			for _, r := range p.Devices {
-				if r.Device.Fingerprint == in.Fingerprint {
+				if in.Fingerprint != "" && r.Device.Fingerprint == in.Fingerprint {
 					return errors.New("device is already trusted")
 				}
 			}
-			p.Pairings[id] = pairingRecord{ID: id, Initiator: true, Peer: model.Device{Kind: "engine", Address: in.URL, Fingerprint: in.Fingerprint, Name: ""}, Nonce: randomID(), Secret: randomID(), ReturnToken: randomID(), Expires: time.Now().Add(5 * time.Minute), State: "starting"}
+			p.Pairings[id] = pairingRecord{ID: id, Initiator: true, Peer: model.Device{Kind: "engine", Address: in.URL, Fingerprint: in.Fingerprint, Name: in.Name, Platform: in.Platform, Form: in.Form}, Nonce: randomID(), Secret: randomID(), ReturnToken: randomID(), Expires: time.Now().Add(5 * time.Minute), State: "starting"}
 			return nil
 		})
 		if err != nil {
@@ -174,9 +288,16 @@ func (s *Server) pairingControl(method string, params json.RawMessage) (any, err
 		// The local user opened "Add device": accept requests from other
 		// devices for a limited time only.
 		var v struct {
-			Seconds int `json:"seconds"`
+			Seconds int  `json:"seconds"`
+			Close   bool `json:"close"`
 		}
 		_ = json.Unmarshal(params, &v)
+		if v.Close {
+			s.mu.Lock()
+			s.pairingOpenUntil = time.Time{}
+			s.mu.Unlock()
+			return map[string]string{"openUntil": ""}, nil
+		}
 		if v.Seconds <= 0 {
 			v.Seconds = int(pairingWindow / time.Second)
 		}
@@ -237,6 +358,8 @@ type pairingBeginInput struct {
 	AttemptID         string `json:"attemptId"`
 	Nonce             string `json:"nonce"`
 	Secret            string `json:"secret"`
+	Platform          string `json:"platform,omitempty"`
+	Form              string `json:"form,omitempty"`
 }
 type pairingBeginReply struct {
 	ID    string `json:"id"`
@@ -257,6 +380,14 @@ func (s *Server) pairingBegin(w http.ResponseWriter, r *http.Request) {
 	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
 	now := time.Now()
 	s.mu.Lock()
+	if !now.Before(s.pairingOpenUntil) {
+		// Not counted against the attempt limit: the requesting computer
+		// keeps asking until AirLink is opened here, and must then proceed
+		// at once instead of waiting for a rate window.
+		s.mu.Unlock()
+		fail(w, http.StatusForbidden, errors.New("pairing is not open on this device"))
+		return
+	}
 	var recent []time.Time
 	for _, v := range s.rate[ip] {
 		if now.Sub(v) < time.Minute {
@@ -269,17 +400,12 @@ func (s *Server) pairingBegin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.rate[ip] = append(recent, now)
-	open := now.Before(s.pairingOpenUntil)
 	s.mu.Unlock()
-	if !open {
-		fail(w, http.StatusForbidden, errors.New("pairing is not open on this device"))
-		return
-	}
 	var in pairingBeginInput
 	if !decode(w, r, &in) {
 		return
 	}
-	if !pairingHex(in.ID, 24) || !validDiscoveryName(in.Name) || !validPeerURL(in.Address) || !pairingHex(in.Fingerprint, 32) || !pairingHex(in.Nonce, 24) || !pairingHex(in.Secret, 24) || !pairingHex(in.AttemptID, 24) {
+	if !pairingHex(in.ID, 24) || !validDiscoveryName(in.Name) || !validPeerURL(in.Address) || !pairingHex(in.Fingerprint, 32) || !pairingHex(in.Nonce, 24) || !pairingHex(in.Secret, 24) || !pairingHex(in.AttemptID, 24) || !validPlatform(in.Platform) || !validForm(in.Form) {
 		fail(w, 400, transfer.ErrInvalid)
 		return
 	}
@@ -310,7 +436,7 @@ func (s *Server) pairingBegin(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return err
 		}
-		p.Pairings[reply.ID] = pairingRecord{ID: reply.ID, Peer: model.Device{ID: in.ID, Name: in.Name, Kind: "engine", Address: in.Address, Fingerprint: in.Fingerprint, CanSend: true, CanReceive: true}, RemoteID: in.AttemptID, Nonce: reply.Nonce, SecretHash: digest([]byte(in.Secret)), Code: code, Expires: now.Add(5 * time.Minute), State: "comparing"}
+		p.Pairings[reply.ID] = pairingRecord{ID: reply.ID, Peer: model.Device{ID: in.ID, Name: in.Name, Kind: "engine", Address: in.Address, Fingerprint: in.Fingerprint, CanSend: true, CanReceive: true, CanClipboard: true, Platform: in.Platform, Form: in.Form}, RemoteID: in.AttemptID, Nonce: reply.Nonce, SecretHash: digest([]byte(in.Secret)), Code: code, Expires: now.Add(5 * time.Minute), State: "comparing"}
 		return nil
 	})
 	if err != nil {
@@ -413,7 +539,7 @@ func (s *Server) pairingLoop() {
 				continue
 			}
 			s.mu.Lock()
-			if s.pairingWorkers[id] {
+			if s.pairingWorkers[id] || time.Now().Before(s.pairingNext[id]) {
 				s.mu.Unlock()
 				continue
 			}
@@ -438,35 +564,66 @@ func (s *Server) pairingLoop() {
 func (s *Server) pairingStep(id string, p pairingRecord) {
 	ctx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
 	defer cancel()
-	client := pinnedClient(p.Peer.Fingerprint)
-	defer client.CloseIdleConnections()
 	base := strings.TrimRight(p.Peer.Address, "/") + "/api/v1/"
 	local := s.store.snapshot()
+	if p.State == "starting" && p.Peer.Fingerprint == "" {
+		fp, err := probeIdentity(ctx, base)
+		if err != nil {
+			s.setPairingProblem(id, problemUnreachable, "The other computer cannot be reached at this address.", false)
+			s.delayPairing(id, 2*time.Second)
+			return
+		}
+		_ = s.editPairings(func(data *persisted) error {
+			current, ok := data.Pairings[id]
+			if !ok || current.State != "starting" || current.Peer.Fingerprint != "" {
+				return nil
+			}
+			current.Peer.Fingerprint, current.Problem, current.Error = fp, "", ""
+			if fp == s.fingerprint {
+				current.State, current.Problem, current.Error = "denied", problemSelf, "This is the address of this computer."
+			}
+			for _, r := range data.Devices {
+				if r.Device.Fingerprint == fp {
+					current.State, current.Problem, current.Error = "denied", problemPaired, "This computer is already connected."
+				}
+			}
+			data.Pairings[id] = current
+			return nil
+		})
+		return
+	}
+	client := pinnedClient(p.Peer.Fingerprint)
+	defer client.CloseIdleConnections()
 	if p.State == "starting" {
 		var info struct {
 			ID, Name     string
 			Capabilities []string
+			Platform     string
+			Form         string
 		}
 		if err := requestJSON(ctx, client, "GET", base+"info", "", nil, &info); err != nil {
+			if errors.Is(err, errPeerIdentity) {
+				s.setPairingProblem(id, problemIdentity, "The other computer presented a different identity. Choose it again from the list.", true)
+				return
+			}
+			s.setPairingProblem(id, problemUnreachable, "The other computer cannot be reached. A firewall there may block AirLink.", false)
+			s.delayPairing(id, 2*time.Second)
 			return
 		}
 		capable := false
 		for _, v := range info.Capabilities {
-			capable = capable || v == "pairing-v2"
+			capable = capable || v == "protocol-3"
 		}
 		if !capable || !pairingHex(info.ID, 24) || info.ID == local.ID {
-			_ = s.editPairings(func(data *persisted) error {
-				current := data.Pairings[id]
-				if current.State == "starting" {
-					current.State = "denied"
-					current.Error = "This device needs the previous fingerprint-verification flow or an AirLink update."
-					data.Pairings[id] = current
-				}
-				return nil
-			})
+			problem, message := problemOutdated, "The other computer needs AirLink 0.13 or later."
+			if info.ID == local.ID {
+				problem, message = problemSelf, "This is the address of this computer."
+			}
+			s.setPairingProblem(id, problem, message, true)
 			return
 		}
-		input := pairingBeginInput{ID: local.ID, Name: local.Settings.Name, Address: s.addressForPeer(p.Peer.Address), Fingerprint: s.fingerprint, TargetID: info.ID, TargetFingerprint: p.Peer.Fingerprint, AttemptID: p.ID, Nonce: p.Nonce, Secret: p.Secret}
+		platform, form := localDevice()
+		input := pairingBeginInput{ID: local.ID, Name: local.Settings.Name, Address: s.addressForPeer(p.Peer.Address), Fingerprint: s.fingerprint, TargetID: info.ID, TargetFingerprint: p.Peer.Fingerprint, AttemptID: p.ID, Nonce: p.Nonce, Secret: p.Secret, Platform: platform, Form: form}
 		body, _ := json.Marshal(input)
 		req, err := http.NewRequestWithContext(ctx, "POST", base+"pair/v2/start", bytes.NewReader(body))
 		if err != nil {
@@ -475,21 +632,19 @@ func (s *Server) pairingStep(id string, p pairingRecord) {
 		req.Header.Set("Content-Type", "application/json")
 		res, err := client.Do(req)
 		if err != nil {
+			s.setPairingProblem(id, problemUnreachable, "The other computer cannot be reached. A firewall there may block AirLink.", false)
+			s.delayPairing(id, 2*time.Second)
 			return
 		}
 		content, readErr := io.ReadAll(io.LimitReader(res.Body, 16385))
 		res.Body.Close()
 		var reply pairingBeginReply
 		if res.StatusCode == http.StatusForbidden {
-			// Keep trying until the other user opens "Add device" there.
-			_ = s.editPairings(func(data *persisted) error {
-				current := data.Pairings[id]
-				if current.State == "starting" && current.Error != pairingClosedHint {
-					current.Error = pairingClosedHint
-					data.Pairings[id] = current
-				}
-				return nil
-			})
+			// Keep asking until AirLink is opened on the other computer.
+			if p.Problem != problemClosed {
+				s.setPairingProblem(id, problemClosed, pairingClosedHint, false)
+			}
+			s.delayPairing(id, time.Second)
 			return
 		}
 		if readErr != nil || res.StatusCode != 202 || len(content) > 16384 || json.Unmarshal(content, &reply) != nil || !pairingHex(reply.ID, 24) || !pairingHex(reply.Nonce, 24) {
@@ -504,8 +659,11 @@ func (s *Server) pairingStep(id string, p pairingRecord) {
 			if !ok || current.State != "starting" {
 				return transfer.ErrConflict
 			}
-			current.Peer.ID, current.Peer.Name, current.Peer.CanSend, current.Peer.CanReceive = info.ID, info.Name, true, true
-			current.RemoteID, current.Code, current.State, current.Error = reply.ID, code, "comparing", ""
+			current.Peer.ID, current.Peer.Name, current.Peer.CanSend, current.Peer.CanReceive, current.Peer.CanClipboard = info.ID, info.Name, true, true, true
+			if validPlatform(info.Platform) && validForm(info.Form) && info.Platform != "" {
+				current.Peer.Platform, current.Peer.Form = info.Platform, info.Form
+			}
+			current.RemoteID, current.Code, current.State, current.Error, current.Problem = reply.ID, code, "comparing", "", ""
 			data.Pairings[id] = current
 			return nil
 		})

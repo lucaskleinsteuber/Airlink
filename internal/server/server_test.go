@@ -5,11 +5,13 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -251,10 +253,68 @@ func TestStdioControlAnswersAndStops(t *testing.T) {
 	if err := s.Stdio(strings.NewReader("{\"id\":7,\"method\":\"status.summary\"}\n{\"id\":8,\"method\":\"share.create\"}\n{\"id\":9,\"method\":\"shutdown\"}\n"), &out); err != nil {
 		t.Fatal(err)
 	}
-	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	var lines []string
+	for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n") {
+		if !strings.HasPrefix(line, `{"event":`) {
+			lines = append(lines, line)
+		}
+	}
 	if len(lines) != 3 || !strings.Contains(lines[0], `"id":7`) || !strings.Contains(lines[1], "unknown control method") {
 		t.Fatal(out.String())
 	}
+}
+
+// Changes are pushed to the app as coalesced "status" events; reading the
+// status does not cause one.
+func TestStdioPushesStatusEvents(t *testing.T) {
+	s := integrationHost(t)
+	in, feed := io.Pipe()
+	var out syncBuffer
+	done := make(chan error, 1)
+	go func() { done <- s.Stdio(in, &out) }()
+	send := func(line string) { _, _ = feed.Write([]byte(line + "\n")) }
+	events := func() int { return strings.Count(out.String(), `{"event":"status"}`) }
+	send(`{"id":1,"method":"status.summary"}`)
+	waitFor(t, 2*time.Second, "summary reply", func() bool { return strings.Contains(out.String(), `"id":1`) })
+	time.Sleep(300 * time.Millisecond)
+	if n := events(); n != 0 {
+		t.Fatalf("reading status produced %d events", n)
+	}
+	settings := s.store.snapshot().Settings
+	settings.Name = "Renamed"
+	body, _ := json.Marshal(map[string]any{"id": 2, "method": "settings.update", "params": settings})
+	send(string(body))
+	waitFor(t, 2*time.Second, "status event", func() bool { return events() == 1 })
+	for range 20 {
+		s.changed()
+	}
+	waitFor(t, 2*time.Second, "coalesced event", func() bool { return events() >= 2 })
+	time.Sleep(300 * time.Millisecond)
+	if n := events(); n > 3 {
+		t.Fatalf("20 signals produced %d events", n)
+	}
+	send(`{"id":3,"method":"shutdown"}`)
+	_ = feed.Close()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+type syncBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.b.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.b.String()
 }
 
 func TestRestartKeepsIdentityAndContinuesWithPeer(t *testing.T) {

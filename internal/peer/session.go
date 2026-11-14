@@ -38,6 +38,9 @@ type Hello struct {
 	Boot string `json:"boot"`
 	// Port is the TLS port this device accepts connections on.
 	Port int `json:"port"`
+	// Platform and Form only choose the symbol other apps show.
+	Platform string `json:"platform,omitempty"`
+	Form     string `json:"form,omitempty"`
 }
 
 // Envelope is one decoded control message. Body is the complete JSON object.

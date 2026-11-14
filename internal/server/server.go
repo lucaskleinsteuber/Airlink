@@ -54,10 +54,12 @@ type Server struct {
 	discoveryNames    chan struct{}
 	preparations      map[string]*preparationJob
 	pairingWorkers    map[string]bool
+	pairingNext       map[string]time.Time
 	pairingOpenUntil  time.Time
 	pairingSlots      chan struct{}
 	dials             map[string]*dialState
 	dialWake          chan struct{}
+	changes           chan struct{}
 	ctx               context.Context
 	cancel            context.CancelFunc
 	httpServer        *http.Server
@@ -111,7 +113,7 @@ func New(opts Options) (*Server, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Server{traffic: meter, store: store, opts: opts, fingerprint: fp, certificate: ca, currentCert: cert, certIPs: fmt.Sprint(localIPs()), boot: randomID()[:16],
 		clipboardWaits: map[string]chan string{}, discovered: map[string]model.Device{}, rate: map[string][]time.Time{}, discoveryNames: make(chan struct{}, 1),
-		dials: map[string]*dialState{}, dialWake: make(chan struct{}, 1), ctx: ctx, cancel: cancel, lock: lock}
+		dials: map[string]*dialState{}, dialWake: make(chan struct{}, 1), changes: make(chan struct{}, 1), ctx: ctx, cancel: cancel, lock: lock}
 	s.pairingWorkers, s.pairingSlots = map[string]bool{}, make(chan struct{}, 2)
 	s.peers = peer.NewManager(peer.Config{Certificate: s.certificateNow, Local: s.localHello, Trusted: s.trustedDevice, Handler: s, Opened: s.sessionOpened})
 	s.engine, err = transfer.New(opts.DataDir, p.Settings.ReceiveDirectory, transfer.Options{
@@ -125,6 +127,7 @@ func New(opts Options) (*Server, error) {
 		Device:  s.pairedDevice,
 		Wait:    meter.Wait,
 		Add:     meter.Add,
+		Changed: s.changed,
 	})
 	if err != nil {
 		cancel()
@@ -178,6 +181,15 @@ func New(opts Options) (*Server, error) {
 	return s, nil
 }
 
+// changed tells the app (over stdio) that the visible state changed. Signals
+// coalesce; the app then reads status.summary once.
+func (s *Server) changed() {
+	select {
+	case s.changes <- struct{}{}:
+	default:
+	}
+}
+
 type discard struct{}
 
 func (discard) Write(b []byte) (int, error) { return len(b), nil }
@@ -198,7 +210,8 @@ func (s *Server) certificateNow() *tls.Certificate {
 
 func (s *Server) localHello() peer.Hello {
 	p := s.store.snapshot()
-	return peer.Hello{ID: p.ID, Name: p.Settings.Name, Version: model.Version, Boot: s.boot, Port: s.port}
+	platform, form := localDevice()
+	return peer.Hello{ID: p.ID, Name: p.Settings.Name, Version: model.Version, Boot: s.boot, Port: s.port, Platform: platform, Form: form}
 }
 
 func (s *Server) trustedDevice(fingerprint string) (string, bool) {
@@ -305,7 +318,8 @@ func (s *Server) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/info", func(w http.ResponseWriter, r *http.Request) {
 		p := s.store.snapshot()
-		respond(w, 200, map[string]any{"version": model.Version, "id": p.ID, "name": p.Settings.Name, "fingerprint": s.fingerprint, "urls": s.currentURLs(s.urls), "capabilities": []string{"pairing-v2", "protocol-3"}})
+		platform, form := localDevice()
+		respond(w, 200, map[string]any{"version": model.Version, "id": p.ID, "name": p.Settings.Name, "fingerprint": s.fingerprint, "urls": s.currentURLs(s.urls), "capabilities": []string{"pairing-v2", "protocol-3"}, "platform": platform, "form": form})
 	})
 	mux.HandleFunc("POST /api/v1/pair/v2/start", s.pairingBegin)
 	for _, action := range []string{"poll", "confirm", "ack", "cancel"} {

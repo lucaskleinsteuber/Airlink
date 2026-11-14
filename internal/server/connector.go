@@ -42,6 +42,7 @@ func (s *Server) HandleData(session *peer.Session, stream uint32, buf []byte) {
 // Closed implements peer.Handler.
 func (s *Server) Closed(session *peer.Session, _ error) {
 	s.engine.SessionClosed(session)
+	s.changed()
 	select {
 	case <-s.ctx.Done():
 	default:
@@ -65,6 +66,9 @@ func (s *Server) sessionOpened(session *peer.Session) {
 			current.Device.Address = "https://" + net.JoinHostPort(ip.String(), strconv.Itoa(hello.Port))
 		}
 		current.Device.LastSeen = time.Now().UTC().Format(time.RFC3339)
+		if validPlatform(hello.Platform) && validForm(hello.Form) && hello.Platform != "" {
+			current.Device.Platform, current.Device.Form = hello.Platform, hello.Form
+		}
 	})
 	s.mu.Lock()
 	if st := s.dials[id]; st != nil {
@@ -72,6 +76,7 @@ func (s *Server) sessionOpened(session *peer.Session) {
 	}
 	s.mu.Unlock()
 	s.engine.SessionOpened(session)
+	s.changed()
 }
 
 // requestConnection asks for an immediate connection attempt.

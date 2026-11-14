@@ -150,6 +150,7 @@ func (s *Server) preparationControl(method string, params json.RawMessage) (any,
 		}
 		j.finished = time.Now()
 		s.mu.Unlock()
+		s.changed()
 	}()
 	return result, nil
 }
