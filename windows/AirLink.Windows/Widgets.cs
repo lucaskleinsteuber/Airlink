@@ -20,7 +20,7 @@ internal sealed class DeviceTile : StackPanel
     private readonly Ellipse circle = new();
     private readonly TextBlock glyph;
     private readonly Path ring = new() { StrokeThickness = 4, StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, IsHitTestVisible = false };
-    private readonly Ellipse track = new() { StrokeThickness = 4, IsHitTestVisible = false, Opacity = 0.25 };
+    private readonly Ellipse track = new() { StrokeThickness = 4, IsHitTestVisible = false, Opacity = 0.25, Visibility = Visibility.Collapsed };
     private readonly RotateTransform spin = new();
     private readonly TextBlock name = Theme.Text("", 14, true), status = Theme.Text("", 12, secondary: true);
     private readonly ScaleTransform scale = new(1, 1);
