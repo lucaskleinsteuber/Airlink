@@ -1,7 +1,5 @@
-using System.Text.Json;
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.IO;
@@ -10,83 +8,75 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Threading;
 using AirLink.Core;
+using Microsoft.Win32;
 
 namespace AirLink.Windows;
 
+/// <summary>State and actions of the app. The service pushes "status" events;
+/// a slow refresh only catches what has no event.</summary>
 internal sealed class Controller : INotifyPropertyChanged
 {
     private readonly Dispatcher dispatcher;
     private readonly DaemonClient client = new();
     private readonly CancellationTokenSource lifetime = new();
-    private bool starting, stopping;
+    private bool starting, stopping, refreshAgain;
     private readonly StatusRefreshGate refreshes = new();
-    private readonly TransferDraft draft = new();
     private string? helperPath;
     private readonly DesktopNoticeTracker notices = new();
-    private string? actionError, serviceError;
+    private string? serviceError;
+    private bool pairingOpen;
+    private Timer? pairingTimer;
     public event PropertyChangedEventHandler? PropertyChanged;
     public event Action<DesktopNotice>? NoticeRaised;
     public HostStatus? Status { get; private set; }
     public bool Ready { get; private set; }
+    public bool Demo { get; }
     public bool Starting => starting;
     public bool SetupComplete => Status?.Settings.SetupCompleted == true;
-    public bool SetupRequired => Ready && !SetupComplete;
-    public string SuggestedReceiveDirectory
-    {
-        get
-        {
-            var downloads = WindowsFolders.Downloads();
-            var saved = Status?.Settings.ReceiveDirectory;
-            var conventional = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
-            if (!SetupComplete && (string.Equals(saved, conventional, StringComparison.OrdinalIgnoreCase) || string.Equals(saved, Path.Combine(conventional, "AirLink"), StringComparison.OrdinalIgnoreCase))) return downloads;
-            return SetupDefaults.SuggestReceiveDirectory(saved, downloads);
-        }
-    }
-    public bool Sending => draft.IsSending;
-    public bool RemovingHistory { get; private set; }
-    public string? ActivePreparationId { get; private set; }
-    public List<Transfer> History { get; private set; } = [];
-    public string? HistoryCursor { get; private set; }
-    public bool HistoryLoading { get; private set; }
-    private long historyGeneration;
-    private long toolGeneration;
-    private readonly HashSet<string> observedTools = [];
-    public string? Error => actionError ?? serviceError;
-    public bool HasActionError => actionError is not null;
-    public string? Notice { get; private set; }
-    public string? SelectedDeviceId { get => draft.SelectedDeviceId; set { draft.SelectDevice(value); Changed(); } }
-    public ObservableCollection<SendEntry> Selection => draft.Entries;
+    public string? ServiceError => serviceError;
+    public HashSet<string> Preparing { get; } = [];
+    public Dictionary<string, string> ClipboardTexts { get; } = [];
     public bool English => (Status?.Settings.Language ?? "system") switch
     {
         "en" => true, "de" => false,
-        _ => CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "en"
+        _ => CultureInfo.CurrentUICulture.TwoLetterISOLanguageName != "de"
     };
     public string T(string de, string en) => English ? en : de;
-    public string DataDirectory => Path.Combine(Environment.GetEnvironmentVariable("APPDATA") ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AirLink");
-    public Device? SelectedDevice => Status?.Devices.FirstOrDefault(d => d.Id == SelectedDeviceId);
-    public int ActiveCount => Status is { Summary: true } summary ? summary.ActiveTransferCount : Status?.Transfers.Count(t => t.IsActive) ?? 0;
-    public string Version => Status?.Version ?? "0.12.0-beta.1";
+    public string DataDirectory => Environment.GetEnvironmentVariable("AIRLINK_DATA_DIR") is { Length: > 0 } custom && Path.IsPathFullyQualified(custom) ? custom
+        : Path.Combine(Environment.GetEnvironmentVariable("APPDATA") ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AirLink");
+    public int ActiveCount => Status?.Transfers.Count(t => t.IsActive) ?? 0;
+    public string Version => Status?.Version ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "";
+    public IReadOnlyList<Device> PairedDevices => (Status?.Devices ?? []).Where(d => d.Paired && d.Kind == "engine")
+        .OrderByDescending(d => d.Online).ThenBy(d => d.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+    public IReadOnlyList<Device> NearbyDevices => (Status?.Devices ?? []).Where(d => !d.Paired && d.Kind == "engine" && !string.IsNullOrEmpty(d.Address))
+        .OrderBy(d => d.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+    public IEnumerable<string> LocalAddresses => (Status?.Urls ?? []).Select(u => Uri.TryCreate(u, UriKind.Absolute, out var uri) ? uri.Host : "")
+        .Where(h => h.Length > 0 && h != "localhost" && !h.Contains(':') && !h.StartsWith('['));
 
-    public Controller(Dispatcher dispatcher)
+    public Controller(Dispatcher dispatcher, bool demo = false)
     {
         this.dispatcher = dispatcher;
+        Demo = demo;
+        client.EventReceived += name => { if (name == "status") dispatcher.BeginInvoke(() => _ = RefreshAsync()); };
         client.Exited += (_, e) => dispatcher.BeginInvoke(() =>
         {
             if (!e.Unexpected || (client.SessionId is { } current && e.SessionId != current) || (starting && client.SessionId is null)) return;
             Ready = false;
-            serviceError = T("Der AirLink-Dienst wurde beendet. Du kannst ihn mit denselben Daten erneut starten.", "The AirLink service stopped. Retry to keep using the same data.") +
-                (string.IsNullOrWhiteSpace(e.Diagnostic) ? "" : "\n" + e.Diagnostic);
+            serviceError = T("Der AirLink-Dienst wurde beendet.", "The AirLink service stopped.") + (string.IsNullOrWhiteSpace(e.Diagnostic) ? "" : "\n" + e.Diagnostic);
             Changed();
         });
     }
 
+    public void ShowDemo(HostStatus status) { Status = status; Ready = true; serviceError = null; Changed(); }
+
     public async Task StartAsync(string? receiveOverride = null)
     {
-        if (starting || stopping) return;
+        if (Demo || starting || stopping) return;
         refreshes.Invalidate();
         starting = true; Ready = false; serviceError = null; Changed();
         try
@@ -95,8 +85,9 @@ internal sealed class Controller : INotifyPropertyChanged
             helperPath ??= await ExtractHelperAsync();
             Directory.CreateDirectory(DataDirectory);
             await client.StartAsync(helperPath, DataDirectory, receiveOverride, lifetime.Token);
-            await RefreshAsync();
+            await RefreshAsync(force: true);
             if (!Ready) throw new IOException(serviceError ?? T("Der Dienst antwortet noch nicht.", "The service is not responding."));
+            SetPairingWindow(pairingOpen, force: true);
         }
         catch (Exception e) { serviceError = Friendly(e); Ready = false; }
         finally { starting = false; Changed(); }
@@ -105,7 +96,7 @@ internal sealed class Controller : INotifyPropertyChanged
     private static async Task<string> ExtractHelperAsync()
     {
         var assembly = Assembly.GetExecutingAssembly();
-        var version = assembly.GetName().Version?.ToString(4) ?? "0.12.0-beta.1";
+        var version = assembly.GetName().Version?.ToString(4) ?? "0.13.0.0";
         var cache = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AirLink", "Runtime", version,
             RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant());
         Stream Open() => assembly.GetManifestResourceStream("AirLink.Windows.Helper") ?? throw new FileNotFoundException("The bundled AirLink service is missing. Download the complete app.");
@@ -114,31 +105,30 @@ internal sealed class Controller : INotifyPropertyChanged
         return await HelperExtractor.ExtractVerifiedAsync(Open, cache, expected);
     }
 
-    public async Task PollAsync()
+    /// <summary>Safety net only; changes arrive as events.</summary>
+    public async Task FallbackRefreshAsync()
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(15));
         try
         {
             while (await timer.WaitForNextTickAsync(lifetime.Token))
-                if (client.IsRunning && !starting && !stopping) { await RefreshAsync(); await RunAsync(RefreshToolsAsync); }
+                if (client.IsRunning && !starting && !stopping) await RefreshAsync();
         }
         catch (OperationCanceledException) { }
     }
 
     public async Task RefreshAsync(bool force = false)
     {
-        if (stopping) return;
+        if (stopping || Demo) return;
         var ticket = refreshes.Begin(force);
-        if (ticket is null) return;
+        if (ticket is null) { refreshAgain = true; return; }
         try
         {
             var next = await client.RequestAsync<HostStatus>("status.summary", ct: lifetime.Token);
             if (!refreshes.IsCurrent(ticket.Value)) return;
-            if (Status is { } previous) { next.Statistics = previous.Statistics; if (observedTools.Contains("clipboard")) next.Clipboard = previous.Clipboard; }
             Status = next; Ready = true; serviceError = null;
-            History = DesktopTransferSelection.MergeHistory(History, next.Transfers);
-            draft.RefreshDevices(next.Devices);
             foreach (var notice in notices.Observe(next)) NoticeRaised?.Invoke(notice);
+            if (next.Clipboard.Any(m => m.Direction == "receive" && !ClipboardTexts.ContainsKey(m.Id))) _ = LoadClipboardAsync();
             Changed();
         }
         catch (Exception e)
@@ -148,11 +138,40 @@ internal sealed class Controller : INotifyPropertyChanged
             if (!client.IsRunning) Ready = false;
             Changed();
         }
-        finally { refreshes.Complete(ticket.Value); }
+        finally
+        {
+            refreshes.Complete(ticket.Value);
+            if (refreshAgain && !stopping) { refreshAgain = false; _ = RefreshAsync(); }
+        }
+    }
+
+    private async Task LoadClipboardAsync()
+    {
+        try
+        {
+            var messages = (await client.RequestAsync("clipboard.list", ct: lifetime.Token)).Deserialize<List<ClipboardMessage>>(ProtocolJson.Options) ?? [];
+            foreach (var message in messages.Where(m => m.Direction == "receive")) ClipboardTexts.TryAdd(message.Id, message.Text);
+            Changed(nameof(ClipboardTexts));
+        }
+        catch (Exception) { }
+    }
+
+    /// <summary>Other computers may start pairing only while the window is open.</summary>
+    public void SetPairingWindow(bool open, bool force = false)
+    {
+        if (open == pairingOpen && !force) return;
+        pairingOpen = open;
+        pairingTimer?.Dispose(); pairingTimer = null;
+        if (Demo || !Ready) return;
+        if (open)
+            pairingTimer = new Timer(_ => dispatcher.BeginInvoke(async () => { try { if (Ready) await client.RequestAsync("pairing.listen", ct: lifetime.Token); } catch (Exception) { } }), null, TimeSpan.Zero, TimeSpan.FromSeconds(60));
+        else
+            _ = Task.Run(async () => { try { await client.RequestAsync("pairing.listen", new { close = true }, lifetime.Token); } catch (Exception) { } });
     }
 
     public async Task<bool> StopAsync()
     {
+        if (Demo) return true;
         if (stopping) return false;
         stopping = true; refreshes.Invalidate();
         try
@@ -171,8 +190,6 @@ internal sealed class Controller : INotifyPropertyChanged
         try
         {
             var stopped = await client.StopGracefullyAsync();
-            // Keep the app lifetime alive until Setup's waiter actually starts. A
-            // failed/cancelled installer launch can then retry the same helper data.
             if (stopped) { Ready = false; Changed(); }
             return stopped;
         }
@@ -180,201 +197,110 @@ internal sealed class Controller : INotifyPropertyChanged
     }
     public void CompleteUpdateShutdown() => lifetime.Cancel();
 
-    public async Task RunAsync(Func<Task> action)
-    {
-        try { actionError = null; await action(); }
-        catch (Exception e) { actionError = Friendly(e); }
-        Changed();
-    }
-    public void DismissError() { actionError = null; Changed(); }
-    public void ReportError(string message) { actionError = message; Changed(); }
     public async Task<T> RequestAsync<T>(string method, object? parameters = null)
     {
         RequireReady();
-        var mutating = IsToolMutation(method); if (mutating) toolGeneration++;
-        try { return await client.RequestAsync<T>(method, parameters, lifetime.Token); }
-        finally { if (mutating) toolGeneration++; }
+        return await client.RequestAsync<T>(method, parameters, lifetime.Token);
     }
-    public async Task<System.Text.Json.JsonElement> RequestAsync(string method, object? parameters = null)
+    public async Task<JsonElement> RequestAsync(string method, object? parameters = null)
     {
         RequireReady();
-        var mutating = IsToolMutation(method); if (mutating) toolGeneration++;
-        try { return await client.RequestAsync(method, parameters, lifetime.Token); }
-        finally { if (mutating) toolGeneration++; }
+        return await client.RequestAsync(method, parameters, lifetime.Token);
     }
-
-    private static bool IsToolMutation(string method) => method is "clipboard.send" or "clipboard.dismiss";
-
     public async Task CommandAsync(string method, string id)
     {
-        RequireReady();
-        toolGeneration++; historyGeneration++;
-        await client.RequestAsync(method, new { id }, lifetime.Token);
-        if (method == "history.remove") History.RemoveAll(t => t.Id == id);
+        await RequestAsync(method, new { id });
         await RefreshAsync(force: true);
     }
 
-    public async Task RemoveHistoryAsync(IEnumerable<Transfer> selection)
+    /// <summary>Sends files or folders to a paired computer right away.</summary>
+    public async Task SendAsync(IEnumerable<string> paths, Device device)
     {
         RequireReady();
-        if (RemovingHistory) return;
-        var plan = new HistoryRemovalPlan(selection);
-        if (plan.Ids.Count == 0) return;
-        RemovingHistory = true; Changed();
-        var removed = 0;
+        var files = paths.Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (files.Length == 0) return;
+        if (files.Any(p => !File.Exists(p) && !Directory.Exists(p)))
+            throw new IOException(T("Eine ausgewählte Datei ist nicht mehr da. Bitte noch einmal auswählen.", "A selected file is no longer there. Please choose it again."));
+        if (!TransferDraft.CanSendTo(device))
+            throw new IOException(T($"{device.Name} darf von diesem PC keine Dateien empfangen. Du kannst das in den Einstellungen unter „Geräte“ ändern.", $"{device.Name} may not receive files from this PC. You can change this in Settings under Devices."));
+        Preparing.Add(device.Id); Changed();
         try
         {
-            historyGeneration++;
-            removed = await plan.ExecuteAsync(() => DesktopTransferSelection.MergeHistory(History, Status?.Transfers ?? []), async id => { await client.RequestAsync("history.remove", new { id }, lifetime.Token); History.RemoveAll(t => t.Id == id); }, lifetime.Token);
-            Notice = removed == 1 ? T("Eintrag entfernt. Deine Dateien bleiben erhalten.", "Entry removed. Your files are preserved.") :
-                T($"{removed} Einträge entfernt. Deine Dateien bleiben erhalten.", $"{removed} entries removed. Your files are preserved.");
-        }
-        catch (HistoryRemovalConflictException)
-        {
-            throw new InvalidOperationException(T("Eine Übertragung ist wieder aktiv und bleibt in der Liste. Bereits entfernte Einträge bleiben entfernt.",
-                "A transfer is active again and remains in the list. Entries already removed stay removed."));
-        }
-        finally { await RefreshAsync(force: true); RemovingHistory = false; Changed(); }
-    }
-
-    public void ObserveTool(string name, bool active) { toolGeneration++; if (active) { observedTools.Add(name); _ = RunAsync(RefreshToolsAsync); } else observedTools.Remove(name); }
-    public async Task RefreshToolsAsync() {
-        if (!Ready) return;
-        var revision = ++toolGeneration;
-        foreach (var name in observedTools.ToArray()) {
-            var method = name == "clipboard" ? "clipboard.list" : "statistics.get";
-            var data = await client.RequestAsync(method, ct: lifetime.Token);
-            if (revision != toolGeneration || !observedTools.Contains(name) || Status is null) continue;
-            if (name == "clipboard") Status.Clipboard = data.Deserialize<List<ClipboardMessage>>(ProtocolJson.Options) ?? [];
-            else Status.Statistics = data.Deserialize<Statistics>(ProtocolJson.Options) ?? new();
-            Changed();
-        }
-    }
-    public async Task LoadHistoryAsync(bool more = false) {
-        if (HistoryLoading) return;
-        HistoryLoading = true; var generation = ++historyGeneration; Changed();
-        try {
-            var page = await RequestAsync<TransferPage>("history.page", new { limit = 50, cursor = more ? HistoryCursor : null });
-            if (generation != historyGeneration) return;
-            History = DesktopTransferSelection.MergeHistory((more ? History : []).Concat(page.Transfers).DistinctBy(t => t.Id), Status?.Transfers ?? []);
-            HistoryCursor = page.NextCursor;
-        } finally { HistoryLoading = false; Changed(); }
-    }
-    public Task<PairingSession> StartPairingAsync(string url, string fingerprint) => RequestAsync<PairingSession>("pairing.start", new { url, fingerprint });
-    public async Task ConfirmPairingAsync(string id, bool automaticReceive) { await RequestAsync("pairing.confirm", new { id, automaticReceive }); await RefreshAsync(true); }
-    public void UpdateAvailable(string version) { Notice = T("Neue Beta verfügbar: ", "New beta available: ") + version + T(" · Einstellungen → Updates", " · Settings → Updates"); NoticeRaised?.Invoke(new(DesktopNoticeKind.Update, version, "AirLink", version)); Changed(); }
-
-    public async Task SetAutomaticReceiveAsync(string deviceId, bool automatic)
-    {
-        RequireReady();
-        var current = Status?.Devices.FirstOrDefault(d => d.Id == deviceId);
-        if (current is not { Paired: true, CanSend: true })
-            throw new InvalidOperationException(T("Dieses Gerät muss verbunden sein und Dateien senden dürfen.", "This device must be paired and allowed to send files."));
-        var copy = ProtocolJson.Clone(current); copy.AutoAccept = automatic;
-        await SaveDeviceAsync(copy);
-    }
-
-    public void AddPaths(IEnumerable<string> paths)
-    {
-        draft.AddPaths(ExistingPaths(paths));
-        Changed();
-    }
-
-    private string[] ExistingPaths(IEnumerable<string> paths)
-    {
-        var full = paths.Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        if (full.Length == 0 || full.Any(p => !File.Exists(p) && !Directory.Exists(p)))
-            throw new IOException(T("Eine ausgewählte Datei ist nicht mehr verfügbar. Bitte erneut auswählen.", "A selected file is no longer available. Please select it again."));
-        return full;
-    }
-
-    public async Task SendPathsAsync(IEnumerable<string> paths, string? deviceId = null, bool useCurrentSelection = true)
-    {
-        RequireReady();
-        RequireSetup();
-        var files = ExistingPaths(paths);
-        var target = deviceId ?? (useCurrentSelection ? SelectedDeviceId : null);
-        if (Sending) throw new IOException(T("Die aktuelle Auswahl wird gerade vorbereitet. Bitte danach erneut ablegen.", "The current selection is being prepared. Please drop the next files when it is ready."));
-        if (target is null || !TransferDraft.CanSendTo(Status?.Devices.FirstOrDefault(d => d.Id == target)))
-        {
-            draft.AddPaths(files);
-            Notice = T("Dateien bereit. Wähle ein gekoppeltes Gerät und klicke auf Senden.", "Files ready. Choose a paired device and click Send.");
-            Changed(); return;
-        }
-        var submitted = draft.TryBeginDirect(target, files, Status?.Devices ?? [], Ready);
-        if (submitted is not null) await SubmitAsync(submitted);
-    }
-
-    public async Task SendAsync()
-    {
-        RequireReady();
-        RequireSetup();
-        var submitted = draft.TryBegin(Status?.Devices ?? [], Ready);
-        if (submitted is not null) await SubmitAsync(submitted);
-    }
-    private async Task SubmitAsync(SendSubmission submitted)
-    {
-        Changed();
-        try
-        {
-            var job = await client.RequestAsync<Preparation>("preparation.start", new { deviceId = submitted.DeviceId, paths = submitted.Paths, requestId = submitted.Token.ToString("N") }, lifetime.Token);
-            ActivePreparationId = job.Id; Changed();
-            while (job.State == "preparing") {
-                await Task.Delay(150, lifetime.Token);
+            var job = await client.RequestAsync<Preparation>("preparation.start", new { deviceId = device.Id, paths = files, requestId = Guid.NewGuid().ToString("N") }, lifetime.Token);
+            while (job.State == "preparing")
+            {
+                await Task.Delay(120, lifetime.Token);
                 job = await client.RequestAsync<Preparation>("preparation.status", new { id = job.Id }, lifetime.Token);
             }
-            if (job.State != "completed") throw new IOException(job.Error ?? T("Vorbereitung abgebrochen. Deine Auswahl bleibt erhalten.", "Preparation cancelled. Your selection is preserved."));
-            draft.FinishSuccess(submitted);
-            Notice = T("Übertragung angelegt.", "Transfer created.");
-            await RefreshAsync(force: true);
+            if (job.State != "completed") throw new IOException(job.Error ?? T("Das Senden wurde abgebrochen.", "Sending was cancelled."));
         }
-        catch { draft.Fail(submitted); throw; }
-        finally { ActivePreparationId = null; Changed(); }
+        finally { Preparing.Remove(device.Id); await RefreshAsync(force: true); Changed(); }
     }
 
-    public async Task<HostSettings> SaveSettingsAsync(HostSettings settings)
+    public async Task<string> ConnectAsync(Device device)
     {
-        RequireReady();
-        var saved = await client.RequestAsync<HostSettings>("settings.update", settings, lifetime.Token);
+        if (device.Outdated) throw new IOException(T($"{device.Name} hat eine ältere AirLink-Version. Aktualisiere AirLink dort auf 0.13 oder neuer.", $"{device.Name} runs an older AirLink. Update AirLink there to 0.13 or later."));
+        var session = await RequestAsync<PairingSession>("pairing.start", new { url = device.Address, fingerprint = device.Fingerprint, name = device.Name, platform = device.Platform, form = device.Form });
         await RefreshAsync(force: true);
-        return saved;
+        return session.Id;
     }
-    public async Task CompleteSetupAsync(string name, string folder, bool? notifications = null, bool? automaticUpdateChecks = null)
+    public async Task<string> ConnectAddressAsync(string address)
     {
-        RequireReady();
-        try { name = SetupDefaults.NormalizeName(name); }
-        catch (ArgumentException) { throw new ArgumentException(T("Bitte einen Gerätenamen mit höchstens 120 UTF-8 Bytes ohne Steuerzeichen eingeben.", "Enter a device name of at most 120 UTF-8 bytes without control characters.")); }
-        if (!Path.IsPathFullyQualified(folder.Trim())) throw new ArgumentException(T("Bitte einen vollständigen Empfangsordner wählen.", "Choose an absolute receive folder."));
-        var settings = SetupDefaults.Complete(Status!.Settings, name, folder, notifications);
-        if (automaticUpdateChecks is not null) settings.AutomaticUpdateChecks = automaticUpdateChecks.Value;
-        await SaveSettingsAsync(settings);
+        PairingSession session;
+        try { session = await RequestAsync<PairingSession>("pairing.start", new { address }); }
+        catch (DaemonException) { throw new IOException(T("Diese Adresse sieht nicht richtig aus. Gib die IP-Adresse ein, die AirLink auf dem anderen Computer unter „Hilfe“ anzeigt, z. B. 192.168.178.22.", "This address does not look right. Enter the IP address AirLink shows under Help on the other computer, for example 192.168.178.22.")); }
+        await RefreshAsync(force: true);
+        return session.Id;
     }
+    public async Task ConfirmPairingAsync(string id, bool automaticReceive) { await RequestAsync("pairing.confirm", new { id, automaticReceive }); await RefreshAsync(true); }
+    public async Task CancelPairingAsync(string id) { try { await RequestAsync("pairing.cancel", new { id }); } catch (Exception) { } await RefreshAsync(true); }
 
-    public async Task SaveDeviceAsync(Device device)
+    public async Task SaveDeviceAsync(Device device) { await RequestAsync("device.update", device); await RefreshAsync(force: true); }
+    public async Task UpdateSettingsAsync(Action<HostSettings> change)
     {
         RequireReady();
-        await client.RequestAsync("device.update", device, lifetime.Token);
+        var next = ProtocolJson.Clone(Status!.Settings);
+        change(next);
+        await client.RequestAsync<HostSettings>("settings.update", next, lifetime.Token);
         await RefreshAsync(force: true);
     }
 
-    public async Task<ReceivedResult> GetReceivedAsync(string id)
+    public async Task SendClipboardAsync(Device device, string text)
     {
-        RequireReady();
-        return await client.RequestAsync<ReceivedResult>("transfer.received", new { id }, lifetime.Token);
+        if (string.IsNullOrEmpty(text) || System.Text.Encoding.UTF8.GetByteCount(text) > 64 * 1024)
+            throw new IOException(T("In der Zwischenablage ist kein passender Text. Kopiere zuerst einen Text (Strg+C).", "There is no suitable text on the clipboard. Copy some text first (Ctrl+C)."));
+        if (!device.CanClipboard) throw new IOException(T($"Zwischenablage teilen ist für {device.Name} ausgeschaltet.", $"Clipboard sharing is off for {device.Name}."));
+        await RequestAsync("clipboard.send", new { deviceId = device.Id, text });
+    }
+    public async Task DismissClipboardAsync(string id)
+    {
+        ClipboardTexts.Remove(id);
+        try { await RequestAsync("clipboard.dismiss", new { id }); } catch (Exception) { }
+        await RefreshAsync(force: true);
     }
 
-    public async Task RevealAsync(Transfer transfer, string? fileId = null, bool openFolder = false)
+    public async Task RevealAsync(Transfer transfer)
     {
-        var result = await GetReceivedAsync(transfer.Id);
-        if (openFolder) Shell.OpenFolder(result.Directory);
-        else if (fileId is not null) Shell.Reveal(result.Items.FirstOrDefault(i => i.FileId == fileId)?.Path ?? throw new IOException(T("Die empfangene Datei ist nicht mehr verfügbar.", "The received file is no longer available.")));
-        else if (result.Items.Count == 1) Shell.Reveal(result.Items[0].Path);
+        var result = await RequestAsync<ReceivedResult>("transfer.received", new { id = transfer.Id });
+        var items = result.Items.Where(i => File.Exists(i.Path) || Directory.Exists(i.Path)).ToList();
+        if (items.Count >= 1) Shell.Reveal(items[0].Path);
         else Shell.OpenFolder(result.Directory);
     }
+    public void UpdateAvailable(string version) => NoticeRaised?.Invoke(new(DesktopNoticeKind.Update, version, "AirLink", version));
+    public void OpenReceiveFolder() { if (Status is not null) Shell.OpenFolder(Status.Settings.ReceiveDirectory); }
 
-    public void OpenReceiveFolder()
+    private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    public bool Autostart
     {
-        if (Status is not null) Shell.OpenFolder(Status.Settings.ReceiveDirectory);
+        get { try { using var key = Registry.CurrentUser.OpenSubKey(RunKey); return key?.GetValue("AirLink") is string; } catch (Exception) { return false; } }
+        set
+        {
+            if (Demo) return;
+            using var key = Registry.CurrentUser.CreateSubKey(RunKey);
+            if (value) key.SetValue("AirLink", "\"" + Environment.ProcessPath + "\" --background");
+            else key.DeleteValue("AirLink", false);
+            Changed();
+        }
     }
 
     public string Bytes(long count)
@@ -384,28 +310,17 @@ internal sealed class Controller : INotifyPropertyChanged
         return value.ToString(unit == 0 ? "0" : "0.#", CultureInfo.GetCultureInfo(English ? "en-US" : "de-DE")) + " " + units[unit];
     }
 
-    public string StateText(string state) => state switch
-    {
-        "offered" => T("Wartet auf Annahme", "Waiting for acceptance"),
-        "queued" => T("In der Warteschlange", "Queued"),
-        "running" => T("Wird übertragen", "Transferring"),
-        "paused" => T("Pausiert", "Paused"),
-        "reconnecting" => T("Verbindung unterbrochen · wird fortgesetzt", "Connection interrupted · reconnecting"),
-        "verifying" => T("Datei wird geprüft", "Verifying file"),
-        "checkingDuplicate" => T("Vorhandene Datei wird geprüft", "Checking existing file"),
-        "waitingDuplicate" => T("Duplikat benötigt eine Entscheidung", "Duplicate needs a decision"),
-        "completed" => T("Fertig", "Completed"), "failed" => T("Benötigt Aufmerksamkeit", "Needs attention"),
-        "cancelled" => T("Abgebrochen", "Cancelled"), _ => state
-    };
-
     private string Friendly(Exception e)
     {
         var message = e.Message;
         if (message.Contains("already running with this data directory", StringComparison.OrdinalIgnoreCase))
-            return T("AirLink läuft bereits. Schließe die bisherige AirLink-Konsole mit Strg+C und wähle dann Erneut starten. Deine Geräte und Dateien bleiben erhalten.", "AirLink is already running. Stop the previous AirLink console with Ctrl+C, then retry. Your devices and files are preserved.");
+            return T("AirLink läuft bereits. Beende die andere AirLink-App und versuch es noch einmal.", "AirLink is already running. Quit the other AirLink app and try again.");
         return message;
     }
-    private void RequireReady() { if (!Ready || starting || stopping) throw new IOException(T("Der AirLink-Dienst ist nicht bereit. Bitte erneut starten.", "The AirLink service is not ready. Please retry.")); }
-    private void RequireSetup() { if (!SetupComplete) throw new IOException(T("Lege zuerst deinen Gerätenamen und Empfangsordner in der Einrichtung fest.", "First choose your device name and receive folder in setup.")); }
+    private void RequireReady()
+    {
+        if (Demo) throw new IOException(T("Das ist eine Vorschau mit Beispieldaten.", "This is a preview with sample data."));
+        if (!Ready || starting || stopping) throw new IOException(T("AirLink startet noch. Einen Moment bitte.", "AirLink is still starting. One moment please."));
+    }
     private void Changed([CallerMemberName] string? property = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property));
 }

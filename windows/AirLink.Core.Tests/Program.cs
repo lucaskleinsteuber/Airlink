@@ -46,6 +46,8 @@ internal static class Program
             ("desktop notices announce new attention without replaying old results", DesktopNoticeTests.Transitions),
             ("recent results keep an old transfer's new completion visible", DesktopNoticeTests.RecentResults),
             ("private transport correlates out-of-order replies and reports remote errors", CorrelatedReplies),
+            ("pushed status events reach the handler between replies", PushedEvents),
+            ("tiles describe what a computer is doing and name transfers like the Explorer", TileActivity),
             ("helper fixture readiness is independent of the command deadline", StartupReadiness),
             ("request timeout and explicit cancellation preserve a live connection", TimeoutAndCancellation),
             ("long filesystem commands do not inherit the status timeout", LongOperations),
@@ -128,6 +130,39 @@ internal static class Program
         }
         var result = await client.RequestAsync<HostStatus>("status");
         Require(result.Id == "fake-host" && client.IsRunning, "Helper did not become ready");
+    }
+
+    private static async Task PushedEvents()
+    {
+        await using var fixture = new Fixture(); fixture.Mode("events");
+        await using var client = FakeClient();
+        var events = 0;
+        client.EventReceived += name => { if (name == "status") Interlocked.Increment(ref events); };
+        await Ready(client, fixture);
+        for (var i = 0; i < 3; i++) Require((await client.RequestAsync("echo", new { n = i })).GetProperty("n").GetInt32() == i, "Reply lost between events");
+        var wait = Stopwatch.StartNew();
+        while (Volatile.Read(ref events) < 4 && wait.Elapsed < TimeSpan.FromSeconds(5)) await Task.Delay(10);
+        Require(Volatile.Read(ref events) >= 4 && client.IsRunning, "Events were not delivered or broke the session");
+    }
+
+    private static Task TileActivity()
+    {
+        var mac = new Device { Id = "d", Name = "Mac", Paired = true, Online = true, CanReceive = true, Kind = "engine" };
+        Require(DeviceExperience.Activity(mac, [], [], false, false).Label == "Bereit", "ready");
+        Require(DeviceExperience.Activity(new Device { Id = "d", Paired = true }, [], [], false, true).Label == "Not reachable", "offline");
+        var running = new Transfer { Id = "t", DeviceId = "d", Direction = "send", State = "running", TotalBytes = 200, CompletedBytes = 50 };
+        var sending = DeviceExperience.Activity(mac, [running], [], false, false);
+        Require(sending.Label == "Sendet … 25 %" && sending.Busy && Math.Abs(sending.Progress!.Value - 0.25) < 1e-9, "sending");
+        Require(DeviceExperience.Activity(new Device { Id = "n", Outdated = true }, [], [], false, false).Label == "Braucht Update", "outdated");
+        Require(DeviceExperience.Activity(new Device { Id = "n" }, [], [new PairingSession { PeerId = "n", State = "starting" }], false, false).Busy, "connecting");
+        var folder = new Transfer { FileCount = 214, Files = [new() { Path = "Fotos", Directory = true }, new() { Path = "Fotos/a.jpg" }] };
+        Require(DeviceExperience.Describe(folder, false) == "Fotos", "folder name");
+        var files = new Transfer { FileCount = 3, Files = [new() { Path = "a.txt" }, new() { Path = "b.txt" }] };
+        Require(DeviceExperience.Describe(files, true) == "a.txt and 2 more", "file list");
+        var list = Enumerable.Range(0, 8).Select(i => new Transfer { Id = i.ToString(), State = i == 7 ? "running" : "completed", UpdatedAt = $"2026-11-14T10:0{i}:00Z" }).ToList();
+        var recent = DeviceExperience.Recent(list);
+        Require(recent.Count == 5 && recent[0].Id == "7" && recent[1].Id == "6", "recent order");
+        return Task.CompletedTask;
     }
 
     private static async Task StartupReadiness()
@@ -588,6 +623,7 @@ internal static class FakeHelper
             if (line == null) { if (mode.StartsWith("hang", StringComparison.Ordinal)) await Task.Delay(Timeout.Infinite); return 0; }
             using var document = JsonDocument.Parse(line);
             var root = document.RootElement; var id = root.GetProperty("id").GetString()!; var method = root.GetProperty("method").GetString();
+            if (mode == "events") { await write.WaitAsync(); try { Console.WriteLine("{\"event\":\"status\"}"); await Console.Out.FlushAsync(); } finally { write.Release(); } }
             switch (method)
             {
                 case "shutdown":

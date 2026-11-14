@@ -73,6 +73,11 @@ public sealed class Device
     public bool CanClipboard { get; set; }
     public bool AutoAccept { get; set; }
     public string? LastSeen { get; set; }
+    /// <summary>macos, linux or windows; laptop or desktop. Only chooses the symbol.</summary>
+    public string? Platform { get; set; }
+    public string? Form { get; set; }
+    /// <summary>A nearby computer running an older, incompatible AirLink.</summary>
+    public bool Outdated { get; set; }
     [JsonExtensionData] public Dictionary<string, JsonElement>? Additional { get; set; }
 }
 

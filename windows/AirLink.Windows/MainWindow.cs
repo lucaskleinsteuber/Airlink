@@ -1,86 +1,433 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
+using System.Windows.Documents;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using AirLink.Core;
 using Microsoft.Win32;
 
 namespace AirLink.Windows;
 
+/// <summary>The main window: welcome on first start, otherwise the computers
+/// as round tiles and what happened recently.</summary>
 internal sealed class MainWindow : Window
 {
-    private enum Page { Devices, Transfers, Settings }
     private readonly Controller c;
     private readonly WindowsUpdater updater;
-    private readonly Dictionary<string, ListBoxItem> deviceItems = [];
-    private readonly Dictionary<string, TransferRow> transferRows = [];
-    private readonly Dictionary<string, Border> pairRows = [];
-    private ListBox devices = null!, selection = null!;
-    private StackPanel requests = null!, transfers = null!, recent = null!, queue = null!;
-    private Grid pages = null!;
-    private StackPanel globalStatus = null!;
-    private FrameworkElement devicePage = null!, transferPage = null!, settingsPage = null!;
-    private StackPanel deviceQueueHost = null!, transferQueueHost = null!;
-    private TextBlock host = null!, target = null!, targetDetail = null!, service = null!, notice = null!, error = null!, empty = null!, dropTitle = null!, selectionTitle = null!, receivePath = null!, recentTitle = null!;
-    private Border dropArea = null!, hero = null!, welcome = null!, trustedCard = null!;
-    private CheckBox automaticReceive = null!;
-    private Button cleanHistory = null!, moreHistory = null!;
-    private bool savingTrust;
-    private string? savingTrustDevice;
-    private bool savingTrustValue;
-    private Button send = null!, connect = null!, manage = null!, retry = null!, recover = null!, dismiss = null!, pickFiles = null!, pickFolder = null!, setup = null!, transferNav = null!, settingsNav = null!, clear = null!, attention = null!;
-    private readonly SettingsPageState settingsState = new();
-    private Page page;
-    private bool rendering, quitting, setupOpen;
-    private string? appearance, language;
-    private string selectedKey = "";
-    private double sidebarWidth = 320;
+    private readonly Grid pages = new();
+    private readonly StackPanel startup = new() { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, MaxWidth = 460 };
+    private ScrollViewer welcome = null!, home = null!;
+    private readonly StackPanel banners = new(), recentList = new();
+    private readonly WrapPanel tiles = new();
+    private readonly TextBlock homeTitle = Theme.Text("", 24, true), homeSubtitle = Theme.Text("", 14, secondary: true);
+    private TextBlock ipLink = null!;
+    private FrameworkElement recentArea = null!;
+    private Button sendButton = null!, historyButton = null!;
+    private TextBox welcomeName = null!;
+    private TextBlock welcomeFolder = null!;
+    private string welcomePath = "";
+    private CheckBox welcomeAutostart = null!, welcomeNotify = null!;
+    private bool welcomeFilled, quitting, rendering, builtEnglish;
+    private List<string> tileKeys = [], rowOrder = [], bannerKeys = [];
+    private readonly Dictionary<string, DeviceTile> tileMap = [];
+    private readonly Dictionary<string, TransferRow> rowMap = [];
+    private readonly HashSet<string> shownPairings = [];
+    private PairingDialog? pairing;
+    internal AddDeviceDialog? AddDialog { get; set; }
+    internal Window? SettingsWindow { get; set; }
 
     public MainWindow(Controller controller)
     {
         c = controller; updater = new WindowsUpdater(this, c); Title = "AirLink";
-        var workArea = SystemParameters.WorkArea;
-        Width = Math.Min(1120, workArea.Width); Height = Math.Min(800, workArea.Height);
-        MinWidth = Math.Min(940, workArea.Width); MinHeight = Math.Min(650, workArea.Height);
-        WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        FontFamily = new FontFamily("Segoe UI Variable, Segoe UI"); FontSize = 14; AllowDrop = true;
-        DragOver += (_, e) => { e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) && InsideDropArea(e.OriginalSource as DependencyObject) && c.Ready && c.SetupComplete && !c.Sending ? DragDropEffects.Copy : DragDropEffects.None; e.Handled = true; };
-        Drop += (_, e) => { if (InsideDropArea(e.OriginalSource as DependencyObject) && e.Data.GetData(DataFormats.FileDrop) is string[] paths) _ = c.RunAsync(() => c.SendPathsAsync(paths)); e.Handled = true; };
-        PreviewKeyDown += (_, e) =>
-        {
-            if (page != Page.Devices || Keyboard.Modifiers != ModifierKeys.Control) return;
-            if (e.Key == Key.O) { PickFiles(); e.Handled = true; }
-            if (e.Key == Key.Enter) { _ = c.RunAsync(c.SendAsync); e.Handled = true; }
-        };
-        c.PropertyChanged += (_, _) => Render(); c.Selection.CollectionChanged += (_, _) => Render();
+        var area = SystemParameters.WorkArea;
+        Width = Math.Min(720, area.Width); Height = Math.Min(700, area.Height); MinWidth = Math.Min(560, area.Width); MinHeight = Math.Min(500, area.Height);
+        WindowStartupLocation = WindowStartupLocation.CenterScreen; FontSize = 14;
+        using (var icon = Assembly.GetExecutingAssembly().GetManifestResourceStream("AirLink.Windows.Icon")) if (icon is not null) Icon = BitmapFrame.Create(icon, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+        builtEnglish = c.English;
+        Build();
+        c.PropertyChanged += (_, _) => Render();
         SourceInitialized += (_, _) => HwndSource.FromHwnd(new WindowInteropHelper(this).Handle)?.AddHook(WindowMessage);
-        Closing += (_, e) => { if (!quitting) { e.Cancel = true; Hide(); } };
+        Closing += (_, e) => { if (!quitting && !c.Demo) { e.Cancel = true; Hide(); } };
         Closed += (_, _) => updater.Dispose();
-        Loaded += async (_, _) => { await c.StartAsync(); _ = c.PollAsync(); if (c.SetupRequired) OpenSetup(); };
-        Build(); Render(); updater.StartSchedule();
+        IsVisibleChanged += (_, _) => c.SetPairingWindow(IsVisible && WindowState != WindowState.Minimized);
+        StateChanged += (_, _) => c.SetPairingWindow(IsVisible && WindowState != WindowState.Minimized);
+        Loaded += async (_, _) =>
+        {
+            // After a start at sign-in the service already runs; opening the
+            // window must not restart it.
+            if (c.Demo || c.Ready || c.Starting) { c.SetPairingWindow(IsVisible); return; }
+            await c.StartAsync(); c.SetPairingWindow(IsVisible); _ = c.FallbackRefreshAsync();
+        };
+        Render(); updater.StartSchedule();
     }
+
     private IntPtr WindowMessage(IntPtr window, int message, IntPtr w, IntPtr l, ref bool handled)
     {
-        if ((uint)message == Program.ShowMessage) { ShowMain(); handled = true; } return IntPtr.Zero;
+        if ((uint)message == Program.ShowMessage) { ShowMain(); handled = true; }
+        return IntPtr.Zero;
     }
-    private bool InsideDropArea(DependencyObject? source)
+
+    private void Build()
     {
-        if (page != Page.Devices) return false;
-        while (source is not null)
-        {
-            if (ReferenceEquals(source, dropArea)) return true;
-            source = source is Visual || source is System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(source) : (source as FrameworkContentElement)?.Parent;
-        }
-        return false;
+        var root = new DockPanel();
+        var bar = new Grid { Margin = new Thickness(12, 10, 12, 4) };
+        bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        sendButton = Theme.Button(c.T("Dateien senden …", "Send files …"), () => _ = PickAndSendAsync(null), glyph: Theme.Send);
+        bar.Children.Add(sendButton);
+        var right = new StackPanel { Orientation = Orientation.Horizontal };
+        historyButton = Theme.Button(c.T("Verlauf", "History"), () => Dialogs.History(this, c), glyph: Theme.History);
+        right.Children.Add(historyButton);
+        right.Children.Add(Theme.Button(c.T("Hilfe", "Help"), () => Dialogs.Help(this, c), glyph: Theme.Help));
+        right.Children.Add(Theme.Button(c.T("Einstellungen", "Settings"), () => Dialogs.Settings(this, c), glyph: Theme.Settings));
+        Grid.SetColumn(right, 2); bar.Children.Add(right);
+        DockPanel.SetDock(bar, Dock.Top); root.Children.Add(bar);
+        pages.Children.Clear();
+        pages.Children.Add(startup);
+        pages.Children.Add(welcome = BuildWelcome());
+        pages.Children.Add(home = BuildHome());
+        root.Children.Add(pages);
+        Content = root;
+        tileKeys = []; rowOrder = []; bannerKeys = []; tileMap.Clear(); rowMap.Clear(); welcomeFilled = false;
     }
-    public void ShowMain() { Show(); if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal; Render(); Activate(); }
-    public void ReportError(string message) => c.ReportError(message);
+
+    private ScrollViewer BuildWelcome()
+    {
+        var column = new StackPanel { MaxWidth = 540, Margin = new Thickness(28, 20, 28, 28) };
+        var logo = new Image { Width = 96, Height = 96, Margin = new Thickness(0, 10, 0, 14) };
+        using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("AirLink.Windows.Icon")) if (stream is not null) logo.Source = BitmapFrame.Create(stream, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+        column.Children.Add(logo);
+        var title = Theme.Text(c.T("Willkommen bei AirLink", "Welcome to AirLink"), 28, true); title.TextAlignment = TextAlignment.Center; column.Children.Add(title);
+        var intro = Theme.Text(c.T("Schick Dateien direkt zwischen deinen Computern – Windows, Mac und Linux. Schnell, verschlüsselt und nur in deinem Netzwerk.", "Send files directly between your computers – Windows, Mac and Linux. Fast, encrypted and only on your network."), 14, secondary: true);
+        intro.TextAlignment = TextAlignment.Center; intro.Margin = new Thickness(0, 8, 0, 22); column.Children.Add(intro);
+        var form = new StackPanel { Margin = new Thickness(18) };
+        form.Children.Add(Theme.Text(c.T("Name dieses PCs", "Name of this PC"), 13, true));
+        welcomeName = new TextBox { MaxLength = 120, Margin = new Thickness(0, 6, 0, 16) }; form.Children.Add(welcomeName);
+        form.Children.Add(Theme.Text(c.T("Empfangene Dateien", "Received files"), 13, true));
+        var folderRow = new DockPanel { Margin = new Thickness(0, 6, 0, 16) };
+        var change = Theme.Button(c.T("Ändern …", "Change …"), () =>
+        {
+            var dialog = new OpenFolderDialog { Title = c.T("Wohin sollen empfangene Dateien?", "Where should received files go?"), InitialDirectory = welcomePath };
+            if (dialog.ShowDialog(this) == true) { welcomePath = dialog.FolderName; welcomeFolder.Text = welcomePath; }
+        });
+        DockPanel.SetDock(change, Dock.Right); folderRow.Children.Add(change);
+        welcomeFolder = Theme.Text("", 14, secondary: true); welcomeFolder.VerticalAlignment = VerticalAlignment.Center; welcomeFolder.TextTrimming = TextTrimming.CharacterEllipsis; folderRow.Children.Add(welcomeFolder);
+        form.Children.Add(folderRow);
+        welcomeAutostart = new CheckBox { Content = c.T("Beim Anmelden starten", "Open at sign-in"), IsChecked = true };
+        form.Children.Add(welcomeAutostart);
+        var hintA = Theme.Text(c.T("Damit dich deine anderen Computer jederzeit erreichen.", "So your other computers can always reach you."), 12, secondary: true); hintA.Margin = new Thickness(28, 0, 0, 10); form.Children.Add(hintA);
+        welcomeNotify = new CheckBox { Content = c.T("Mitteilungen", "Notifications"), IsChecked = true };
+        form.Children.Add(welcomeNotify);
+        var hintB = Theme.Text(c.T("Wenn Dateien ankommen oder jemand sich verbinden möchte.", "When files arrive or someone wants to connect."), 12, secondary: true); hintB.Margin = new Thickness(28, 0, 0, 0); form.Children.Add(hintB);
+        column.Children.Add(Theme.Card(form));
+        var go = Theme.Button(c.T("Los geht’s", "Get started"), () => _ = FinishWelcomeAsync(), accent: true);
+        go.MinWidth = 200; go.HorizontalAlignment = HorizontalAlignment.Center; go.Margin = new Thickness(0, 22, 0, 0); go.Padding = new Thickness(18, 9, 18, 9); go.IsDefault = true;
+        column.Children.Add(go);
+        return new ScrollViewer { Content = column, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+    }
+
+    private ScrollViewer BuildHome()
+    {
+        var column = new StackPanel { Margin = new Thickness(28, 12, 28, 24), MaxWidth = 860 };
+        column.Children.Add(banners);
+        column.Children.Add(homeTitle);
+        homeSubtitle.Margin = new Thickness(0, 4, 0, 18); column.Children.Add(homeSubtitle);
+        column.Children.Add(tiles);
+        ipLink = new TextBlock { Margin = new Thickness(0, 0, 0, 8) };
+        var link = new Hyperlink(new Run(c.T("Nicht gefunden? Per IP-Adresse verbinden …", "Not found? Connect by IP address …")));
+        link.Click += (_, _) => Dialogs.AddDevice(this, c, byAddress: true);
+        ipLink.Inlines.Add(link); column.Children.Add(ipLink);
+        var recent = new StackPanel { Margin = new Thickness(0, 14, 0, 0) };
+        var header = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+        var all = new TextBlock(); var allLink = new Hyperlink(new Run(c.T("Alle anzeigen", "Show all"))); allLink.Click += (_, _) => Dialogs.History(this, c); all.Inlines.Add(allLink);
+        DockPanel.SetDock(all, Dock.Right); header.Children.Add(all);
+        header.Children.Add(Theme.Text(c.T("Zuletzt", "Recent"), 16, true));
+        recent.Children.Add(header);
+        recent.Children.Add(Theme.Card(recentList));
+        column.Children.Add(recentArea = recent);
+        return new ScrollViewer { Content = column, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+    }
+
+    public void Render()
+    {
+        if (rendering) return;
+        rendering = true;
+        try
+        {
+            if (c.English != builtEnglish) { builtEnglish = c.English; Build(); }
+            startup.Visibility = welcome.Visibility = home.Visibility = Visibility.Collapsed;
+            if (!c.Ready || c.Status is null) { RenderStartup(); return; }
+            sendButton.IsEnabled = historyButton.IsEnabled = c.SetupComplete;
+            if (!c.SetupComplete)
+            {
+                welcome.Visibility = Visibility.Visible;
+                if (!welcomeFilled)
+                {
+                    welcomeFilled = true;
+                    var name = c.Status.Settings.Name;
+                    welcomeName.Text = string.IsNullOrWhiteSpace(name) || name is "AirLink" or "Windows" ? Environment.MachineName : name;
+                    welcomePath = string.IsNullOrEmpty(c.Status.Settings.ReceiveDirectory) ? WindowsFolders.Downloads() : c.Status.Settings.ReceiveDirectory;
+                    welcomeFolder.Text = welcomePath;
+                }
+                return;
+            }
+            home.Visibility = Visibility.Visible;
+            var none = c.PairedDevices.Count == 0;
+            homeTitle.Text = none ? c.T("Verbinde deinen anderen Computer", "Connect your other computer") : c.T("Zieh Dateien auf einen Computer", "Drag files onto a computer");
+            homeSubtitle.Text = none ? c.T("Öffne AirLink auf dem anderen Computer. Er erscheint dann hier – klick ihn an und vergleicht einen Code. Das musst du nur einmal machen.", "Open AirLink on the other computer. It then appears here – click it and compare a code. You only do this once.")
+                                     : c.T("Oder klick ihn an, um Dateien auszuwählen. Alles bleibt in deinem Netzwerk.", "Or click it to choose files. Everything stays on your network.");
+            ipLink.Visibility = none ? Visibility.Visible : Visibility.Collapsed;
+            RenderBanners(); RenderTiles(); RenderRecent(); OpenPairingRequests();
+            pairing?.Refresh();
+            AddDialog?.Refresh();
+        }
+        finally { rendering = false; }
+    }
+
+    private void RenderStartup()
+    {
+        startup.Visibility = Visibility.Visible;
+        startup.Children.Clear();
+        var failed = c.ServiceError is not null && !c.Starting;
+        var title = Theme.Text(failed ? c.T("AirLink konnte nicht starten", "AirLink could not start") : c.T("AirLink startet …", "Starting AirLink …"), 22, true);
+        title.TextAlignment = TextAlignment.Center; startup.Children.Add(title);
+        if (!failed) { startup.Children.Add(new ProgressBar { IsIndeterminate = true, Width = 200, Margin = new Thickness(0, 16, 0, 0) }); return; }
+        var detail = Theme.Text(c.T("Ein Neustart von AirLink hilft meistens.", "Restarting AirLink usually helps.") + "\n\n" + c.ServiceError, 13, secondary: true);
+        detail.TextAlignment = TextAlignment.Center; detail.Margin = new Thickness(0, 10, 0, 16); startup.Children.Add(detail);
+        var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
+        row.Children.Add(Theme.Button(c.T("Anderen Empfangsordner wählen …", "Choose another receive folder …"), () =>
+        {
+            var dialog = new OpenFolderDialog { Title = c.T("Wohin sollen empfangene Dateien?", "Where should received files go?") };
+            if (dialog.ShowDialog(this) == true) _ = c.StartAsync(dialog.FolderName);
+        }));
+        row.Children.Add(Theme.Button(c.T("Noch einmal versuchen", "Try again"), () => _ = c.StartAsync(), accent: true));
+        startup.Children.Add(row);
+    }
+
+    private void RenderBanners()
+    {
+        var offers = (c.Status?.Transfers ?? []).Where(t => t.Direction == "receive" && t.State == "offered").Take(2).ToList();
+        var clips = (c.Status?.Clipboard ?? []).Where(m => m.Direction == "receive" && c.ClipboardTexts.ContainsKey(m.Id)).OrderByDescending(m => m.CreatedAt, StringComparer.Ordinal).ToList();
+        var keys = offers.Select(t => "o:" + t.Id).Concat(clips.Take(1).Select(m => "c:" + m.Id + ":" + clips.Count)).ToList();
+        if (keys.SequenceEqual(bannerKeys)) return;
+        bannerKeys = keys; banners.Children.Clear();
+        foreach (var t in offers)
+        {
+            var id = t.Id;
+            var banner = new Banner(Theme.Download, c.T($"{t.DeviceName} möchte dir etwas senden", $"{t.DeviceName} wants to send you something"), DeviceExperience.Describe(t, c.English) + " · " + c.Bytes(t.TotalBytes));
+            banner.Actions.Children.Add(Theme.Button(c.T("Ablehnen", "Decline"), () => Run(() => c.CommandAsync("transfer.cancel", id))));
+            banner.Actions.Children.Add(Theme.Button(c.T("Annehmen", "Accept"), () => Run(() => c.CommandAsync("transfer.accept", id)), accent: true));
+            banners.Children.Add(banner);
+        }
+        if (clips.FirstOrDefault() is { } clip)
+        {
+            var id = clip.Id;
+            var heading = c.T($"Text von {clip.DeviceName}", $"Text from {clip.DeviceName}") + (clips.Count > 1 ? c.T($" (+{clips.Count - 1} weitere)", $" (+{clips.Count - 1} more)") : "");
+            var banner = new Banner(Theme.Paste, heading, c.ClipboardTexts.GetValueOrDefault(id, ""));
+            banner.Actions.Children.Add(Theme.IconButton(Theme.Close, c.T("Verwerfen", "Dismiss"), () => Run(() => c.DismissClipboardAsync(id))));
+            banner.Actions.Children.Add(Theme.Button(c.T("Kopieren", "Copy"), () =>
+            {
+                try { Clipboard.SetText(c.ClipboardTexts.GetValueOrDefault(id, "")); } catch (Exception) { }
+                Run(() => c.DismissClipboardAsync(id));
+            }, accent: true));
+            banners.Children.Add(banner);
+        }
+    }
+
+    private void RenderTiles()
+    {
+        var paired = c.PairedDevices; var nearby = c.NearbyDevices;
+        var keys = paired.Select(d => "p:" + d.Id).Concat(nearby.Select(d => "n:" + d.Id)).ToList();
+        if (paired.Count == 0 && nearby.Count == 0) keys.Add("search");
+        keys.Add("add");
+        if (!keys.SequenceEqual(tileKeys))
+        {
+            tileKeys = keys; tileMap.Clear(); tiles.Children.Clear();
+            foreach (var key in keys)
+            {
+                var id = key.Length > 2 ? key[2..] : "";
+                var kind = key.StartsWith("p:") ? DeviceTile.Kind.Paired : key.StartsWith("n:") ? DeviceTile.Kind.Nearby : key == "search" ? DeviceTile.Kind.Searching : DeviceTile.Kind.Add;
+                var tile = new DeviceTile(kind);
+                switch (kind)
+                {
+                    case DeviceTile.Kind.Paired:
+                        tile.Activated += () => _ = PickAndSendAsync(Device(id));
+                        tile.FilesDropped += paths => SendTo(paths, Device(id));
+                        tile.ContextMenu = DeviceMenu(id);
+                        break;
+                    case DeviceTile.Kind.Nearby:
+                        tile.Activated += () => Connect(Device(id));
+                        break;
+                    default:
+                        tile.Activated += () => Dialogs.AddDevice(this, c, byAddress: false);
+                        break;
+                }
+                tiles.Children.Add(tile); tileMap[key] = tile;
+            }
+        }
+        var transfers = c.Status?.Transfers ?? []; var pairings = c.Status?.PairingSessions ?? [];
+        foreach (var d in paired.Concat(nearby))
+        {
+            if (!tileMap.TryGetValue((d.Paired ? "p:" : "n:") + d.Id, out var tile)) continue;
+            var activity = DeviceExperience.Activity(d, transfers, pairings, c.Preparing.Contains(d.Id), c.English);
+            tile.SetContent(DeviceExperience.Glyph(d.Platform, d.Form), d.Name, activity.Label, activity.Progress, activity.Busy, !d.Paired || d.Online);
+            tile.ToolTip = d.Paired ? c.T($"Klicken, um Dateien an {d.Name} zu senden – oder Dateien hierher ziehen.", $"Click to send files to {d.Name}, or drag files here.")
+                                    : c.T($"Klicken, um dich mit {d.Name} zu verbinden. Ihr vergleicht dann einen Code.", $"Click to connect to {d.Name}. You then compare a code.");
+        }
+        if (tileMap.TryGetValue("search", out var search)) search.SetContent(Theme.Search, c.T("Suche …", "Searching …"), c.T("Im Netzwerk", "On your network"), null, false, true);
+        if (tileMap.TryGetValue("add", out var add)) { add.SetContent(Theme.Add, c.T("Hinzufügen", "Add"), c.T("Anderer Computer", "Another computer"), null, false, true); add.ToolTip = c.T("Einen anderen Computer hinzufügen", "Add another computer"); }
+    }
+
+    private ContextMenu DeviceMenu(string id)
+    {
+        var menu = new ContextMenu();
+        void Item(string title, Action action) { var item = new MenuItem { Header = title }; item.Click += (_, _) => action(); menu.Items.Add(item); }
+        Item(c.T("Dateien senden …", "Send files …"), () => _ = PickAndSendAsync(Device(id)));
+        Item(c.T("Ordner senden …", "Send folder …"), () => _ = PickAndSendAsync(Device(id), folder: true));
+        Item(c.T("Zwischenablage senden", "Send clipboard"), () =>
+        {
+            var text = ""; try { text = Clipboard.GetText(); } catch (Exception) { }
+            Run(() => c.SendClipboardAsync(Device(id) ?? throw new IOException(c.T("Dieser Computer ist nicht mehr verbunden.", "This computer is no longer connected.")), text));
+        });
+        menu.Items.Add(new Separator());
+        Item(c.T("Einstellungen für dieses Gerät …", "Settings for this device …"), () => { if (Device(id) is { } d) Dialogs.DeviceSettings(this, c, d.Id); });
+        Item(c.T("Entfernen …", "Remove …"), () => { if (Device(id) is { } d) Dialogs.RemoveDevice(this, c, d); });
+        return menu;
+    }
+
+    private void RenderRecent()
+    {
+        var items = DeviceExperience.Recent(c.Status?.Transfers ?? []);
+        var order = items.Select(t => t.Id).ToList();
+        if (!order.SequenceEqual(rowOrder))
+        {
+            rowOrder = order; rowMap.Clear(); recentList.Children.Clear();
+            for (var i = 0; i < order.Count; i++)
+            {
+                if (i > 0) recentList.Children.Add(new Separator { Margin = new Thickness(60, 0, 0, 0) });
+                var row = new TransferRow(c);
+                row.ActionRequested += TransferAction;
+                recentList.Children.Add(row); rowMap[order[i]] = row;
+            }
+        }
+        foreach (var t in items) if (rowMap.TryGetValue(t.Id, out var row)) row.Update(t);
+        recentArea.Visibility = items.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    internal void TransferAction(string kind, string id)
+    {
+        var transfer = c.Status?.Transfers.FirstOrDefault(t => t.Id == id);
+        switch (kind)
+        {
+            case "reveal": if (transfer is not null) Run(() => c.RevealAsync(transfer)); break;
+            case "retry" or "resume": Run(() => c.CommandAsync("transfer.resume", id)); break;
+            case "pause": Run(() => c.CommandAsync("transfer.pause", id)); break;
+            case "cancel": Run(() => c.CommandAsync("transfer.cancel", id)); break;
+            case "accept": Run(() => c.CommandAsync("transfer.accept", id)); break;
+        }
+    }
+
+    private void OpenPairingRequests()
+    {
+        foreach (var request in (c.Status?.PairingSessions ?? []).Where(p => !p.Initiator && p.CanConfirm))
+        {
+            if (!shownPairings.Add(request.Id)) continue;
+            if (pairing is null || !pairing.IsOpenSession) ShowPairing(request.Id);
+            ShowMain();
+        }
+    }
+
+    internal void ShowPairing(string id)
+    {
+        if (pairing is { } existing && existing.SessionId == id) { existing.Activate(); return; }
+        pairing?.Close();
+        pairing = new PairingDialog(this, c, id);
+        pairing.Closed += (_, _) => { if (pairing?.SessionId == id) pairing = null; };
+        pairing.Show();
+    }
+
+    internal Device? Device(string id) => c.Status?.Devices.FirstOrDefault(d => d.Id == id);
+
+    internal void Connect(Device? device)
+    {
+        if (device is null) return;
+        Run(async () => { var id = await c.ConnectAsync(device); AddDialog?.Close(); ShowPairing(id); });
+    }
+
+    internal void SendTo(IEnumerable<string> paths, Device? device)
+    {
+        if (device is null) return;
+        Run(() => c.SendAsync(paths, device));
+    }
+
+    private async Task PickAndSendAsync(Device? device, bool folder = false)
+    {
+        var receivers = c.PairedDevices.Where(d => d.CanReceive).ToList();
+        if (device is null)
+        {
+            if (receivers.Count == 0) { ReportError(c.T("Verbinde zuerst deinen anderen Computer. Danach kannst du Dateien senden.", "Connect your other computer first. Then you can send files.")); return; }
+            if (receivers.Count == 1) device = receivers[0];
+        }
+        string[] paths;
+        if (folder)
+        {
+            var dialog = new OpenFolderDialog { Title = device is null ? c.T("Ordner senden", "Send folder") : c.T($"An {device.Name} senden", $"Send to {device.Name}"), Multiselect = true };
+            if (dialog.ShowDialog(this) != true) return;
+            paths = dialog.FolderNames;
+        }
+        else
+        {
+            var dialog = new OpenFileDialog { Title = device is null ? c.T("Dateien senden", "Send files") : c.T($"An {device.Name} senden", $"Send to {device.Name}"), Multiselect = true };
+            if (dialog.ShowDialog(this) != true) return;
+            paths = dialog.FileNames;
+        }
+        if (device is not null) SendTo(paths, device);
+        else Dialogs.SendChooser(this, c, paths);
+        await Task.CompletedTask;
+    }
+
+    /// <summary>Files from Explorer's "Send to" or another start of AirLink.</summary>
+    public void AcceptPaths(string[] paths)
+    {
+        if (paths.Length == 0) return;
+        ShowMain();
+        if (!c.Ready || !c.SetupComplete) { ReportError(c.T("AirLink ist noch nicht bereit. Sende die Dateien gleich noch einmal.", "AirLink is not ready yet. Send the files again in a moment.")); return; }
+        var receivers = c.PairedDevices.Where(d => d.CanReceive).ToList();
+        if (receivers.Count == 0) { ReportError(c.T("Verbinde zuerst deinen anderen Computer. Danach kannst du Dateien senden.", "Connect your other computer first. Then you can send files.")); return; }
+        if (receivers.Count == 1) SendTo(paths, receivers[0]);
+        else Dialogs.SendChooser(this, c, paths);
+    }
+
+    private async Task FinishWelcomeAsync()
+    {
+        var name = welcomeName.Text.Trim();
+        if (name.Length == 0 || System.Text.Encoding.UTF8.GetByteCount(name) > 120) { ReportError(c.T("Bitte einen Namen eingeben.", "Please enter a name.")); return; }
+        try { c.Autostart = welcomeAutostart.IsChecked == true; } catch (Exception) { }
+        var folder = welcomePath; var notify = welcomeNotify.IsChecked == true;
+        await RunAsync(() => c.UpdateSettingsAsync(s => { s.Name = name; if (Path.IsPathFullyQualified(folder)) s.ReceiveDirectory = folder; s.Notifications = notify; s.SetupCompleted = true; }));
+    }
+
+    internal void Run(Func<Task> action) => _ = RunAsync(action);
+    internal async Task RunAsync(Func<Task> action)
+    {
+        try { await action(); }
+        catch (Exception e) { ReportError(e.Message); }
+    }
+
+    public void ShowMain() { Show(); if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal; Activate(); }
+    public void ReportError(string message)
+    {
+        if (c.Demo || string.IsNullOrWhiteSpace(message)) return;
+        MessageBox.Show(this, message, c.T("Das hat nicht geklappt", "That did not work"), MessageBoxButton.OK, MessageBoxImage.Warning);
+    }
     public Task CheckForUpdatesAsync() => updater.CheckAsync();
     internal bool UpdatePrepared { get; private set; }
     internal async Task<bool> PrepareForUpdateAsync()
@@ -92,7 +439,7 @@ internal sealed class MainWindow : Window
         {
             if (!await c.StopForUpdateAsync())
             {
-                ReportError(c.T("Das Update wurde abgebrochen: Der Dienst konnte nicht sicher beendet werden. Laufende Prozesse wurden nicht erzwungen beendet.", "Update cancelled: the service could not close safely. No running process was forcibly stopped."));
+                ReportError(c.T("Das Update wurde abgebrochen: Der Dienst konnte nicht sicher beendet werden.", "Update cancelled: the service could not close safely."));
                 IsEnabled = true;
                 return false;
             }
@@ -112,290 +459,41 @@ internal sealed class MainWindow : Window
     public async Task QuitAsync(bool confirmActive = true)
     {
         if (quitting) return;
-        if (confirmActive && c.ActiveCount > 0 && MessageBox.Show(this, c.T("Übertragungen werden gesichert und beim nächsten Start fortgesetzt. AirLink beenden?", "Transfers will be saved and resumed next time. Quit AirLink?"), "AirLink", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        if (confirmActive && c.ActiveCount > 0 && MessageBox.Show(this, c.T("AirLink beenden? Laufende Übertragungen werden angehalten und beim nächsten Start fortgesetzt.", "Quit AirLink? Running transfers pause and continue the next time AirLink starts."), "AirLink", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
         quitting = true;
         try
         {
-            if (!await c.StopAsync()) { quitting = false; ReportError(c.T("Der Dienst läuft noch. Bitte erneut beenden.", "The service is still running. Please try quitting again.")); return; }
+            if (!await c.StopAsync()) { quitting = false; ReportError(c.T("Der Dienst läuft noch. Bitte noch einmal beenden.", "The service is still running. Please try quitting again.")); return; }
             Application.Current.Shutdown();
         }
-        catch (Exception e) { quitting = false; ReportError(e.Message); }
+        catch { quitting = false; throw; }
     }
-    private void OpenSetup()
-    {
-        if (setupOpen || !c.Ready) return; setupOpen = true;
-        try { new SetupWindow(this, c).ShowDialog(); } finally { setupOpen = false; Render(); }
-    }
-    private void AfterSetup(Action action)
-    {
-        if (!c.Ready) return;
-        if (!c.SetupComplete) OpenSetup();
-        if (c.SetupComplete) action();
-    }
-    private void PairDevice(Device? seed) => AfterSetup(() => Dialogs.Pair(this, c, seed));
-    private Button Action(string title, Func<Task> action, bool primary = false) => Theme.Button(title, () => _ = c.RunAsync(action), primary);
-    private static StackPanel Row(params UIElement[] children)
-    {
-        var panel = new StackPanel { Orientation = Orientation.Horizontal }; foreach (var child in children) panel.Children.Add(child); return panel;
-    }
-    private static WrapPanel Wrap(params UIElement[] children)
-    {
-        var panel = new WrapPanel(); foreach (var child in children) panel.Children.Add(child); return panel;
-    }
-    private Button Navigation(string title, string icon, Action action)
-    {
-        var button = Theme.Button(title, action); button.HorizontalContentAlignment = HorizontalAlignment.Left;
-        button.Margin = new Thickness(0, 2, 0, 2); button.Padding = new Thickness(12, 9, 12, 9); button.Background = Brushes.Transparent; button.BorderBrush = Brushes.Transparent;
-        var graphic = Theme.Icon(icon, 19); var label = Theme.Text(title); label.Margin = new Thickness(12, 0, 0, 0); button.Content = Row(graphic, label); return button;
-    }
-    private void Navigate(Page next)
-    {
-        var entering = next == Page.Settings && page != Page.Settings;
-        page = next;
-        if (next == Page.Transfers) _ = c.RunAsync(() => c.LoadHistoryAsync());
-        if (entering && settingsPage is SettingsPage editor) editor.Enter();
-        Render();
-    }
-    private void Build()
-    {
-        appearance = c.Status?.Settings.Appearance ?? "system"; language = c.English ? "en" : "de";
-        Theme.Apply(appearance); Background = Theme.Background; Foreground = Theme.Foreground;
-        deviceItems.Clear(); transferRows.Clear(); pairRows.Clear(); selectedKey = "";
-        var layout = new Grid(); var sidebarColumn = new ColumnDefinition { Width = new GridLength(sidebarWidth), MinWidth = 280, MaxWidth = 480 };
-        layout.ColumnDefinitions.Add(sidebarColumn); layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) }); layout.ColumnDefinitions.Add(new ColumnDefinition());
-        var sidebar = new DockPanel { Background = Theme.Sidebar, LastChildFill = true };
-        var top = new StackPanel { Margin = new Thickness(22, 24, 18, 14) };
-        var brand = Theme.Text("AirLink", 24, true); brand.Margin = new Thickness(4, 0, 0, 22); top.Children.Add(brand);
-        top.Children.Add(Navigation(c.T("Geräte", "Devices"), "computer", () => Navigate(Page.Devices)));
-        var devicesHeading = new DockPanel { Margin = new Thickness(4, 15, 0, 0) }; var add = Theme.Button("+", () => PairDevice(null)); add.ToolTip = c.T("Gerät verbinden", "Connect device"); add.Margin = new Thickness(0); add.Padding = new Thickness(10, 2, 10, 2); add.MinHeight = 28;
-        add.Background = Brushes.Transparent; add.BorderBrush = Brushes.Transparent; DockPanel.SetDock(add, Dock.Right); devicesHeading.Children.Add(add); devicesHeading.Children.Add(Theme.Text(c.T("Vertraute Geräte & Netzwerk", "Trusted devices & network"), 12, true, true)); top.Children.Add(devicesHeading);
-        DockPanel.SetDock(top, Dock.Top); sidebar.Children.Add(top);
-        var bottom = new StackPanel { Margin = new Thickness(14, 10, 14, 18) };
-        transferNav = Navigation(c.T("Übertragungen", "Transfers"), "history", () => Navigate(Page.Transfers)); bottom.Children.Add(transferNav);
-        settingsNav = Navigation(c.T("Einstellungen", "Settings"), "settings", () => Navigate(Page.Settings)); bottom.Children.Add(settingsNav);
-        bottom.Children.Add(Navigation(c.T("Dieses Gerät", "This device"), "computer", () => AfterSetup(() => Dialogs.ConnectionInfo(this, c))));
-        var tools = new StackPanel(); tools.Children.Add(Navigation(c.T("Zwischenablage", "Clipboard"), "clipboard", () => AfterSetup(() => ClipboardDialogs.Clipboard(this, c))));
-        bottom.Children.Add(new Expander { Header = Theme.Text(c.T("Weitere Funktionen", "More tools"), 12, secondary: true), Content = tools, Foreground = Theme.Secondary, Margin = new Thickness(12, 12, 0, 18) });
-        var local = new Grid(); local.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) }); local.ColumnDefinitions.Add(new ColumnDefinition()); local.Children.Add(Theme.Icon("computer", 24));
-        var localText = new StackPanel(); host = Theme.Text("", 14, true); host.MaxHeight = 42; host.ToolTip = host.Text; localText.Children.Add(host); localText.Children.Add(Theme.Text(c.T("Dieser Computer", "This computer"), 11, secondary: true)); Grid.SetColumn(localText, 1); local.Children.Add(localText);
-        var profile = Theme.Button("", () => Navigate(Page.Settings)); profile.Content = local; profile.Background = Brushes.Transparent; profile.BorderBrush = Theme.Line; profile.HorizontalContentAlignment = HorizontalAlignment.Stretch; profile.Margin = new Thickness(0); bottom.Children.Add(profile);
-        DockPanel.SetDock(bottom, Dock.Bottom); sidebar.Children.Add(bottom);
-        devices = new ListBox { BorderThickness = new Thickness(0), Padding = new Thickness(0), Margin = new Thickness(12, 0, 12, 0), Background = Brushes.Transparent, HorizontalContentAlignment = HorizontalAlignment.Stretch };
-        ScrollViewer.SetHorizontalScrollBarVisibility(devices, ScrollBarVisibility.Disabled);
-        devices.SelectionChanged += (_, _) => { if (rendering) return; if ((devices.SelectedItem as ListBoxItem)?.Tag is string id) { c.SelectedDeviceId = id; Navigate(Page.Devices); } };
-        sidebar.Children.Add(devices); layout.Children.Add(sidebar);
-        var divider = new Border { Background = Theme.Line, Width = 1, HorizontalAlignment = HorizontalAlignment.Center }; Grid.SetColumn(divider, 1); layout.Children.Add(divider);
-        var splitter = new GridSplitter { Width = 8, Background = Brushes.Transparent, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Stretch, ResizeDirection = GridResizeDirection.Columns, ResizeBehavior = GridResizeBehavior.PreviousAndNext };
-        splitter.DragCompleted += (_, _) => sidebarWidth = sidebarColumn.ActualWidth; Grid.SetColumn(splitter, 1); layout.Children.Add(splitter);
-        var main = new DockPanel(); Grid.SetColumn(main, 2); layout.Children.Add(main);
-        globalStatus = new StackPanel { Margin = new Thickness(34, 0, 34, 0) }; DockPanel.SetDock(globalStatus, Dock.Top); main.Children.Add(globalStatus);
-        pages = new Grid(); main.Children.Add(pages);
-        devicePage = BuildDevicePage(); transferPage = BuildTransferPage(); settingsPage = BuildSettings(); pages.Children.Add(devicePage); pages.Children.Add(transferPage); pages.Children.Add(settingsPage); Content = layout;
-    }
-    private FrameworkElement BuildDevicePage()
-    {
-        var body = new StackPanel { Margin = new Thickness(34, 28, 34, 30) };
-        var header = new Grid(); header.ColumnDefinitions.Add(new ColumnDefinition()); header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var identity = new StackPanel(); target = Theme.Text("", 28, true); identity.Children.Add(target); targetDetail = Theme.Text("", 13, secondary: true); targetDetail.Margin = new Thickness(0, 5, 0, 0); identity.Children.Add(targetDetail); header.Children.Add(identity);
-        manage = Theme.Button(c.T("Geräteeinstellungen", "Device settings"), () => { if (c.SelectedDevice is { } d) Dialogs.Device(this, c, d); }); manage.Margin = new Thickness(16, 0, 0, 0); manage.VerticalAlignment = VerticalAlignment.Top; Grid.SetColumn(manage, 1); header.Children.Add(manage);
-        hero = new Border { Child = header, Margin = new Thickness(0, 0, 0, 22) }; body.Children.Add(hero);
-        var trust = new StackPanel(); trust.Children.Add(Theme.Text(c.T("Vertrautes Gerät", "Trusted device"), 14, true));
-        var trustHelp = Theme.Text(c.T("Die Verbindung ist gespeichert. Du kannst Dateien direkt senden, sobald das Gerät erreichbar ist.", "The connection is saved. You can send files directly when the device is reachable."), 12, secondary: true); trustHelp.Margin = new Thickness(0, 5, 0, 12); trust.Children.Add(trustHelp);
-        automaticReceive = new CheckBox { Content = Theme.Text(c.T("Von diesem Gerät automatisch empfangen", "Automatically receive from this device"), 13) };
-        automaticReceive.Click += async (_, _) =>
-        {
-            if (rendering || savingTrust || c.SelectedDevice is not { } device) return;
-            var id = device.Id; var automatic = automaticReceive.IsChecked == true;
-            savingTrust = true; savingTrustDevice = id; savingTrustValue = automatic; Render();
-            try { await c.RunAsync(() => c.SetAutomaticReceiveAsync(id, automatic)); }
-            finally { savingTrust = false; savingTrustDevice = null; Render(); }
-        };
-        trust.Children.Add(automaticReceive);
-        var automaticHelp = Theme.Text(c.T("Gilt nur für den Empfang auf diesem PC. Die Einstellung des anderen Computers bestimmt, ob er deine Dateien automatisch annimmt.", "Applies to receiving on this PC. The other computer's setting decides whether it accepts your files automatically."), 12, secondary: true); automaticHelp.Margin = new Thickness(0, 7, 0, 0); trust.Children.Add(automaticHelp);
-        trustedCard = Theme.Card(trust); trustedCard.Margin = new Thickness(0, 0, 0, 20); body.Children.Add(trustedCard);
-        var welcomeBody = new StackPanel(); var welcomeIcon = Theme.Icon("send", 48, Theme.Accent); welcomeBody.Children.Add(welcomeIcon);
-        var welcomeTitle = Theme.Text(c.T("Deine Geräte. Ein direkter Weg.", "Your devices. One direct connection."), 25, true); welcomeTitle.Margin = new Thickness(0, 18, 0, 9); welcomeBody.Children.Add(welcomeTitle);
-        welcomeBody.Children.Add(Theme.Text(c.T("Öffne AirLink auf dem anderen Computer. Wähle ihn links aus und ziehe eine Datei hinein.", "Open AirLink on the other computer. Choose it on the left and drop a file."), 14, secondary: true));
-        connect = Theme.Button(c.T("Gerät verbinden", "Connect device"), () => PairDevice(c.SelectedDevice is { Paired: false } d ? d : null), true); connect.Margin = new Thickness(0, 20, 0, 0); connect.HorizontalAlignment = HorizontalAlignment.Left; welcomeBody.Children.Add(connect);
-        welcome = Theme.Card(welcomeBody, 28); welcome.Margin = new Thickness(0, 0, 0, 20); body.Children.Add(welcome);
-        setup = Theme.Button(c.T("Einrichtung abschließen", "Finish setup"), OpenSetup, true); setup.Margin = new Thickness(0, 20, 0, 18); setup.HorizontalAlignment = HorizontalAlignment.Left; globalStatus.Children.Add(setup);
-        service = Theme.Text("", 12, secondary: true); service.Margin = new Thickness(0, 16, 0, 10); globalStatus.Children.Add(service);
-        error = Theme.Text("", 13); error.Foreground = Theme.Color(Theme.Dark ? "#FFB5AE" : "#B1372A"); globalStatus.Children.Add(error);
-        dismiss = Theme.Button(c.T("Meldung schließen", "Dismiss"), c.DismissError); dismiss.Margin = new Thickness(0, 8, 0, 12); dismiss.HorizontalAlignment = HorizontalAlignment.Left; globalStatus.Children.Add(dismiss);
-        retry = Action(c.T("Erneut starten", "Retry"), async () => { await c.StartAsync(); if (c.SetupRequired) OpenSetup(); }); retry.HorizontalAlignment = HorizontalAlignment.Left; retry.Margin = new Thickness(0, 8, 0, 15); globalStatus.Children.Add(retry);
-        recover = Action(c.T("Empfangsordner ändern und starten …", "Choose receive folder and retry …"), async () =>
-        {
-            var picker = new OpenFolderDialog { Title = c.T("Erreichbaren Empfangsordner wählen", "Choose an available receive folder") };
-            if (picker.ShowDialog(this) == true) { await c.StartAsync(picker.FolderName); if (c.SetupRequired) OpenSetup(); }
-        });
-        recover.HorizontalAlignment = HorizontalAlignment.Left; recover.Margin = new Thickness(0, 0, 0, 15); globalStatus.Children.Add(recover);
-        notice = Theme.Text("", 13, secondary: true); notice.Margin = new Thickness(0, 0, 0, 10); globalStatus.Children.Add(notice);
-        attention = Theme.Button("", () => Navigate(Page.Devices)); attention.Margin = new Thickness(0, 0, 0, 10); attention.HorizontalAlignment = HorizontalAlignment.Left; globalStatus.Children.Add(attention);
-        requests = new StackPanel(); body.Children.Add(requests);
-        var drop = new StackPanel { HorizontalAlignment = HorizontalAlignment.Stretch };
-        var icon = Theme.Icon("send", 38, Theme.Accent); icon.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center); drop.Children.Add(icon);
-        dropTitle = Theme.Text("", 21, true); dropTitle.TextAlignment = TextAlignment.Center; dropTitle.Margin = new Thickness(0, 16, 0, 7); drop.Children.Add(dropTitle);
-        var hint = Theme.Text(c.T("Dateien und Ordner hier ablegen", "Drop files and folders here"), 14, secondary: true); hint.TextAlignment = TextAlignment.Center; drop.Children.Add(hint);
-        pickFiles = Theme.Button(c.T("Dateien auswählen", "Choose files"), PickFiles, true); pickFolder = Theme.Button(c.T("Ordner auswählen", "Choose folder"), PickFolder);
-        var choose = Wrap(pickFiles, pickFolder); choose.HorizontalAlignment = HorizontalAlignment.Center; choose.Margin = new Thickness(0, 22, 0, 0); drop.Children.Add(choose);
-        dropArea = Theme.Card(drop, 30); dropArea.Margin = new Thickness(0, 5, 0, 17); body.Children.Add(dropArea);
-        var receiving = Action("", () => { c.OpenReceiveFolder(); return Task.CompletedTask; }); receiving.Background = Brushes.Transparent; receiving.BorderBrush = Brushes.Transparent; receiving.HorizontalContentAlignment = HorizontalAlignment.Left; receiving.Padding = new Thickness(0, 5, 0, 5);
-        receivePath = Theme.Text("", 12, secondary: true); receivePath.TextTrimming = TextTrimming.CharacterEllipsis; receivePath.TextWrapping = TextWrapping.NoWrap; receiving.Content = receivePath; body.Children.Add(receiving);
-        selectionTitle = Theme.Text(c.T("Zum Senden vorbereitet", "Ready to send"), 14, true); selectionTitle.Margin = new Thickness(0, 20, 0, 5); body.Children.Add(selectionTitle);
-        selection = new ListBox { MaxHeight = 150, BorderThickness = new Thickness(0), Padding = new Thickness(0), Background = Brushes.Transparent, HorizontalContentAlignment = HorizontalAlignment.Stretch }; body.Children.Add(selection);
-        send = Action(c.T("Senden", "Send"), c.SendAsync, true); clear = Theme.Button(c.T("Auswahl leeren", "Clear"), () => c.Selection.Clear()); body.Children.Add(Wrap(send, clear));
-        deviceQueueHost = new StackPanel { Margin = new Thickness(0, 28, 0, 0) }; body.Children.Add(deviceQueueHost);
-        return new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-    }
-    private FrameworkElement BuildTransferPage()
-    {
-        var body = new StackPanel { Margin = new Thickness(34, 28, 34, 30) }; body.Children.Add(Theme.Text(c.T("Übertragungen", "Transfers"), 28, true));
-        var subtitle = Theme.Text(c.T("Aktuelle Übertragungen und dein Verlauf. Fertige Einträge kannst du entfernen; die Dateien bleiben erhalten.", "Active transfers and your history. You can remove finished entries; the files are preserved."), 14, secondary: true); subtitle.Margin = new Thickness(0, 6, 0, 20); body.Children.Add(subtitle);
-        transferQueueHost = new StackPanel(); body.Children.Add(transferQueueHost);
-        queue = new StackPanel(); queue.Children.Add(Theme.Text(c.T("Aktuell", "Active"), 15, true));
-        empty = Theme.Text(c.T("Keine aktiven Übertragungen", "No active transfers"), 13, secondary: true); empty.Margin = new Thickness(0, 10, 0, 10); queue.Children.Add(empty);
-        transfers = new StackPanel(); queue.Children.Add(transfers);
-        var recentHeader = new DockPanel { Margin = new Thickness(0, 23, 0, 0) };
-        cleanHistory = Theme.Button(c.T("Fertige Einträge entfernen …", "Remove finished entries …"), RemoveFinishedHistory);
-        cleanHistory.Margin = new Thickness(12, 0, 0, 0); cleanHistory.FontSize = 12; DockPanel.SetDock(cleanHistory, Dock.Right); recentHeader.Children.Add(cleanHistory);
-        recentTitle = Theme.Text(c.T("Zuletzt", "Recent"), 15, true); recentTitle.VerticalAlignment = VerticalAlignment.Center; recentHeader.Children.Add(recentTitle); queue.Children.Add(recentHeader);
-        recent = new StackPanel(); queue.Children.Add(recent);
-        moreHistory = Theme.Button(c.T("Weitere 50 laden", "Load 50 more"), () => _ = c.RunAsync(() => c.LoadHistoryAsync(true))); body.Children.Add(moreHistory);
-        return new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-    }
-    private void RemoveFinishedHistory()
-    {
-        var captured = c.History.Where(NativeExperience.CanRemoveFromHistory).Select(ProtocolJson.Clone).ToArray();
-        if (!c.Ready || c.RemovingHistory || captured.Length == 0) return;
-        if (MessageBox.Show(this,
-            c.T($"{captured.Length} fertige Einträge aus der Liste entfernen? Dazu gehören auch ältere Einträge. Gesendete und empfangene Dateien bleiben erhalten. Laufende Übertragungen werden nicht entfernt.",
-                $"Remove {captured.Length} finished entries from the list, including older entries? Sent and received files are preserved. Active transfers will remain."),
-            c.T("Liste aufräumen", "Clean up list"), MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
-            _ = c.RunAsync(() => c.RemoveHistoryAsync(captured));
-    }
-    private FrameworkElement BuildSettings() => new SettingsPage(this, c, settingsState, Render, OpenSetup);
-    private void PickFiles()
-    {
-        if (!c.Ready || !c.SetupComplete || c.Sending) return; var recipient = c.SelectedDeviceId;
-        var picker = new OpenFileDialog { Multiselect = true, Title = c.T("Dateien senden", "Send files"), CheckFileExists = true };
-        if (picker.ShowDialog(this) == true) _ = c.RunAsync(() => c.SendPathsAsync(picker.FileNames, recipient, useCurrentSelection: false));
-    }
-    private void PickFolder()
-    {
-        if (!c.Ready || !c.SetupComplete || c.Sending) return; var recipient = c.SelectedDeviceId;
-        var picker = new OpenFolderDialog { Multiselect = true, Title = c.T("Ordner senden", "Send folders") };
-        if (picker.ShowDialog(this) == true) _ = c.RunAsync(() => c.SendPathsAsync(picker.FolderNames, recipient, useCurrentSelection: false));
-    }
-    private void Render()
-    {
-        // Polling and tray notices continue in Controller while the window is
-        // hidden; defer the visual tree work until ShowMain refreshes it.
-        if (IsLoaded && !IsVisible) return;
-        if (rendering) return; rendering = true;
-        try
-        {
-            if (!settingsState.Saving && (appearance != (c.Status?.Settings.Appearance ?? "system") || language != (c.English ? "en" : "de"))) Build();
-            (settingsPage as SettingsPage)?.UpdateAvailability();
-            host.Text = c.Status?.Name ?? Environment.MachineName; host.ToolTip = host.Text;
-            devicePage.Visibility = page == Page.Devices ? Visibility.Visible : Visibility.Collapsed; transferPage.Visibility = page == Page.Transfers ? Visibility.Visible : Visibility.Collapsed; settingsPage.Visibility = page == Page.Settings ? Visibility.Visible : Visibility.Collapsed;
-            transferNav.Background = page == Page.Transfers ? Theme.SoftAccent : Brushes.Transparent; settingsNav.Background = page == Page.Settings ? Theme.SoftAccent : Brushes.Transparent;
-            if (queue.Parent is Panel old && old != (page == Page.Transfers ? transferQueueHost : deviceQueueHost)) old.Children.Remove(queue);
-            var holder = page == Page.Transfers ? transferQueueHost : deviceQueueHost; if (queue.Parent is null) holder.Children.Add(queue);
-            service.Text = c.Starting ? c.T("AirLink wird gestartet …", "Starting AirLink …") : !c.Ready ? c.T("AirLink ist nicht bereit", "AirLink is unavailable") : "";
-            service.Visibility = string.IsNullOrEmpty(service.Text) ? Visibility.Collapsed : Visibility.Visible;
-            error.Text = c.Error ?? ""; error.Visibility = string.IsNullOrEmpty(c.Error) ? Visibility.Collapsed : Visibility.Visible; dismiss.Visibility = c.HasActionError ? Visibility.Visible : Visibility.Collapsed;
-            notice.Text = c.Notice ?? ""; notice.Visibility = string.IsNullOrEmpty(c.Notice) || page != Page.Devices ? Visibility.Collapsed : Visibility.Visible;
-            var waiting = (c.Status?.PairingSessions.Count(p => p.CanConfirm) ?? 0) + (c.Status?.Transfers.Count(t => t.Direction == "receive" && t.State == "offered") ?? 0);
-            attention.Visibility = page != Page.Devices && waiting > 0 ? Visibility.Visible : Visibility.Collapsed; attention.Content = waiting + c.T(" Anfrage(n) anzeigen", " request(s) need attention"); retry.Visibility = recover.Visibility = !c.Ready && !c.Starting ? Visibility.Visible : Visibility.Collapsed;
-            setup.Visibility = c.SetupRequired ? Visibility.Visible : Visibility.Collapsed;
-            var peers = c.Status?.Devices ?? [];
-            foreach (var gone in deviceItems.Keys.Where(id => peers.All(d => d.Id != id)).ToArray()) { devices.Items.Remove(deviceItems[gone]); deviceItems.Remove(gone); }
-            var deviceIndex = 0;
-            foreach (var d in peers.OrderByDescending(d => d.Paired).ThenByDescending(d => d.Online).ThenBy(d => d.Name))
-            {
-                if (!deviceItems.TryGetValue(d.Id, out var item))
-                {
-                    var tile = new DeviceTile(); item = new ListBoxItem { Tag = d.Id, Content = tile, AllowDrop = true }; deviceItems.Add(d.Id, item);
-                    var id = d.Id;
-                    item.DragOver += (_, e) => { e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) && c.Ready && c.SetupComplete && !c.Sending && TransferDraft.CanSendTo(c.Status?.Devices.FirstOrDefault(p => p.Id == id)) ? DragDropEffects.Copy : DragDropEffects.None; e.Handled = true; };
-                    item.Drop += (_, e) => { if (e.Data.GetData(DataFormats.FileDrop) is string[] paths && TransferDraft.CanSendTo(c.Status?.Devices.FirstOrDefault(p => p.Id == id))) { Navigate(Page.Devices); _ = c.RunAsync(() => c.SendPathsAsync(paths, id)); } e.Handled = true; };
-                    item.MouseDoubleClick += (_, e) => { c.SelectedDeviceId = id; Navigate(Page.Devices); if (TransferDraft.CanSendTo(c.SelectedDevice)) PickFiles(); else if (c.SelectedDevice is { Paired: true } paired) Dialogs.Device(this, c, paired); else PairDevice(c.SelectedDevice); e.Handled = true; };
-                }
-                ((DeviceTile)item.Content).Update(d, c); item.ToolTip = d.Name;
-                if (!devices.Items.Contains(item)) devices.Items.Insert(deviceIndex, item); else if (devices.Items.IndexOf(item) != deviceIndex) { devices.Items.Remove(item); devices.Items.Insert(deviceIndex, item); }
-                item.IsSelected = page == Page.Devices && d.Id == c.SelectedDeviceId; deviceIndex++;
-            }
-            var selected = c.SelectedDevice; var canSend = TransferDraft.CanSendTo(selected);
-            hero.Visibility = selected is null ? Visibility.Collapsed : Visibility.Visible; welcome.Visibility = selected is null || !selected.Paired ? Visibility.Visible : Visibility.Collapsed;
-            target.Text = selected?.Name ?? ""; targetDetail.Text = selected is null ? "" : !selected.Paired ? c.T("Noch nicht verbunden", "Not paired yet") : selected.Kind == "browser" ? c.T("Im Browser verbunden · per Link teilen", "Connected through browser · share by link") : !canSend ? c.T("Empfang nicht freigegeben", "Receiving is not allowed") : selected.Online ? c.T("Verbunden · bereit zum Senden", "Connected · ready to send") : c.T("Offline · Sendungen warten auf die Verbindung", "Offline · transfers wait for a connection");
-            manage.Visibility = selected is { Paired: true } ? Visibility.Visible : Visibility.Collapsed; manage.IsEnabled = c.Ready && c.SetupComplete; connect.IsEnabled = c.Ready && c.SetupComplete;
-            trustedCard.Visibility = selected is { Paired: true } ? Visibility.Visible : Visibility.Collapsed;
-            automaticReceive.IsChecked = savingTrust && selected?.Id == savingTrustDevice ? savingTrustValue : selected?.AutoAccept == true;
-            automaticReceive.IsEnabled = c.Ready && !savingTrust && selected is { Paired: true, CanSend: true };
-            dropArea.Visibility = c.SetupComplete && (selected is null || selected is { Paired: true, Kind: "engine" }) ? Visibility.Visible : Visibility.Collapsed;
-            dropTitle.Text = canSend ? c.T("An ", "Send to ") + selected!.Name + c.T(" senden", "") : c.T("Dateien zum Senden ablegen", "Drop files to send");
-            pickFiles.IsEnabled = pickFolder.IsEnabled = c.Ready && c.SetupComplete && !c.Sending;
-            receivePath.Text = c.T("Empfang: ", "Received files: ") + (c.Status?.Settings.ReceiveDirectory ?? ""); receivePath.ToolTip = c.Status?.Settings.ReceiveDirectory;
-            if (c.ActivePreparationId is { } preparationId && !pairRows.ContainsKey("preparation")) {
-                var card = Theme.Card(Theme.Button(c.T("Vorbereitung abbrechen", "Cancel preparation"), () => _ = c.RunAsync(() => c.CommandAsync("preparation.cancel", preparationId))));
-                pairRows.Add("preparation", card); requests.Children.Add(card);
-            }
-            send.IsEnabled = c.Ready && c.SetupComplete && !c.Sending && c.Selection.Count > 0 && canSend; send.Content = c.Sending ? c.T("Wird vorbereitet …", "Preparing …") : canSend ? c.T("An ", "Send to ") + selected!.Name + c.T(" senden", "") : c.T("Senden", "Send");
-            selectionTitle.Visibility = selection.Visibility = send.Visibility = clear.Visibility = c.Selection.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-            var selectionKey = string.Join('|', c.Selection.Select(i => i.Id));
-            if (selectionKey != selectedKey)
-            {
-                selectedKey = selectionKey; selection.Items.Clear();
-                foreach (var entry in c.Selection)
-                {
-                    var line = new DockPanel(); var remove = Theme.Button("×", () => c.Selection.Remove(entry)); remove.ToolTip = c.T("Entfernen", "Remove"); remove.Margin = new Thickness(8, 0, 0, 0); DockPanel.SetDock(remove, Dock.Right); line.Children.Add(remove);
-                    var text = Theme.Text(entry.Title, 13); text.ToolTip = entry.Path; line.Children.Add(text); selection.Items.Add(line);
-                }
-            }
-            var codes = (c.Status?.PairingSessions ?? []).Where(p => p.CanConfirm || p.LocalConfirmed && p.State is "comparing" or "finishing").ToArray();
-            var pending = codes.Select(p => (Id: "v2:" + p.Id, Name: p.PeerName)).ToArray();
-            foreach (var gone in pairRows.Keys.Where(id => pending.All(p => p.Id != id) && (id != "preparation" || c.ActivePreparationId is null)).ToArray()) { requests.Children.Remove(pairRows[gone]); pairRows.Remove(gone); }
-            foreach (var request in pending.Where(p => !pairRows.ContainsKey(p.Id)))
-            {
-                var body = new StackPanel(); body.Children.Add(Theme.Text(request.Name + c.T(" möchte sich verbinden", " wants to connect"), 16, true));
-                body.Children.Add(Theme.Button(c.T("Vergleichscode öffnen", "Open comparison code"), () => new CodePairingWindow(this, c, request.Id[3..]).ShowDialog()));
-                var codeCard = Theme.Card(body); codeCard.Margin = new Thickness(0, 0, 0, 16); pairRows.Add(request.Id, codeCard); requests.Children.Add(codeCard);
-            }
-            var all = page == Page.Transfers ? DesktopTransferSelection.MergeHistory(c.History, c.Status?.Transfers ?? []) : DesktopTransferSelection.ForDevice(c.Status?.Transfers ?? [], c.SelectedDeviceId).ToList();
-            var terminal = all.Where(t => !t.IsActive).OrderByDescending(t => t.UpdatedAt).ToArray(); var jobs = all.Where(t => t.IsActive).OrderByDescending(t => t.CreatedAt).Concat(terminal).ToArray();
-            moreHistory.Visibility = page == Page.Transfers && c.HistoryCursor is not null ? Visibility.Visible : Visibility.Collapsed;
-            moreHistory.IsEnabled = !c.HistoryLoading;
-            empty.Visibility = jobs.Any(t => t.IsActive) ? Visibility.Collapsed : Visibility.Visible; recentTitle.Visibility = terminal.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
-            cleanHistory.Visibility = all.Any(NativeExperience.CanRemoveFromHistory) ? Visibility.Visible : Visibility.Collapsed;
-            cleanHistory.IsEnabled = c.Ready && !c.RemovingHistory;
-            recentTitle.Text = c.T("Zuletzt", "Recent") + (page == Page.Transfers && all.Count(t => !t.IsActive) > terminal.Length ? " · " + terminal.Length + c.T(" von ", " of ") + all.Count(t => !t.IsActive) : "");
-            foreach (var gone in transferRows.Keys.Where(id => jobs.All(t => t.Id != id)).ToArray()) { transfers.Children.Remove(transferRows[gone]); recent.Children.Remove(transferRows[gone]); transferRows.Remove(gone); }
-            int activeAt = 0, recentAt = 0;
-            foreach (var job in jobs)
-            {
-                if (!transferRows.TryGetValue(job.Id, out var row)) { row = new TransferRow(this, c); transferRows.Add(job.Id, row); }
-                var parent = job.IsActive ? transfers : recent; var index = job.IsActive ? activeAt++ : recentAt++;
-                if (row.Parent != parent) { (row.Parent as Panel)?.Children.Remove(row); parent.Children.Insert(index, row); } else if (parent.Children.IndexOf(row) != index) { parent.Children.Remove(row); parent.Children.Insert(index, row); }
-                row.Update(job);
-            }
-        }
-        finally { rendering = false; }
-    }
-}
 
-internal sealed class DeviceTile : Grid
-{
-    private readonly TextBlock name = Theme.Text("", 14, true), status = Theme.Text("", 12, secondary: true);
-    public DeviceTile()
+    /// <summary>Renders the main states with sample data into PNG files.</summary>
+    internal void Snapshot(string directory)
     {
-        ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(42) }); ColumnDefinitions.Add(new ColumnDefinition());
-        var icon = Theme.Icon("computer", 25); icon.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center); Children.Add(icon);
-        var text = new StackPanel { MinWidth = 0 }; name.MaxHeight = 42; name.TextTrimming = TextTrimming.CharacterEllipsis; text.Children.Add(name); text.Children.Add(status); SetColumn(text, 1); Children.Add(text);
+        Directory.CreateDirectory(directory);
+        void Save(FrameworkElement element, string name)
+        {
+            element.UpdateLayout();
+            var dpi = VisualTreeHelperDpi(element);
+            var bitmap = new RenderTargetBitmap((int)Math.Ceiling(element.ActualWidth * dpi), (int)Math.Ceiling(element.ActualHeight * dpi), 96 * dpi, 96 * dpi, System.Windows.Media.PixelFormats.Pbgra32);
+            bitmap.Render(element);
+            var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            using var file = File.Create(Path.Combine(directory, name + ".png")); encoder.Save(file);
+        }
+        foreach (var scenario in new[] { "welcome", "empty", "home" })
+        {
+            c.ShowDemo(DemoData.Status(scenario, c.English));
+            if (scenario == "home") c.ClipboardTexts["demo-clip"] = "https://example.com/notizen";
+            bannerKeys = []; Render();
+            Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            Save((FrameworkElement)Content, scenario);
+        }
+        c.ShowDemo(DemoData.Status("pairing", c.English)); Render();
+        var dialog = new PairingDialog(this, c, "demo-pair") { Left = -20000 };
+        dialog.Show(); Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        Save((FrameworkElement)dialog.Content, "pairing"); dialog.Close();
     }
-    public void Update(Device device, Controller c)
-    {
-        name.Text = device.Name; name.ToolTip = device.Name;
-        status.Text = device.Paired ? device.Online ? c.T("Vertraut · verbunden", "Trusted · connected") : c.T("Vertraut · offline", "Trusted · offline") : c.T("In der Nähe · verbinden", "Nearby · connect");
-        status.Foreground = device.Paired && device.Online ? Theme.Accent : Theme.Secondary;
-    }
+    private static double VisualTreeHelperDpi(Visual visual) => System.Windows.Media.VisualTreeHelper.GetDpi(visual).DpiScaleX;
 }

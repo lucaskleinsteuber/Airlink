@@ -32,7 +32,7 @@
     <Copyright>Copyright © 2026 Lucas Kleinsteuber</Copyright>
     <PathMap>$(MSBuildProjectDirectory)=/AirLink/windows/AirLink.Windows</PathMap>
     <!-- WPF owns per-monitor DPI through app.manifest; Windows Forms is used only for the tray icon. -->
-    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+    <NoWarn>$(NoWarn);WFO0003;WPF0001</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="NetSparkleUpdater.UI.WPF" Version="3.1.0" />

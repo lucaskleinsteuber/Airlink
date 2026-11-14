@@ -12,6 +12,12 @@ public sealed class PairingSession {
  public bool RemoteConfirmed { get; set; }
  public bool AutomaticReceive { get; set; }
  public string? Error { get; set; }
+ /// <summary>Stable reason: closed, unreachable, outdated, paired, identity, self.</summary>
+ public string? Problem { get; set; }
+ public bool Initiator { get; set; }
+ public string? Platform { get; set; }
+ public string? Form { get; set; }
+ public bool IsOpen => State is "starting" or "comparing" or "finishing";
  public bool CanConfirm => State == "comparing" && !LocalConfirmed && Regex.IsMatch(ComparisonCode ?? "", @"^[0-9]{8}$");
  public string FormattedCode => Regex.IsMatch(ComparisonCode ?? "", @"^[0-9]{8}$") ? ComparisonCode![..4] + " " + ComparisonCode[4..] : "";
 }

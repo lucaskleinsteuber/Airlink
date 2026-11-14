@@ -63,6 +63,9 @@ public sealed class DaemonClient : IAsyncDisposable
     }
 
     public event EventHandler<DaemonExitedEventArgs>? Exited;
+    /// <summary>Lines without an id are events pushed by the helper, such as
+    /// "status" after a visible change. Raised on a background thread.</summary>
+    public event Action<string>? EventReceived;
     public Guid? SessionId { get { lock (stateLock) return current?.Id; } }
     public string DiagnosticTail { get { lock (stateLock) return current?.Diagnostics.Tail ?? lastDiagnostic; } }
     public bool IsRunning
@@ -286,11 +289,16 @@ public sealed class DaemonClient : IAsyncDisposable
         }
     }
 
-    private static void ConsumeReply(Session session, string line)
+    private void ConsumeReply(Session session, string line)
     {
         if (string.IsNullOrWhiteSpace(line)) return;
         using var document = JsonDocument.Parse(line);
         var root = document.RootElement;
+        if (root.ValueKind == JsonValueKind.Object && !root.TryGetProperty("id", out _) && root.TryGetProperty("event", out var pushed) && pushed.ValueKind == JsonValueKind.String)
+        {
+            EventReceived?.Invoke(pushed.GetString()!);
+            return;
+        }
         if (!root.TryGetProperty("id", out var id) || id.ValueKind != JsonValueKind.String) throw new JsonException("AirLink returned an invalid response identifier.");
         if (!session.Pending.TryRemove(id.GetString()!, out var completion)) return; // Timed-out/old reply.
         if (root.TryGetProperty("error", out var error) && error.ValueKind != JsonValueKind.Null)

@@ -90,6 +90,21 @@ jobs:
             CGO_ENABLED=0 GOOS=windows GOARCH="$ARCH" go build -buildvcs=false -trimpath -ldflags='-s -w' -o "build/airlink-windows-$ARCH.exe" ./cmd/airlink
           done
           bash scripts/build-windows.sh
+      - name: Render the Windows interface with sample data
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath 'build/windows-x64/AirLink.exe' -ArgumentList '--demo', '--snapshot', "$PWD/build/ui-snapshots" -PassThru
+          if (-not $process.WaitForExit(90000)) { $process.Kill(); throw 'Interface snapshot timed out.' }
+          Get-ChildItem build/ui-snapshots
+      - uses: actions/upload-artifact@v6
+        if: runner.os == 'Windows' && always()
+        continue-on-error: true
+        with:
+          name: windows-ui-snapshots
+          path: build/ui-snapshots/*.png
+          retention-days: 7
       - name: Create installer upgrade fixture
         if: runner.os == 'Windows'
         shell: pwsh

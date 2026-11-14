@@ -230,6 +230,8 @@ Section "AirLink" InstallSection
   StrCpy $StagedPayload ""
   ClearErrors
   CreateShortCut "$SMPROGRAMS\AirLink.lnk" "$INSTDIR\AirLink.exe" "" "$INSTDIR\AirLink.exe" 0
+  ; Explorer: right-click → Send to → AirLink.
+  CreateShortCut "$SENDTO\AirLink.lnk" "$INSTDIR\AirLink.exe" "" "$INSTDIR\AirLink.exe" 0
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayName" "AirLink"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayVersion" "${AIRLINK_VERSION}"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "Publisher" "lucasfd3"
@@ -286,6 +288,9 @@ Section "Uninstall"
   Delete "$INSTDIR\AirLink.exe"
   IfErrors failed
   Delete "$SMPROGRAMS\AirLink.lnk"
+  Delete "$SENDTO\AirLink.lnk"
+  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "AirLink"
+  ClearErrors
   DeleteRegKey HKCU "${UNINSTALL_KEY}"
   IfErrors failed
   ; NSIS normally executes its uninstaller from a temporary copy. _?= is the
