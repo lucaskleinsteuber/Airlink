@@ -34,7 +34,7 @@ internal sealed class MainWindow : Window
     private bool savingTrust;
     private string? savingTrustDevice;
     private bool savingTrustValue;
-    private Button send = null!, connect = null!, manage = null!, retry = null!, recover = null!, dismiss = null!, pickFiles = null!, pickFolder = null!, setup = null!, transferNav = null!, settingsNav = null!, clear = null!, attention = null!, browserShare = null!;
+    private Button send = null!, connect = null!, manage = null!, retry = null!, recover = null!, dismiss = null!, pickFiles = null!, pickFolder = null!, setup = null!, transferNav = null!, settingsNav = null!, clear = null!, attention = null!;
     private readonly SettingsPageState settingsState = new();
     private Page page;
     private bool rendering, quitting, setupOpen;
@@ -174,8 +174,7 @@ internal sealed class MainWindow : Window
         transferNav = Navigation(c.T("Übertragungen", "Transfers"), "history", () => Navigate(Page.Transfers)); bottom.Children.Add(transferNav);
         settingsNav = Navigation(c.T("Einstellungen", "Settings"), "settings", () => Navigate(Page.Settings)); bottom.Children.Add(settingsNav);
         bottom.Children.Add(Navigation(c.T("Dieses Gerät", "This device"), "computer", () => AfterSetup(() => Dialogs.ConnectionInfo(this, c))));
-        var tools = new StackPanel(); tools.Children.Add(Navigation("Quick Share", "link", () => AfterSetup(() => SharingDialogs.Share(this, c)))); tools.Children.Add(Navigation(c.T("Zwischenablage", "Clipboard"), "clipboard", () => AfterSetup(() => SharingDialogs.Clipboard(this, c))));
-        tools.Children.Add(Navigation(c.T("Handy verbinden", "Connect phone"), "link", () => AfterSetup(() => Dialogs.ConnectionInfo(this, c))));
+        var tools = new StackPanel(); tools.Children.Add(Navigation(c.T("Zwischenablage", "Clipboard"), "clipboard", () => AfterSetup(() => ClipboardDialogs.Clipboard(this, c))));
         bottom.Children.Add(new Expander { Header = Theme.Text(c.T("Weitere Funktionen", "More tools"), 12, secondary: true), Content = tools, Foreground = Theme.Secondary, Margin = new Thickness(12, 12, 0, 18) });
         var local = new Grid(); local.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) }); local.ColumnDefinitions.Add(new ColumnDefinition()); local.Children.Add(Theme.Icon("computer", 24));
         var localText = new StackPanel(); host = Theme.Text("", 14, true); host.MaxHeight = 42; host.ToolTip = host.Text; localText.Children.Add(host); localText.Children.Add(Theme.Text(c.T("Dieser Computer", "This computer"), 11, secondary: true)); Grid.SetColumn(localText, 1); local.Children.Add(localText);
@@ -219,7 +218,6 @@ internal sealed class MainWindow : Window
         welcomeBody.Children.Add(Theme.Text(c.T("Öffne AirLink auf dem anderen Computer. Wähle ihn links aus und ziehe eine Datei hinein.", "Open AirLink on the other computer. Choose it on the left and drop a file."), 14, secondary: true));
         connect = Theme.Button(c.T("Gerät verbinden", "Connect device"), () => PairDevice(c.SelectedDevice is { Paired: false } d ? d : null), true); connect.Margin = new Thickness(0, 20, 0, 0); connect.HorizontalAlignment = HorizontalAlignment.Left; welcomeBody.Children.Add(connect);
         welcome = Theme.Card(welcomeBody, 28); welcome.Margin = new Thickness(0, 0, 0, 20); body.Children.Add(welcome);
-        browserShare = Theme.Button(c.T("Dateien per Freigabelink teilen …", "Share files by link …"), () => AfterSetup(() => SharingDialogs.Share(this, c)), true); browserShare.HorizontalAlignment = HorizontalAlignment.Left; browserShare.Margin = new Thickness(0, 0, 0, 20); body.Children.Add(browserShare);
         setup = Theme.Button(c.T("Einrichtung abschließen", "Finish setup"), OpenSetup, true); setup.Margin = new Thickness(0, 20, 0, 18); setup.HorizontalAlignment = HorizontalAlignment.Left; globalStatus.Children.Add(setup);
         service = Theme.Text("", 12, secondary: true); service.Margin = new Thickness(0, 16, 0, 10); globalStatus.Children.Add(service);
         error = Theme.Text("", 13); error.Foreground = Theme.Color(Theme.Dark ? "#FFB5AE" : "#B1372A"); globalStatus.Children.Add(error);
@@ -307,7 +305,7 @@ internal sealed class MainWindow : Window
             service.Visibility = string.IsNullOrEmpty(service.Text) ? Visibility.Collapsed : Visibility.Visible;
             error.Text = c.Error ?? ""; error.Visibility = string.IsNullOrEmpty(c.Error) ? Visibility.Collapsed : Visibility.Visible; dismiss.Visibility = c.HasActionError ? Visibility.Visible : Visibility.Collapsed;
             notice.Text = c.Notice ?? ""; notice.Visibility = string.IsNullOrEmpty(c.Notice) || page != Page.Devices ? Visibility.Collapsed : Visibility.Visible;
-            var waiting = (c.Status?.PairRequests.Count ?? 0) + (c.Status?.Transfers.Count(t => t.Direction == "receive" && t.State is "offered" or "waitingDuplicate") ?? 0);
+            var waiting = (c.Status?.PairingSessions.Count(p => p.CanConfirm) ?? 0) + (c.Status?.Transfers.Count(t => t.Direction == "receive" && t.State == "offered") ?? 0);
             attention.Visibility = page != Page.Devices && waiting > 0 ? Visibility.Visible : Visibility.Collapsed; attention.Content = waiting + c.T(" Anfrage(n) anzeigen", " request(s) need attention"); retry.Visibility = recover.Visibility = !c.Ready && !c.Starting ? Visibility.Visible : Visibility.Collapsed;
             setup.Visibility = c.SetupRequired ? Visibility.Visible : Visibility.Collapsed;
             var peers = c.Status?.Devices ?? [];
@@ -334,7 +332,6 @@ internal sealed class MainWindow : Window
             trustedCard.Visibility = selected is { Paired: true } ? Visibility.Visible : Visibility.Collapsed;
             automaticReceive.IsChecked = savingTrust && selected?.Id == savingTrustDevice ? savingTrustValue : selected?.AutoAccept == true;
             automaticReceive.IsEnabled = c.Ready && !savingTrust && selected is { Paired: true, CanSend: true };
-            browserShare.Visibility = c.SetupComplete && selected is { Paired: true, Kind: "browser" } ? Visibility.Visible : Visibility.Collapsed;
             dropArea.Visibility = c.SetupComplete && (selected is null || selected is { Paired: true, Kind: "engine" }) ? Visibility.Visible : Visibility.Collapsed;
             dropTitle.Text = canSend ? c.T("An ", "Send to ") + selected!.Name + c.T(" senden", "") : c.T("Dateien zum Senden ablegen", "Drop files to send");
             pickFiles.IsEnabled = pickFolder.IsEnabled = c.Ready && c.SetupComplete && !c.Sending;
@@ -356,19 +353,13 @@ internal sealed class MainWindow : Window
                 }
             }
             var codes = (c.Status?.PairingSessions ?? []).Where(p => p.CanConfirm || p.LocalConfirmed && p.State is "comparing" or "finishing").ToArray();
-            var pending = (c.Status?.PairRequests ?? []).Concat(codes.Select(p => new PairRequest { Id = "v2:" + p.Id, Name = p.PeerName })).ToArray();
+            var pending = codes.Select(p => (Id: "v2:" + p.Id, Name: p.PeerName)).ToArray();
             foreach (var gone in pairRows.Keys.Where(id => pending.All(p => p.Id != id) && (id != "preparation" || c.ActivePreparationId is null)).ToArray()) { requests.Children.Remove(pairRows[gone]); pairRows.Remove(gone); }
             foreach (var request in pending.Where(p => !pairRows.ContainsKey(p.Id)))
             {
                 var body = new StackPanel(); body.Children.Add(Theme.Text(request.Name + c.T(" möchte sich verbinden", " wants to connect"), 16, true));
-                if (request.Id.StartsWith("v2:", StringComparison.Ordinal)) {
-                    body.Children.Add(Theme.Button(c.T("Vergleichscode öffnen", "Open comparison code"), () => new CodePairingWindow(this, c, request.Id[3..]).ShowDialog()));
-                    var codeCard = Theme.Card(body); pairRows.Add(request.Id, codeCard); requests.Children.Add(codeCard); continue;
-                }
-                body.Children.Add(Theme.Text(c.T("Bestätige nur eine Anfrage, die du selbst auf deinem anderen Gerät gestartet hast.", "Approve only a request you started on your other device."), 12, secondary: true));
-                var trust = new CheckBox { Content = c.T("Von diesem Gerät künftig automatisch empfangen", "Automatically receive from this device in future") }; body.Children.Add(trust);
-                body.Children.Add(Wrap(Action(c.T("Verbinden", "Connect"), () => c.CommandAsync(trust.IsChecked == true ? "pair.approveTrusted" : "pair.approve", request.Id), true), Action(c.T("Ablehnen", "Decline"), () => c.CommandAsync("pair.deny", request.Id))));
-                var card = Theme.Card(body); card.Margin = new Thickness(0, 0, 0, 16); pairRows.Add(request.Id, card); requests.Children.Add(card);
+                body.Children.Add(Theme.Button(c.T("Vergleichscode öffnen", "Open comparison code"), () => new CodePairingWindow(this, c, request.Id[3..]).ShowDialog()));
+                var codeCard = Theme.Card(body); codeCard.Margin = new Thickness(0, 0, 0, 16); pairRows.Add(request.Id, codeCard); requests.Children.Add(codeCard);
             }
             var all = page == Page.Transfers ? DesktopTransferSelection.MergeHistory(c.History, c.Status?.Transfers ?? []) : DesktopTransferSelection.ForDevice(c.Status?.Transfers ?? [], c.SelectedDeviceId).ToList();
             var terminal = all.Where(t => !t.IsActive).OrderByDescending(t => t.UpdatedAt).ToArray(); var jobs = all.Where(t => t.IsActive).OrderByDescending(t => t.CreatedAt).Concat(terminal).ToArray();

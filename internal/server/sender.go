@@ -1,7 +1,6 @@
 package server
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -453,60 +452,5 @@ func sleepContext(ctx context.Context, d time.Duration) bool {
 		return false
 	case <-timer.C:
 		return true
-	}
-}
-func (s *Server) archive(w http.ResponseWriter, r *http.Request, t model.Transfer) {
-	if t.Direction != "send" || t.State == "cancelled" {
-		fail(w, 403, errors.New("archive unavailable"))
-		return
-	}
-	for _, file := range t.Files {
-		if file.Directory {
-			continue
-		}
-		opened, _, err := s.engine.OpenDownloadContext(r.Context(), t.ID, file.ID)
-		if err != nil {
-			s.engineError(w, err)
-			return
-		}
-		opened.Close()
-	}
-	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", `attachment; filename="AirLink.zip"`)
-	policy := &sourcePolicyWriter{ResponseWriter: w, ctx: r.Context()}
-	zw := zip.NewWriter(s.traffic.WrapWriter(r.Context(), policy, "send"))
-	for _, m := range t.Files {
-		select {
-		case <-r.Context().Done():
-			panic(http.ErrAbortHandler)
-		default:
-		}
-		name := m.Path
-		if m.Directory {
-			name = strings.TrimSuffix(name, "/") + "/"
-			if _, err := zw.Create(name); err != nil {
-				panic(http.ErrAbortHandler)
-			}
-			continue
-		}
-		f, _, err := s.engine.OpenDownloadContext(r.Context(), t.ID, m.ID)
-		if err != nil {
-			panic(http.ErrAbortHandler)
-		}
-		policy.validate = func() error { return s.engine.ValidateSource(t.ID, m.ID, f) }
-		h := &zip.FileHeader{Name: name, Method: zip.Store}
-		h.SetModTime(time.UnixMilli(m.Modified))
-		entry, err := zw.CreateHeader(h)
-		if err == nil {
-			_, err = io.Copy(entry, &sourceReader{Context: r.Context(), File: f, server: s, transferID: t.ID, fileID: m.ID})
-		}
-		_ = f.Close()
-		policy.validate = nil
-		if err != nil {
-			panic(http.ErrAbortHandler)
-		}
-	}
-	if err := zw.Close(); err != nil {
-		panic(http.ErrAbortHandler)
 	}
 }

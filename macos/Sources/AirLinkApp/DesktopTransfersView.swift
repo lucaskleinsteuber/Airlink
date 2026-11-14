@@ -77,7 +77,6 @@ struct TransferDetailsSheet: View {
                             if file.directory != true { Text(TransferFormatting.bytes(file.size)).font(.caption).foregroundStyle(.secondary) }
                             if file.isSkipped { Text(model.text("Übersprungen · keine neue Dateikopie", "Skipped · no new file copy")).font(.caption).foregroundStyle(.secondary) }
                             else if let destination = file.destinationPath, destination != file.path { Text(destination).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
-                            if file.duplicateState == "pending" { DuplicateAttentionView(transfer: transfer, file: file).environmentObject(model) }
                         }
                         Divider()
                     }

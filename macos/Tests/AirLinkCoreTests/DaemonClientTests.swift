@@ -35,7 +35,7 @@ import Testing
     #expect(FileManager.default.fileExists(atPath: directory.appendingPathComponent("shutdown-complete").path))
 }
 
-@Test(arguments: ["duplicate.resolve", "offer", "share.create"])
+@Test(arguments: ["offer"])
 func slowFilesystemRPCAllowsOutOfOrderStatusResponse(method: String) async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

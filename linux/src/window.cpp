@@ -254,11 +254,10 @@ void MainWindow::build() {
   }));
   auto *tools = new QPushButton(text("Weitere Werkzeuge", "More tools"), side);
   auto *toolsMenu = new QMenu(tools);
-  toolsMenu->addAction("Quick Share", this, &MainWindow::shares);
   toolsMenu->addAction(text("Zwischenablage", "Clipboard"), this,
                        &MainWindow::clipboard);
-  toolsMenu->addAction(text("Browser verbinden", "Connect a browser"), this,
-                       &MainWindow::browserConnection);
+  toolsMenu->addAction(text("Dieses Gerät", "This device"), this,
+                       &MainWindow::thisDevice);
   tools->setMenu(toolsMenu);
   sl->addWidget(tools);
   sl->addWidget(button(text("Einstellungen", "Settings"), side,
@@ -497,97 +496,6 @@ QWidget *MainWindow::buildSettings() {
   receive->addRow(
       button(text("Einrichtung erneut öffnen …", "Open setup again …"), page,
              [this] { setup(); }));
-  auto *advanced = new QWidget(page);
-  auto *advancedLayout = new QVBoxLayout(advanced);
-  advancedLayout->setContentsMargins(0, 0, 0, 0);
-  auto *expand = new QPushButton(
-      text("Erweiterte Dateiorganisation", "Advanced file organization"),
-      advanced);
-  expand->setCheckable(true);
-  advancedLayout->addWidget(expand);
-  auto *advancedContents = new QWidget(advanced);
-  advancedContents->hide();
-  advancedLayout->addWidget(advancedContents);
-  connect(expand, &QPushButton::toggled, advancedContents,
-          &QWidget::setVisible);
-  auto *organization = new QVBoxLayout(advancedContents);
-  for (const auto &key : QStringList{"detectDuplicates", "sortEnabled"}) {
-    auto *check = new QCheckBox(
-        key == "detectDuplicates"
-            ? text("Duplikate erkennen", "Detect duplicates")
-            : text("Sortierregeln anwenden", "Apply sorting rules"),
-        advanced);
-    editors[key] = check;
-    organization->addWidget(check);
-    connect(check, &QCheckBox::toggled, this, [this, key](bool value) {
-      if (applyingEditors)
-        return;
-      auto o = draft.values["organization"].toObject();
-      o[key] = value;
-      setDraftValue("organization", o);
-    });
-  }
-  auto *rules = new QTableWidget(0, 2, advanced);
-  rules->setHorizontalHeaderLabels(
-      {text("Dateiendungen", "Extensions"), text("Unterordner", "Subfolder")});
-  rules->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-  rules->setMaximumHeight(150);
-  editors["rules"] = rules;
-  organization->addWidget(rules);
-  organization->addWidget(label(
-      text("Endungen mit Komma trennen. Die erste passende Regel gilt.",
-           "Separate extensions with commas. The first matching rule applies."),
-      advanced));
-  auto *ruleActions = new QHBoxLayout;
-  ruleActions->addWidget(
-      button(text("Regel hinzufügen", "Add rule"), advanced, [this] {
-        auto o = draft.values["organization"].toObject();
-        auto rows = o["rules"].toArray();
-        rows.append(
-            QJsonObject{{"id", QUuid::createUuid().toString(QUuid::Id128)},
-                        {"extensions", QJsonArray{"pdf"}},
-                        {"folder", "Documents"}});
-        o["rules"] = rows;
-        setDraftValue("organization", o);
-        applyEditors();
-      }));
-  ruleActions->addWidget(
-      button(text("Regel entfernen", "Remove rule"), advanced, [this, rules] {
-        const int selectedRow = rules->currentRow();
-        auto o = draft.values["organization"].toObject();
-        auto rows = o["rules"].toArray();
-        if (selectedRow < 0 || selectedRow >= rows.size())
-          return;
-        rows.removeAt(selectedRow);
-        o["rules"] = rows;
-        setDraftValue("organization", o);
-        rules->clearFocus();
-        applyEditors();
-      }));
-  organization->addLayout(ruleActions);
-  connect(rules, &QTableWidget::itemChanged, this,
-          [this, rules](QTableWidgetItem *) {
-            if (applyingEditors)
-              return;
-            QJsonArray rows;
-            for (int i = 0; i < rules->rowCount(); ++i) {
-              if (!rules->item(i, 0) || !rules->item(i, 1))
-                return;
-              QJsonArray extensions;
-              for (const auto &e :
-                   rules->item(i, 0)->text().split(',', Qt::SkipEmptyParts))
-                extensions.append(e.trimmed());
-              rows.append(QJsonObject{
-                  {"id", rules->item(i, 0)->data(Qt::UserRole).toString()},
-                  {"extensions", extensions},
-                  {"folder", rules->item(i, 1)->text()}});
-            }
-            rules->setProperty("rules", rows);
-            auto o = draft.values["organization"].toObject();
-            o["rules"] = rows;
-            setDraftValue("organization", o);
-          });
-  receive->addRow(advanced);
   auto *transfers = formPage(text("Übertragungen", "Transfers"));
   transfers->addRow(
       label(text("Ohne Limit wird die verfügbare Verbindung genutzt. 0 "
@@ -683,9 +591,6 @@ void MainWindow::applyEditors() {
   applyingEditors = true;
   for (auto it = editors.begin(); it != editors.end(); ++it) {
     auto value = draft.values[it.key()];
-    if (it.key() == "detectDuplicates" || it.key() == "sortEnabled" ||
-        it.key() == "rules")
-      value = draft.values["organization"].toObject()[it.key()];
     if (auto *line = qobject_cast<QLineEdit *>(it.value())) {
       if (line->hasFocus() && line->isModified())
         continue;
@@ -1131,31 +1036,6 @@ void MainWindow::transferDetails(const QJsonObject &t) {
   more->setObjectName("more");
   dialog->setProperty("transferId", t["id"]);
   layout->addWidget(more);
-  auto *decision = new QHBoxLayout;
-  for (const auto &choice : QStringList{"keep", "skip"})
-    decision->addWidget(button(
-        choice == "keep"
-            ? text("Ausgewähltes Duplikat behalten", "Keep selected duplicate")
-            : text("Ausgewähltes Duplikat überspringen",
-                   "Skip selected duplicate"),
-        dialog, [this, files, t, choice] {
-          const auto *item = files->currentItem();
-          if (!item)
-            return;
-          const auto f = item->data(0, Qt::UserRole).toJsonObject();
-          if (f["duplicateState"] != "pending")
-            return;
-          QJsonObject params{
-              {"transferId", t["id"]}, {"fileId", f["id"]}, {"action", choice}};
-          if (choice == "skip") {
-            const auto candidates = f["duplicateCandidates"].toArray();
-            if (candidates.isEmpty())
-              return;
-            params["candidateId"] = candidates.first().toObject()["id"];
-          }
-          action("duplicate.resolve", params);
-        }));
-  layout->addLayout(decision);
   layout->addWidget(
       button(text("Fertig", "Done"), dialog, [dialog] { dialog->close(); }));
   loadFilePage(dialog, files, more, t["id"].toString(), 0);
@@ -1178,7 +1058,8 @@ void MainWindow::loadFilePage(QPointer<QDialog> dialog, QTreeWidget *files,
           const auto f = value.toObject();
           auto *row = new QTreeWidgetItem(
               files, {f["path"].toString(), bytes(f["size"].toInteger()),
-                      f["duplicateState"].toString()});
+                      f["completed"].toBool() ? text("Fertig", "Done")
+                                              : QString()});
           row->setData(0, Qt::UserRole, f);
         }
         const int next = v.toObject()["nextOffset"].toInt(-1);
@@ -1383,9 +1264,6 @@ void MainWindow::connectDevice(const QString &session) {
       selectionPage));
   auto *nearby = new QListWidget(selectionPage);
   selectLayout->addWidget(nearby, 1);
-  auto *legacyRequests = new QListWidget(selectionPage);
-  legacyRequests->setMaximumHeight(130);
-  selectLayout->addWidget(legacyRequests);
   selectLayout->addWidget(button(
       text("Andere Verbindungsmöglichkeiten …", "Other connection options …"),
       selectionPage, [this, guard] {
@@ -1400,23 +1278,31 @@ void MainWindow::connectDevice(const QString &session) {
         l->addRow(text("HTTPS-Adresse", "HTTPS address"), address);
         l->addRow(text("Vollständiger Fingerabdruck", "Complete fingerprint"),
                   fp);
-        auto *verified = new QCheckBox(
-            text("Ich habe den Fingerabdruck auf dem anderen Gerät verglichen.",
-                 "I compared the fingerprint on the other device."),
-            manual);
-        l->addRow(verified);
+        l->addRow(label(
+            text("Adresse und Fingerabdruck stehen unter „Dieses Gerät“ auf "
+                 "dem anderen Computer. Danach vergleicht ihr den Code.",
+                 "Address and fingerprint are under This device on the other "
+                 "computer. You then compare the code."),
+            manual));
         auto *approve = button(
             text("Verbindung anfragen", "Request connection"), manual,
-            [this, manual, address, fp, verified] {
-              if (!verified->isChecked())
-                return;
-              action("peer.connect", {{"url", address->text().trimmed()},
-                                      {"fingerprint", fp->text().trimmed()}});
+            [this, guard, manual, address, fp] {
+              client.request(
+                  "pairing.start",
+                  {{"url", address->text().trimmed()},
+                   {"fingerprint", fp->text().trimmed().toLower().remove(':')}},
+                  [this, guard](QJsonValue v, QString e) {
+                    if (!guard)
+                      return;
+                    if (!e.isEmpty())
+                      issue(e);
+                    else
+                      guard->setProperty("session",
+                                         v.toObject()["id"].toString());
+                    client.refresh();
+                  });
               manual->close();
             });
-        approve->setEnabled(false);
-        connect(verified, &QCheckBox::toggled, approve,
-                &QPushButton::setEnabled);
         l->addRow(approve);
         manual->show();
       }));
@@ -1478,7 +1364,7 @@ void MainWindow::connectDevice(const QString &session) {
   footer->addWidget(
       button(text("Fertig", "Done"), dialog, [dialog] { dialog->close(); }));
   layout->addLayout(footer);
-  const auto update = [this, guard, nearby, legacyRequests, stack, peer, code,
+  const auto update = [this, guard, nearby, stack, peer, code,
                        progress, automatic, confirm] {
     if (!guard)
       return;
@@ -1539,23 +1425,6 @@ void MainWindow::connectDevice(const QString &session) {
           nearby);
       row->setFlags(Qt::NoItemFlags);
     }
-    legacyRequests->clear();
-    for (const auto &v : current["pairRequests"].toArray()) {
-      const auto p = v.toObject();
-      auto *row = new QListWidgetItem(legacyRequests);
-      auto *w = new QWidget(legacyRequests);
-      auto *l = new QHBoxLayout(w);
-      l->addWidget(label(p["name"].toString(), w), 1);
-      l->addWidget(button(text("Zulassen", "Allow"), w, [this, p] {
-        action("pair.approve", {{"id", p["id"]}});
-      }));
-      l->addWidget(button(text("Ablehnen", "Deny"), w, [this, p] {
-        action("pair.deny", {{"id", p["id"]}});
-      }));
-      row->setSizeHint(w->sizeHint());
-      legacyRequests->setItemWidget(row, w);
-    }
-    legacyRequests->setVisible(legacyRequests->count() > 0);
   };
   connect(&client, &DaemonClient::statusChanged, dialog, update);
   const auto begin = [this, guard](QListWidgetItem *item) {
@@ -1602,9 +1471,7 @@ void MainWindow::manageDevice() {
       {"autoAccept", text("Eingehende Dateien automatisch annehmen",
                           "Automatically accept incoming files")},
       {"canClipboard",
-       text("Zwischenablagetext austauschen", "Exchange clipboard text")},
-      {"canRelay",
-       text("Browser-Vermittlung erlauben", "Allow browser relay")}};
+       text("Zwischenablagetext austauschen", "Exchange clipboard text")}};
   for (auto it = names.begin(); it != names.end(); ++it) {
     auto *check = new QCheckBox(it.value(), dialog);
     check->setChecked(device[it.key()].toBool());
@@ -1672,135 +1539,6 @@ void MainWindow::quit() {
                  "The service could not stop cleanly. Please retry."));
     }
   });
-}
-
-void MainWindow::shares() {
-  auto *dialog = new QDialog(this);
-  dialog->setAttribute(Qt::WA_DeleteOnClose);
-  QPointer<QDialog> guard = dialog;
-  dialog->setWindowTitle("Quick Share");
-  dialog->resize(690, 420);
-  auto *layout = new QVBoxLayout(dialog);
-  layout->addWidget(label(
-      text("Freigaben im lokalen Netzwerk", "Shares on your local network"),
-      dialog, true));
-  auto *list = new QListWidget(dialog);
-  layout->addWidget(list, 1);
-  const auto reload = [this, guard, list] {
-    client.request("share.list", {},
-                   [this, guard, list](QJsonValue value, QString e) {
-                     if (!guard)
-                       return;
-                     if (!e.isEmpty()) {
-                       issue(e);
-                       return;
-                     }
-                     list->clear();
-                     for (const auto &v : value.toArray()) {
-                       const auto share = v.toObject();
-                       auto *row = new QListWidgetItem(
-                           share["name"].toString() + " · " +
-                               bytes(share["totalBytes"].toInteger()) +
-                               (share["revoked"].toBool()
-                                    ? text(" · widerrufen", " · revoked")
-                                    : QString{}),
-                           list);
-                       row->setData(Qt::UserRole, share);
-                     }
-                   });
-  };
-  auto *actions = new QHBoxLayout;
-  actions->addWidget(button(
-      text("Freigabe erstellen …", "Create share …"), dialog,
-      [this, guard, reload] {
-        if (!guard)
-          return;
-        const auto paths = QFileDialog::getOpenFileNames(
-            guard, text("Dateien freigeben", "Share files"));
-        if (paths.isEmpty() || !guard)
-          return;
-        auto *create = new QDialog(guard);
-        create->setAttribute(Qt::WA_DeleteOnClose);
-        QPointer<QDialog> createGuard = create;
-        auto *form = new QFormLayout(create);
-        auto *name = new QLineEdit(QFileInfo(paths.first()).fileName(), create);
-        auto *password = new QLineEdit(create);
-        password->setEchoMode(QLineEdit::Password);
-        auto *limit = new QSpinBox(create);
-        limit->setRange(0, 1000000);
-        limit->setSpecialValueText(text("Unbegrenzt", "Unlimited"));
-        auto *expiry = new QCheckBox(
-            text("Ablaufdatum verwenden", "Set an expiry date"), create);
-        auto *at =
-            new QDateTimeEdit(QDateTime::currentDateTime().addDays(1), create);
-        at->setCalendarPopup(true);
-        at->setEnabled(false);
-        connect(expiry, &QCheckBox::toggled, at, &QWidget::setEnabled);
-        form->addRow(text("Name", "Name"), name);
-        form->addRow(text("Passwort · optional", "Password · optional"),
-                     password);
-        form->addRow(text("Downloadlimit", "Download limit"), limit);
-        form->addRow(expiry);
-        form->addRow(at);
-        auto *feedback = label("", create);
-        form->addRow(feedback);
-        form->addRow(
-            button(text("Freigabe erstellen", "Create share"), create,
-                   [this, createGuard, name, password, limit, expiry, at, paths,
-                    feedback, reload] {
-                     QJsonArray files;
-                     for (const auto &p : paths)
-                       files.append(p);
-                     QJsonObject input{{"name", name->text()},
-                                       {"paths", files},
-                                       {"password", password->text()},
-                                       {"maxDownloads", limit->value()}};
-                     if (expiry->isChecked())
-                       input["expiresAt"] =
-                           at->dateTime().toUTC().toString(Qt::ISODate);
-                     client.request("share.create", input,
-                                    [this, createGuard, feedback,
-                                     reload](QJsonValue, QString e) {
-                                      if (!createGuard)
-                                        return;
-                                      if (!e.isEmpty()) {
-                                        feedback->setText(e);
-                                        return;
-                                      }
-                                      createGuard->close();
-                                      reload();
-                                      client.refresh();
-                                    });
-                   }));
-        create->show();
-      }));
-  actions->addWidget(button(text("Link kopieren", "Copy link"), dialog, [list] {
-    if (const auto *row = list->currentItem()) {
-      const auto share = row->data(Qt::UserRole).toJsonObject();
-      if (!share["revoked"].toBool())
-        QApplication::clipboard()->setText(share["url"].toString());
-    }
-  }));
-  actions->addWidget(
-      button(text("Widerrufen", "Revoke"), dialog, [this, guard, list, reload] {
-        const auto *row = list->currentItem();
-        if (!row)
-          return;
-        client.request("share.revoke",
-                       {{"id", row->data(Qt::UserRole).toJsonObject()["id"]}},
-                       [this, guard, reload](QJsonValue, QString e) {
-                         if (!guard)
-                           return;
-                         if (!e.isEmpty())
-                           issue(e);
-                         reload();
-                       });
-      }));
-  layout->addLayout(actions);
-  layout->addWidget(
-      button(text("Fertig", "Done"), dialog, [dialog] { dialog->close(); }));
-  reload();
-  dialog->show();
 }
 
 void MainWindow::clipboard() {
@@ -1897,54 +1635,49 @@ void MainWindow::clipboard() {
   dialog->show();
 }
 
-void MainWindow::browserConnection() {
+void MainWindow::thisDevice() {
   auto *dialog = new QDialog(this);
   dialog->setAttribute(Qt::WA_DeleteOnClose);
-  QPointer<QDialog> guard = dialog;
-  dialog->setWindowTitle(text("Browser verbinden", "Connect a browser"));
+  dialog->setWindowTitle(text("Dieses Gerät", "This device"));
   auto *layout = new QVBoxLayout(dialog);
+  layout->addWidget(label(client.status()["name"].toString(), dialog, true));
   layout->addWidget(
-      label(text("Handy oder Tablet verbinden", "Connect a phone or tablet"),
-            dialog, true));
-  layout->addWidget(
-      label(text("Öffne diese Adresse im selben Netzwerk. Die Anleitung führt "
-                 "durch Zertifikatsvertrauen und Verbindung.",
-                 "Open this address on the same network. The guide explains "
-                 "certificate trust and connection."),
+      label(text("Wähle diesen Namen auf dem anderen Computer in AirLink aus "
+                 "und vergleiche dort den achtstelligen Code.",
+                 "Select this name in AirLink on the other computer and "
+                 "compare the eight-digit code there."),
             dialog));
-  const auto urls = client.status()["setupURLs"].toArray();
-  const auto address = urls.isEmpty() ? QString{} : urls.first().toString();
-  auto *url = label(address, dialog);
-  url->setTextInteractionFlags(Qt::TextSelectableByMouse);
-  layout->addWidget(url);
-  layout->addWidget(
-      button(text("Adresse kopieren", "Copy address"), dialog,
-             [address] { QApplication::clipboard()->setText(address); }));
-  auto *qr = new QLabel(dialog);
-  qr->setAlignment(Qt::AlignCenter);
-  layout->addWidget(qr);
-  layout->addWidget(label(text("Zertifikatsidentität dieses Computers:",
-                               "Certificate identity of this computer:"),
+  layout->addWidget(label(text("Adresse für eine manuelle Verbindung:",
+                               "Address for a manual connection:"),
                           dialog));
-  auto *fingerprint = label(client.status()["fingerprint"].toString(), dialog);
+  for (const auto &value : client.status()["urls"].toArray()) {
+    const auto address = value.toString();
+    if (address.contains("localhost"))
+      continue;
+    auto *row = new QHBoxLayout;
+    auto *url = label(address, dialog);
+    url->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    row->addWidget(url, 1);
+    row->addWidget(
+        button(text("Kopieren", "Copy"), dialog,
+               [address] { QApplication::clipboard()->setText(address); }));
+    layout->addLayout(row);
+  }
+  layout->addWidget(
+      label(text("Fingerabdruck dieses Geräts:", "This device's fingerprint:"),
+            dialog));
+  const auto fingerprintText = client.status()["fingerprint"].toString();
+  auto *fingerprint = label(fingerprintText, dialog);
   fingerprint->setTextInteractionFlags(Qt::TextSelectableByMouse);
   layout->addWidget(fingerprint);
+  layout->addWidget(button(
+      text("Fingerabdruck kopieren", "Copy fingerprint"), dialog,
+      [fingerprintText] { QApplication::clipboard()->setText(fingerprintText); }));
   layout->addWidget(
       button(text("Fertig", "Done"), dialog, [dialog] { dialog->close(); }));
-  client.request("connection.qr", {{"url", address}},
-                 [guard, qr](QJsonValue value, QString e) {
-                   if (!guard || !e.isEmpty())
-                     return;
-                   QPixmap image;
-                   if (image.loadFromData(QByteArray::fromBase64(
-                           value.toObject()["png"].toString().toLatin1())))
-                     qr->setPixmap(image.scaled(256, 256, Qt::KeepAspectRatio,
-                                                Qt::SmoothTransformation));
-                 });
-  dialog->resize(520, 640);
+  dialog->resize(520, 360);
   dialog->show();
 }
-
 void MainWindow::fetchUpdate(const QUrl &url, qint64 limit,
                              std::function<void(QByteArray, QString)> done) {
   QNetworkRequest request(url);

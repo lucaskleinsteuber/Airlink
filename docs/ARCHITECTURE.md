@@ -1,20 +1,21 @@
-# AirLink architecture — 0.12 beta
+# AirLink architecture — 0.13 (in development)
 
-AirLink is local-first. One Go service owns transfer state and network policy; native macOS, Linux and Windows apps own their private service process and present the same recipient/setup/settings concepts. The React/TypeScript browser interface is compiled into the service. Normal transfers require no external resources or account.
+AirLink is local-first and desktop-only. One Go service owns transfer state and network policy; native macOS, Linux and Windows apps own their private service process and present the same recipient/setup/settings concepts. Normal transfers require no external resources or account.
+
+**0.13 scope change:** the browser/phone interface (React web app, plain-HTTP certificate setup port, certificate downloads, guest status/events), Quick Share links, browser relay, duplicate detection/extension sorting, legacy pairing v1/manual fingerprint approval and the localhost admin console were removed. Clipboard sharing between paired desktops remains. Sections below that still describe the 0.12 transfer protocol will be replaced together with the new transfer protocol.
 
 ## Processes and transport
 
-- **Go:** HTTPS/TLS 1.3 REST and SSE under `/api/v1`, mDNS discovery, peer trust, bounded transfer slots, persistent queue/checkpoints, checksums, shares, clipboard and relay policy. SQLite stores metadata; payloads stream to/from selected files.
+- **Go:** HTTPS/TLS 1.3 peer API under `/api/v1` (pairing v2, transfers, clipboard), mDNS discovery, peer trust, bounded transfer slots, persistent queue/checkpoints and checksums. SQLite stores metadata; payloads stream to/from selected files.
 - **macOS:** SwiftUI/AppKit, macOS 14+, menu bar, Finder Services, shortcut and login integration. Sparkle handles signed updates through the graceful termination path.
 - **Linux:** C++20 and Qt 6 Widgets with a minimum Qt API of 6.4; KDE/Wayland is primary. QProcess pipes, system widgets, native/portal file dialogs, tray and a private single-instance activation socket. Qt Core tests never construct QApplication.
 - **Windows:** self-contained WPF app and matched Go helper, native pickers/drop, tray, per-user NSIS Setup and NetSparkle updates. The installer does not require a separately installed .NET runtime.
-- **Browser:** connects to an approved host, uploads/downloads offered content and reconnects with the browser's actual capabilities. It performs no independent LAN discovery. iOS/iPadOS certificate trust and foreground-transfer restrictions are explicit.
 
 Private process-pipe RPC frames contain IDs and correlated results/errors. Replies may complete out of order. The public LAN API never gets the local administration rights or private filesystem mappings of this channel. Existing application identifiers, state locations and device identities stay stable across the GitHub account rename.
 
 ## Transfer behavior and persistence
 
-Services send directly to each other; browsers send to/download from their chosen host. A source is referenced in place, never duplicated as a preparation step. A folder retains its relative hierarchy, including empty directories. File/folder name collisions allocate a distinct result instead of overwriting or merging existing content.
+Services send directly to each other. A source is referenced in place, never duplicated as a preparation step. A folder retains its relative hierarchy, including empty directories. File/folder name collisions allocate a distinct result instead of overwriting or merging existing content.
 
 There are two outgoing and two incoming file slots by default. Blocks are at most 8 MiB, with a shorter final block. Each active sender can prepare at most one additional block while the current HTTP request is in flight. Mutable request buffers are never pooled or reused by a later request.
 
@@ -24,25 +25,25 @@ Starting with 0.12.0-beta.2, SQLite keeps a compact transfer header and individu
 
 Existing inline transfer records migrate in one durable transaction, preserving source identities, progress, offer replay IDs and activity timestamps. Failure rolls back the migration. A format prefix causes older services to refuse the new store rather than misinterpret a header as a complete transfer. **An upgraded data directory cannot be opened by Beta 1 or older.** Upgrades preserve pairings, settings and received files; downgrading an upgraded transfer database is unsupported. No received file or source is copied as part of migration.
 
-Historical receive destinations remain authoritative. Changing settings affects new transfers, and removing history affects metadata rather than originals/received files. Only verified managed receives enter the duplicate index. Optional duplicate detection and extension sorting start off; Skip never deletes an indexed existing file, and transferred folders stay together.
+Historical receive destinations remain authoritative. Changing settings affects new transfers, and removing history affects metadata rather than originals/received files. Transferred folders stay together.
 
 ## Responsive control and native state
 
 Current apps poll `status.summary` rather than fetching all history/manifests. The summary is generated directly from engine records with bounded previews and separate active counts. History and file details load in 50-entry pages, with a hard maximum of 100 per request. Full share/clipboard/statistics tooling loads on demand. Legacy full status remains for compatible clients.
 
-Preparation is an asynchronous, bounded job with a replay identity and explicit cancel/status methods. Source walking, Quick Share capture and duplicate validation do not monopolize the serial pipe loop. EOF/shutdown cancels owned operations; a failed graceful stop prevents application replacement.
+Preparation is an asynchronous, bounded job with a replay identity and explicit cancel/status methods. Source walking does not monopolize the serial pipe loop. EOF/shutdown cancels owned operations; a failed graceful stop prevents application replacement.
 
 Each send binds an immutable recipient/source snapshot before the picker/drop submission. Later navigation and source additions/reselection cannot alter it or be removed by its acknowledgment. Settings use a baseline plus a deliberate draft and apply edited fields to the newest saved snapshot. Request/mutation generations reject stale tool results; transfer timestamps prevent a delayed summary from reactivating a newer completed record. Hidden windows defer transfer-list work and refresh when reopened, while services, notifications and tray state continue.
 
-The [0.12 protocol additions](API-0.12.md) define the private methods and TLS comparison-code flow. Earlier [API](API.md), [shares/clipboard](API-0.2.md), [relay/history/limits](API-0.3.md) and [organization](API-0.4.md) contracts remain available.
+The [0.12 protocol additions](API-0.12.md) define the private methods and TLS comparison-code flow. Earlier API documents describe 0.12 and older; browser, share, relay and organization endpoints no longer exist.
 
 The native About settings offer an explicit local diagnostic export. Its private-pipe report is constructed from an allowlist of version/platform information, a Go heap sample and aggregate transfer/device counts. It contains no file/device names, addresses, private paths, identifiers, content hashes, credentials, clipboard text or raw logs, and is never uploaded automatically. Heap allocation is not total process RSS. Recoverable sender failures expose fixed localized guidance and an explicit retry action; the action retains the same sources, transfer ID and remote checkpoints. Changed sources, integrity failures, cancellation and terminal receiver failures require a new explicit send.
 
-## Trust and shared content
+## Trust
 
-Every service has its own persistent local identity. Desktop pairing v2 independently derives an eight-digit code from the original TLS exporter plus both device identities/nonces; users compare it on both screens. Only mutual confirmation grants credentials. Durable handoff receipts handle loss/restart without duplicate devices, while revocation prevents late resurrection. Automatic acceptance is a separate explicit choice for each local receiving direction. Old clients use the explicitly verified full-fingerprint path.
+Every service has its own persistent local identity. Desktop pairing v2 independently derives an eight-digit code from the original TLS exporter plus both device identities/nonces; users compare it on both screens. Only mutual confirmation grants credentials. Durable handoff receipts handle loss/restart without duplicate devices, while revocation prevents late resurrection. Automatic acceptance is a separate explicit choice for each local receiving direction. Manual address entry uses the same comparison-code flow.
 
-Browsers follow per-host certificate trust and approval. They receive only scoped cookies/permissions and offered content. Quick Share uses fragment secrets, suitable password hashes, expiry/revocation and limits counted per download session rather than per Range request. Clipboard reads/copies are explicit and permission-controlled. Browser relay uses bounded streams and does not make a full extra payload copy on the host. No remote peer receives general filesystem access.
+Clipboard reads/copies are explicit and permission-controlled. No remote peer receives general filesystem access.
 
 ## Distribution and updates
 

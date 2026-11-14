@@ -26,8 +26,6 @@ internal sealed class Controller : INotifyPropertyChanged
     private readonly StatusRefreshGate refreshes = new();
     private readonly TransferDraft draft = new();
     private string? helperPath;
-    private string? pendingPeerFingerprint;
-    private DateTimeOffset pendingPeerAt;
     private readonly DesktopNoticeTracker notices = new();
     private string? actionError, serviceError;
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -70,7 +68,7 @@ internal sealed class Controller : INotifyPropertyChanged
     public string T(string de, string en) => English ? en : de;
     public string DataDirectory => Path.Combine(Environment.GetEnvironmentVariable("APPDATA") ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AirLink");
     public Device? SelectedDevice => Status?.Devices.FirstOrDefault(d => d.Id == SelectedDeviceId);
-    public int ActiveCount => Status is { Summary: true } summary ? summary.ActiveTransferCount + summary.ActiveRelayCount : (Status?.Transfers.Count(t => t.IsActive) ?? 0) + (Status?.Relays.Count(r => r.State is not ("delivered" or "cancelled" or "failed")) ?? 0);
+    public int ActiveCount => Status is { Summary: true } summary ? summary.ActiveTransferCount : Status?.Transfers.Count(t => t.IsActive) ?? 0;
     public string Version => Status?.Version ?? "0.12.0-beta.1";
 
     public Controller(Dispatcher dispatcher)
@@ -136,21 +134,10 @@ internal sealed class Controller : INotifyPropertyChanged
         {
             var next = await client.RequestAsync<HostStatus>("status.summary", ct: lifetime.Token);
             if (!refreshes.IsCurrent(ticket.Value)) return;
-            if (Status is { } previous) { next.Shares = previous.Shares; next.Statistics = previous.Statistics; if (observedTools.Contains("clipboard")) next.Clipboard = previous.Clipboard; }
+            if (Status is { } previous) { next.Statistics = previous.Statistics; if (observedTools.Contains("clipboard")) next.Clipboard = previous.Clipboard; }
             Status = next; Ready = true; serviceError = null;
             History = DesktopTransferSelection.MergeHistory(History, next.Transfers);
             draft.RefreshDevices(next.Devices);
-            if (pendingPeerFingerprint is not null && next.Devices.FirstOrDefault(d => d.Paired && d.Kind == "engine" && string.Equals(d.Fingerprint, pendingPeerFingerprint, StringComparison.OrdinalIgnoreCase)) is { } paired)
-            {
-                pendingPeerFingerprint = null;
-                if (SelectedDeviceId is null || SelectedDevice?.Fingerprint == paired.Fingerprint) SelectedDeviceId = paired.Id;
-                Notice = T("Gerät verbunden. Du kannst Dateien senden.", "Device connected. You can send files.");
-            }
-            else if (pendingPeerFingerprint is not null && DateTimeOffset.UtcNow - pendingPeerAt >= TimeSpan.FromMinutes(5))
-            {
-                pendingPeerFingerprint = null;
-                Notice = T("Die Kopplung wurde nicht bestätigt. Du kannst sie erneut anfragen.", "Pairing was not confirmed. You can request it again.");
-            }
             foreach (var notice in notices.Observe(next)) NoticeRaised?.Invoke(notice);
             Changed();
         }
@@ -216,7 +203,7 @@ internal sealed class Controller : INotifyPropertyChanged
         finally { if (mutating) toolGeneration++; }
     }
 
-    private static bool IsToolMutation(string method) => method is "share.create" or "share.revoke" or "clipboard.send" or "clipboard.dismiss";
+    private static bool IsToolMutation(string method) => method is "clipboard.send" or "clipboard.dismiss";
 
     public async Task CommandAsync(string method, string id)
     {
@@ -255,11 +242,10 @@ internal sealed class Controller : INotifyPropertyChanged
         if (!Ready) return;
         var revision = ++toolGeneration;
         foreach (var name in observedTools.ToArray()) {
-            var method = name == "shares" ? "share.list" : name == "clipboard" ? "clipboard.list" : "statistics.get";
+            var method = name == "clipboard" ? "clipboard.list" : "statistics.get";
             var data = await client.RequestAsync(method, ct: lifetime.Token);
             if (revision != toolGeneration || !observedTools.Contains(name) || Status is null) continue;
-            if (name == "shares") Status.Shares = data.Deserialize<List<Share>>(ProtocolJson.Options) ?? [];
-            else if (name == "clipboard") Status.Clipboard = data.Deserialize<List<ClipboardMessage>>(ProtocolJson.Options) ?? [];
+            if (name == "clipboard") Status.Clipboard = data.Deserialize<List<ClipboardMessage>>(ProtocolJson.Options) ?? [];
             else Status.Statistics = data.Deserialize<Statistics>(ProtocolJson.Options) ?? new();
             Changed();
         }
@@ -274,7 +260,7 @@ internal sealed class Controller : INotifyPropertyChanged
             HistoryCursor = page.NextCursor;
         } finally { HistoryLoading = false; Changed(); }
     }
-    public Task<PairingSession> StartPairingAsync(string url) => RequestAsync<PairingSession>("pairing.start", new { url });
+    public Task<PairingSession> StartPairingAsync(string url, string fingerprint) => RequestAsync<PairingSession>("pairing.start", new { url, fingerprint });
     public async Task ConfirmPairingAsync(string id, bool automaticReceive) { await RequestAsync("pairing.confirm", new { id, automaticReceive }); await RefreshAsync(true); }
     public void UpdateAvailable(string version) { Notice = T("Neue Beta verfügbar: ", "New beta available: ") + version + T(" · Einstellungen → Updates", " · Settings → Updates"); NoticeRaised?.Invoke(new(DesktopNoticeKind.Update, version, "AirLink", version)); Changed(); }
 
@@ -286,21 +272,6 @@ internal sealed class Controller : INotifyPropertyChanged
             throw new InvalidOperationException(T("Dieses Gerät muss verbunden sein und Dateien senden dürfen.", "This device must be paired and allowed to send files."));
         var copy = ProtocolJson.Clone(current); copy.AutoAccept = automatic;
         await SaveDeviceAsync(copy);
-    }
-
-    public async Task ConnectAsync(string address, string fingerprint, bool receiveAutomatically)
-    {
-        RequireReady();
-        var draft = new ConnectionDraft(address, fingerprint, receiveAutomatically);
-        if (!draft.IsValid)
-            throw new ArgumentException(T("Eine HTTPS-Adresse und den geprüften Fingerabdruck mit 64 Zeichen eingeben.", "Enter an HTTPS address and the verified 64-character fingerprint."));
-        var url = draft.NormalizedAddress;
-        var fp = draft.NormalizedFingerprint;
-        await client.RequestAsync(receiveAutomatically ? "peer.connectTrusted" : "peer.connect", new { url, fingerprint = fp }, lifetime.Token);
-        pendingPeerFingerprint = fp;
-        pendingPeerAt = DateTimeOffset.UtcNow;
-        Notice = T("Kopplung angefragt. Bestätige sie am anderen Gerät.", "Pairing requested. Approve it on the other device.");
-        Changed();
     }
 
     public void AddPaths(IEnumerable<string> paths)
@@ -399,20 +370,6 @@ internal sealed class Controller : INotifyPropertyChanged
         else if (fileId is not null) Shell.Reveal(result.Items.FirstOrDefault(i => i.FileId == fileId)?.Path ?? throw new IOException(T("Die empfangene Datei ist nicht mehr verfügbar.", "The received file is no longer available.")));
         else if (result.Items.Count == 1) Shell.Reveal(result.Items[0].Path);
         else Shell.OpenFolder(result.Directory);
-    }
-
-    public async Task ResolveAsync(Transfer transfer, TransferFile file, string action, string? candidate = null)
-    {
-        RequireReady();
-        await client.RequestAsync<Transfer>("duplicate.resolve", new { transferId = transfer.Id, fileId = file.Id, action, candidateId = candidate }, lifetime.Token);
-        await RefreshAsync(force: true);
-    }
-
-    public async Task RevealCandidateAsync(string candidateId)
-    {
-        RequireReady();
-        var result = await client.RequestAsync("duplicate.path", new { candidateId }, lifetime.Token);
-        Shell.Reveal(result.GetProperty("path").GetString() ?? throw new IOException(T("Datei nicht mehr verfügbar.", "File is no longer available.")));
     }
 
     public void OpenReceiveFolder()

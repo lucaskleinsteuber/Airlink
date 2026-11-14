@@ -4,10 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,29 +62,6 @@ func TestSecurityPinnedTLSRejectsWrongFingerprint(t *testing.T) {
 	}
 }
 
-func TestSecurityOriginHostAndAuthenticationGuards(t *testing.T) {
-	s := newSecurityServer(t)
-	if w := securityRequest(s, "GET", "/api/v1/status", "", "", nil); w.Code != http.StatusUnauthorized {
-		t.Fatalf("unauthenticated status %d: %s", w.Code, w.Body)
-	}
-	if w := securityRequest(s, "POST", "/api/v1/pair/request", "", "https://attacker.invalid", []byte(`{"name":"Attacker","kind":"browser"}`)); w.Code != http.StatusForbidden {
-		t.Fatalf("cross-origin pairing %d", w.Code)
-	}
-	r := httptest.NewRequest("GET", "https://attacker.invalid:43871/api/v1/info", nil)
-	w := httptest.NewRecorder()
-	s.handler().ServeHTTP(w, r)
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("DNS rebinding host accepted: %d", w.Code)
-	}
-	r = httptest.NewRequest("POST", securityURL(s)+"/api/v1/pair/request", strings.NewReader(`{"name":"Attacker","kind":"browser"}`))
-	r.Header.Set("Sec-Fetch-Site", "cross-site")
-	w = httptest.NewRecorder()
-	s.handler().ServeHTTP(w, r)
-	if w.Code != http.StatusForbidden {
-		t.Fatal("cross-site request without Origin accepted")
-	}
-}
-
 func TestSecurityGuestIsolationAndLocalPathRedaction(t *testing.T) {
 	s := newSecurityServer(t)
 	a, tokenA := securityDevice(t, s, "security-a")
@@ -113,10 +88,6 @@ func TestSecurityGuestIsolationAndLocalPathRedaction(t *testing.T) {
 	w = securityRequest(s, "POST", "/api/v1/transfers/"+created.ID+"/cancel", tokenB, "", []byte(`{}`))
 	if w.Code != 404 {
 		t.Fatalf("other guest changed transfer: %d", w.Code)
-	}
-	w = securityRequest(s, "GET", "/api/v1/status", tokenB, "", nil)
-	if strings.Contains(w.Body.String(), created.ID) || strings.Contains(w.Body.String(), "private-name.txt") {
-		t.Fatal("guest status exposed another guest transfer")
 	}
 	w = securityRequest(s, "GET", "/api/v1/transfers/"+created.ID, tokenA, "", nil)
 	if w.Code != 200 || strings.Contains(w.Body.String(), "Destination") {
@@ -164,36 +135,22 @@ func TestSecurityFilesystemErrorsDoNotExposeSourcePath(t *testing.T) {
 	}
 }
 
-func TestSecurityPublicBootstrapContainsOnlyTrustMaterial(t *testing.T) {
+func TestSecurityHostAuthenticationAndRemovedBrowserSurface(t *testing.T) {
 	s := newSecurityServer(t)
-	base := strings.TrimSuffix(s.setupURLs[len(s.setupURLs)-1], "/setup")
-	client := &http.Client{}
-	for _, path := range []string{"/setup", "/certificate.pem"} {
-		resp, err := client.Get(base + path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		b, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil || resp.StatusCode != 200 {
-			t.Fatal("bootstrap unavailable", err, resp.StatusCode)
-		}
-		admin, _ := url.Parse(s.adminURL)
-		secret := admin.Query().Get("token")
-		for _, forbidden := range []string{s.opts.DataDir, secret, "identity-key.pem", "BEGIN PRIVATE KEY"} {
-			if forbidden != "" && bytes.Contains(b, []byte(forbidden)) {
-				t.Fatalf("bootstrap exposed %q", forbidden)
-			}
-		}
+	if w := securityRequest(s, "GET", "/api/v1/transfers/x", "", "", nil); w.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated peer API %d: %s", w.Code, w.Body)
 	}
-	for _, path := range []string{"/control", "/api/v1/status", "/api/v1/transfers"} {
-		resp, err := client.Get(base + path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		resp.Body.Close()
-		if resp.StatusCode < 400 {
-			t.Fatalf("bootstrap exposed administrative path %s: %d", path, resp.StatusCode)
+	r := httptest.NewRequest("GET", "https://attacker.invalid:43871/api/v1/info", nil)
+	w := httptest.NewRecorder()
+	s.handler().ServeHTTP(w, r)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("DNS rebinding host accepted: %d", w.Code)
+	}
+	// 0.13 has no browser interface: no web app, setup page, certificate
+	// download, legacy pairing, guest status or event stream.
+	for _, route := range []struct{ method, path string }{{"GET", "/"}, {"GET", "/setup"}, {"GET", "/certificate.pem"}, {"GET", "/certificate.mobileconfig"}, {"POST", "/api/v1/pair/request"}, {"POST", "/api/v1/pair/poll"}, {"GET", "/api/v1/status"}, {"GET", "/api/v1/events"}, {"GET", "/api/v1/public/shares/x"}} {
+		if w := securityRequest(s, route.method, route.path, "", "", nil); w.Code < 400 {
+			t.Fatalf("removed route %s %s answered %d", route.method, route.path, w.Code)
 		}
 	}
 }

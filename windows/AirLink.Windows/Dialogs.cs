@@ -38,7 +38,6 @@ internal static class Dialogs
                 foreach (var file in page.Files) {
                     files.Children.Add(Theme.Text(file.Path, 13, true));
                     files.Children.Add(Theme.Text(c.Bytes(file.Size), 12, secondary: true));
-                    if (file.DuplicateState == "pending") files.Children.Add(Theme.Button(c.T("Duplikat prüfen", "Review duplicate"), () => Duplicate(form.Window, c, transfer, file)));
                 }
                 offset = page.NextOffset;
             } finally { loading = false; }
@@ -61,14 +60,13 @@ internal static class Dialogs
         send.Checked += (_, _) => automatic.IsEnabled = true;
         send.Unchecked += (_, _) => { automatic.IsChecked = false; automatic.IsEnabled = false; };
         var clipboard = form.Check(c.T("Darf Zwischenablagentext austauschen", "May exchange clipboard text"), copy.CanClipboard);
-        var relay = copy.Kind == "browser" ? form.Check(c.T("Darf Browserübertragungen vermitteln", "May take part in browser relay transfers"), copy.CanRelay) : null;
         if (!string.IsNullOrEmpty(copy.Fingerprint))
             form.ReadOnly(c.T("Gespeicherter Fingerabdruck", "Saved fingerprint"), copy.Fingerprint);
         form.Commit(c.T("Speichern", "Save"), async () =>
         {
             copy.CanSend = send.IsChecked == true; copy.CanReceive = receive.IsChecked == true;
             copy.AutoAccept = copy.CanSend && automatic.IsChecked == true;
-            copy.CanClipboard = clipboard.IsChecked == true; if (relay is not null) copy.CanRelay = relay.IsChecked == true;
+            copy.CanClipboard = clipboard.IsChecked == true;
             await c.SaveDeviceAsync(copy);
         });
         form.Action(c.T("Kopplung widerrufen", "Revoke pairing"), async () =>
@@ -82,60 +80,16 @@ internal static class Dialogs
         form.Show();
     }
 
-    public static void Duplicate(Window owner, Controller c, Transfer transfer, TransferFile file)
-    {
-        var form = new Form(owner, c.T("Identische Datei gefunden", "Identical file found"), 620);
-        form.Help(file.Path);
-        form.Help(c.T("Eine Datei mit demselben Inhalt ist bereits vorhanden. Behalte eine zusätzliche Kopie oder überspringe diese Datei. Vorhandene Dateien werden nicht gelöscht.",
-            "A file with the same content already exists. Keep an additional copy or skip this file. Existing files will be preserved."));
-        bool Pending()
-        {
-            var current = c.Status?.Transfers.FirstOrDefault(t => t.Id == transfer.Id);
-            return current?.State == "waitingDuplicate";
-        }
-        async Task Resolve(string action, string? candidate)
-        {
-            if (!Pending()) throw new InvalidOperationException(c.T("Diese Entscheidung ist nicht mehr offen. Schließe das Fenster und prüfe die Übertragung.",
-                "This decision is no longer pending. Close this window and check the transfer."));
-            await c.ResolveAsync(transfer, file, action, candidate);
-        }
-        form.Commit(c.T("Zusätzliche Kopie behalten", "Keep an additional copy"), () => Resolve("keep", null));
-        foreach (var candidate in file.DuplicateCandidates)
-        {
-            var row = new StackPanel { Margin = new Thickness(0, 10, 0, 2) };
-            row.Children.Add(Theme.Text(c.T("Vorhandene Datei", "Existing file") + " · " + c.Bytes(candidate.Size), bold: true));
-            if (!string.IsNullOrWhiteSpace(candidate.Path)) row.Children.Add(Theme.Text(candidate.Path, 12, secondary: true));
-            var actions = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
-            var reveal = Theme.Button(c.T("Im Explorer zeigen", "Show in Explorer"), () => { });
-            reveal.Click += async (_, _) => await form.Execute(async () => { await c.RevealCandidateAsync(candidate.Id); return false; });
-            var skip = Theme.Button(c.T("Empfangene Datei überspringen", "Skip incoming file"), () => { });
-            skip.Click += async (_, _) => await form.Execute(async () => { await Resolve("skip", candidate.Id); return true; });
-            actions.Children.Add(reveal); actions.Children.Add(skip); row.Children.Add(actions); form.Add(Theme.Card(row));
-        }
-        form.Show();
-    }
-
     public static void ConnectionInfo(Window owner, Controller c)
     {
         if (c.Status is null) return;
         var form = new Form(owner, c.T("Dieses Gerät", "This device"), 650);
         form.Help(c.Status.Name);
-        form.Help(c.T("Vergleiche diese Angaben beim Verbinden eines Computers. Über „Gerät hinzufügen“ wählst du den anderen Computer im Netzwerk aus.",
-            "Compare these details when connecting a computer. Use Add device to choose the other computer on your network."));
+        form.Help(c.T("Wähle diesen PC auf dem anderen Computer in AirLink aus und vergleicht dann den achtstelligen Code. Adresse und Fingerabdruck brauchst du nur für eine manuelle Verbindung.",
+            "Select this PC in AirLink on the other computer, then compare the eight-digit code. The address and fingerprint are only needed for a manual connection."));
         foreach (var url in c.Status.Urls)
             CopyField(form, c, c.T("HTTPS-Adresse", "HTTPS address"), url);
         CopyField(form, c, c.T("Fingerabdruck dieses PCs", "This PC's fingerprint"), new ConnectionDraft("", c.Status.Fingerprint).ComparisonFingerprint);
-        var browser = new StackPanel();
-        browser.Children.Add(Theme.Text(c.T("iPhone, iPad oder Android", "iPhone, iPad or Android"), 15, true));
-        browser.Children.Add(Theme.Text(c.T("Öffne auf dem Handy oder Tablet eine dieser Adressen im selben Netzwerk. Die Seite führt durch die Zertifikatsfreigabe. Vergleiche dabei den Fingerabdruck mit diesem PC.",
-            "Open one of these addresses on your phone or tablet on the same network. The page guides you through certificate trust. Compare the fingerprint with this PC."), 13, secondary: true));
-        foreach (var url in c.Status.SetupUrls)
-        {
-            var value = url;
-            browser.Children.Add(new TextBox { Text = value, IsReadOnly = true, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 6) });
-            browser.Children.Add(Theme.Button(c.T("Einrichtungsadresse kopieren", "Copy setup address"), () => Clipboard.SetText(value)));
-        }
-        form.Add(new Expander { Header = c.T("Handy oder Tablet verbinden", "Connect phone or tablet"), Content = browser, Foreground = Theme.Foreground, Margin = new Thickness(0, 22, 0, 0) });
         form.Show();
     }
 

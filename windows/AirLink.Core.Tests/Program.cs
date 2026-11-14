@@ -146,7 +146,7 @@ internal static class Program
         var copy = ProtocolJson.Clone(original); copy.Notifications = true;
         using var saved = JsonDocument.Parse(JsonSerializer.Serialize(copy, ProtocolJson.Options));
         Require(saved.RootElement.GetProperty("futureTop").GetProperty("value").GetInt32() == 42, "Unknown setting lost");
-        Require(copy.Organization.DetectDuplicates && !copy.Organization.SortEnabled && !copy.Shortcut.Enabled, "Existing preferences reset");
+        Require(!copy.Shortcut.Enabled, "Existing preferences reset");
         Require(saved.RootElement.GetProperty("organization").GetProperty("rules")[0].GetProperty("futureRule").GetString() == "kept", "Nested setting lost");
         Require(!original.Notifications && copy.Notifications, "Clone shared mutable settings");
         return Task.CompletedTask;
@@ -155,9 +155,8 @@ internal static class Program
     private static Task DefaultsAndLargeProgress()
     {
         var settings = JsonSerializer.Deserialize<HostSettings>("{}", ProtocolJson.Options)!;
-        Require(!settings.Organization.DetectDuplicates && !settings.Organization.SortEnabled && settings.Organization.Rules.Count == 0, "Organization default enabled");
         var device = JsonSerializer.Deserialize<Device>("{\"id\":\"legacy\"}", ProtocolJson.Options)!;
-        Require(!device.AutoAccept && !device.CanClipboard && !device.CanRelay, "New permission silently enabled");
+        Require(!device.AutoAccept && !device.CanClipboard, "New permission silently enabled");
         var transfer = new Transfer { State = "running", TotalBytes = 100L * 1024 * 1024 * 1024, CompletedBytes = 40L * 1024 * 1024 * 1024, SkippedBytes = 10L * 1024 * 1024 * 1024 };
         Require(transfer.Progress == 0.5 && transfer.CompletedBytes == 42_949_672_960L, "64-bit byte/progress loss");
         transfer.CompletedBytes = long.MaxValue; transfer.SkippedBytes = long.MaxValue;
@@ -503,144 +502,14 @@ internal static class Program
         var settings = ProtocolJson.Clone(before.Settings);
         settings.Appearance = "dark"; settings.Language = "en"; settings.Notifications = false;
         settings.ReceiveLimitBytesPerSecond = 65536;
-        settings.Organization = new Organization { DetectDuplicates = true, Rules = [new SortRule { Id = "docs", Extensions = ["txt"], Folder = "Documents" }] };
         var saved = await client.RequestAsync<HostSettings>("settings.update", settings);
-        Require(saved.ReceiveDirectory == fixture.Received && saved.Organization.DetectDuplicates && saved.ReceiveLimitBytesPerSecond == 65536, "Full settings contract lost values");
-        var original = Path.Combine(fixture.Root, "original.txt"); await File.WriteAllTextAsync(original, "Preserve original test data");
-        var share = await client.RequestAsync<Share>("share.create", new { paths = new[] { original }, maxDownloads = 2 });
-        Require(share.TotalBytes > 0 && share.MaxDownloads == 2 && share.Url?.Contains('#') == true, "Share IPC contract failed");
-        await client.RequestAsync("share.revoke", new { id = share.Id });
-        Require(await File.ReadAllTextAsync(original) == "Preserve original test data", "Private request altered original");
-
-        using var authority = X509Certificate2.CreateFromPem(await File.ReadAllTextAsync(before.CertificatePath!));
-        Require(Convert.ToHexString(SHA256.HashData(authority.RawData)).Equals(before.Fingerprint, StringComparison.OrdinalIgnoreCase), "Private certificate identity mismatch");
-        var cookies = new CookieContainer();
-        using var handler = new HttpClientHandler { CookieContainer = cookies, UseProxy = false };
-        handler.ServerCertificateCustomValidationCallback = (_, certificate, _, errors) =>
-        {
-            if (certificate == null || (errors & SslPolicyErrors.RemoteCertificateNameMismatch) != 0) return false;
-            using var chain = new X509Chain();
-            chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
-            chain.ChainPolicy.CustomTrustStore.Add(authority);
-            chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-            return chain.Build(certificate);
-        };
-        using var http = new HttpClient(handler) { BaseAddress = new Uri(before.Urls.Last()), Timeout = TimeSpan.FromSeconds(10) };
-        async Task<TestHttpResponse> Send(string method, string path, byte[] body, Dictionary<string, string>? headers = null)
-        {
-            var uri = new Uri(http.BaseAddress!, path);
-            if (OperatingSystem.IsMacOS())
-            {
-                // macOS .NET uses SecureTransport, whose TLS 1.3 limitation is unrelated
-                // to the production Windows client (which uses private process pipes).
-                headers ??= [];
-                var cookie = cookies.GetCookieHeader(uri);
-                if (cookie.Length != 0) headers["Cookie"] = cookie;
-                var bridged = await NodeTls13Request(uri, method, body, before.CertificatePath!, headers);
-                foreach (var value in bridged.SetCookies) cookies.SetCookies(uri, value);
-                return bridged;
-            }
-            using var request = new HttpRequestMessage(new HttpMethod(method), uri) { Content = new ByteArrayContent(body) };
-            foreach (var header in headers ?? [])
-                if (!request.Headers.TryAddWithoutValidation(header.Key, header.Value)) request.Content.Headers.Add(header.Key, header.Value);
-            using var response = await http.SendAsync(request);
-            return new TestHttpResponse { Status = (int)response.StatusCode, BodyBase64 = Convert.ToBase64String(await response.Content.ReadAsByteArrayAsync()) };
-        }
-        async Task<T> Post<T>(string path, object payload)
-        {
-            var response = await Send("POST", path, JsonSerializer.SerializeToUtf8Bytes(payload, ProtocolJson.Options), new() { ["Content-Type"] = "application/json" });
-            Require(response.Status is >= 200 and < 300, "Actual helper HTTP request failed: " + response.Status);
-            return JsonSerializer.Deserialize<T>(Convert.FromBase64String(response.BodyBase64), ProtocolJson.Options)!;
-        }
-        var pair = await Post<PairingTicket>("/api/v1/pair/request", new { name = "Windows core browser fixture", kind = "browser" });
-        await client.RequestAsync("pair.approve", new { id = pair.RequestId });
-        _ = await Post<JsonElement>("/api/v1/pair/poll", new { requestId = pair.RequestId, pollToken = pair.PollToken });
-        var incomingBytes = Encoding.UTF8.GetBytes("The native receive action returns the real published file.");
-        var transfer = await Post<Transfer>("/api/v1/transfers", new { files = new[] { new { id = "received", path = "visible.txt", size = incomingBytes.Length } } });
-        Require(transfer.State == "offered", "Ordinary pairing silently enabled auto receipt");
-        var accepted = await client.RequestAsync<Transfer>("transfer.acceptTrusted", new { id = transfer.Id });
-        Require(accepted.State == "running", "Explicit trusted receipt failed");
-        var checksum = Convert.ToHexString(SHA256.HashData(incomingBytes)).ToLowerInvariant();
-        var block = await Send("PUT", $"/api/v1/transfers/{transfer.Id}/files/received/chunks/0", incomingBytes, new() { ["X-Chunk-SHA256"] = checksum });
-        Require(block.Status is >= 200 and < 300, "Actual helper rejected the verified chunk: " + block.Status);
-        var completed = await Post<Transfer>($"/api/v1/transfers/{transfer.Id}/files/received/complete", new { sha256 = checksum });
-        var received = await client.RequestAsync<ReceivedResult>("transfer.received", new { id = completed.Id });
-        Require(received.Items.Count == 1 && !received.Items[0].Directory && (await File.ReadAllBytesAsync(received.Items[0].Path)).SequenceEqual(incomingBytes), "Native result reveal did not resolve the published file");
-        var trusted = await Post<PairingTicket>("/api/v1/pair/request", new { name = "Trusted pairing fixture", kind = "browser" });
-        await client.RequestAsync("pair.approveTrusted", new { id = trusted.RequestId });
-        var permissions = await client.RequestAsync<HostStatus>("status");
-        Require(permissions.Devices.Count == 2 && permissions.Devices.All(device => device.AutoAccept && !device.CanClipboard && !device.CanRelay), "Trusted receipt reset unrelated permissions");
-        var offerRequest = new { deviceId = permissions.Devices[0].Id, paths = new[] { original }, requestId = Guid.NewGuid().ToString("N") };
-        var firstOffer = await client.RequestAsync<Transfer>("offer", offerRequest);
-        var repeatedOffer = await client.RequestAsync<Transfer>("offer", offerRequest);
-        Require(firstOffer.Id == repeatedOffer.Id && firstOffer.Files.Select(file => file.Id).SequenceEqual(repeatedOffer.Files.Select(file => file.Id)),
-            "Retrying a committed private offer created another transfer or file manifest");
+        Require(saved.ReceiveDirectory == fixture.Received && saved.ReceiveLimitBytesPerSecond == 65536 && saved.Appearance == "dark", "Full settings contract lost values");
+        foreach (var removed in new[] { "share.create", "relay.list", "duplicate.resolve", "connection.qr", "peer.connect", "pair.approve" })
+            await Throws<Exception>(() => client.RequestAsync(removed, new { }));
         Require(await client.StopGracefullyAsync(), "Actual helper failed checkpointed updater shutdown without termination");
         await client.StartAsync(Path.GetFullPath(helper), fixture.Data, fixture.Received);
         var after = await client.RequestAsync<HostStatus>("status");
-        Require(after.Id == before.Id && after.Fingerprint == before.Fingerprint && after.Settings.Organization.DetectDuplicates && after.Shares.Single().Revoked, "Restart reset identity/settings/shares");
-        Require(after.Devices.Count == 2 && after.Devices.All(device => device.AutoAccept) && (await File.ReadAllBytesAsync(received.Items[0].Path)).SequenceEqual(incomingBytes), "Restart lost explicit trust or received data");
-        var durableOffer = await client.RequestAsync<Transfer>("offer", offerRequest);
-        Require(durableOffer.Id == firstOffer.Id && durableOffer.Files.Select(file => file.Id).SequenceEqual(firstOffer.Files.Select(file => file.Id)),
-            "Service restart lost the committed private offer request key");
-    }
-
-    private sealed class TestHttpResponse
-    {
-        public int Status { get; set; }
-        public string BodyBase64 { get; set; } = "";
-        public List<string> SetCookies { get; set; } = [];
-        public string Protocol { get; set; } = "";
-    }
-
-    private static async Task<TestHttpResponse> NodeTls13Request(Uri uri, string method, byte[] body, string caPath, Dictionary<string, string> headers)
-    {
-        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-        var start = new ProcessStartInfo(Environment.GetEnvironmentVariable("AIRLINK_TEST_NODE") ?? "node")
-        {
-            UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true,
-            RedirectStandardOutput = true, RedirectStandardError = true
-        };
-        start.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "tls13-request.mjs"));
-        using var process = Process.Start(start) ?? throw new IOException("Unable to start the test-only TLS 1.3 bridge");
-        async Task<string> ReadBounded(StreamReader reader, int limit)
-        {
-            var output = new StringBuilder(); var buffer = new char[4096];
-            int count;
-            while ((count = await reader.ReadAsync(buffer.AsMemory(), deadline.Token)) != 0)
-            {
-                if (output.Length + count > limit) throw new IOException("Test TLS bridge output exceeded its bound");
-                output.Append(buffer, 0, count);
-            }
-            return output.ToString();
-        }
-        var stdout = ReadBounded(process.StandardOutput, 1_500_000);
-        var stderr = ReadBounded(process.StandardError, 4096);
-        try
-        {
-            var input = JsonSerializer.Serialize(new { url = uri.AbsoluteUri, method, bodyBase64 = Convert.ToBase64String(body), caPath, headers }, ProtocolJson.Options);
-            await process.StandardInput.WriteAsync(input.AsMemory(), deadline.Token);
-            process.StandardInput.Close();
-            await process.WaitForExitAsync(deadline.Token);
-            var output = await stdout;
-            _ = await stderr; // The fixture emits no credentials; never copy request details to a test failure.
-            Require(process.ExitCode == 0, "Test-only TLS 1.3 bridge failed (exit " + process.ExitCode + ")");
-            var response = JsonSerializer.Deserialize<TestHttpResponse>(output, ProtocolJson.Options) ?? throw new IOException("Missing test bridge response");
-            Require(response.Protocol == "TLSv1.3", "Actual helper request did not use TLS 1.3");
-            return response;
-        }
-        catch
-        {
-            if (!process.HasExited) { process.Kill(entireProcessTree: true); await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(2)); }
-            try { await Task.WhenAll(stdout, stderr); } catch { }
-            throw;
-        }
-    }
-
-    private sealed class PairingTicket
-    {
-        public string RequestId { get; set; } = "";
-        public string PollToken { get; set; } = "";
+        Require(after.Id == before.Id && after.Fingerprint == before.Fingerprint && after.Settings.Appearance == "dark" && after.Settings.ReceiveLimitBytesPerSecond == 65536, "Restart reset identity or settings");
     }
 
     private static async Task HelperExtraction()

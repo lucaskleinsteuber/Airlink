@@ -47,20 +47,9 @@ jobs:
         with:
           go-version: '1.27.3'
           cache-dependency-path: go.sum
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-          cache: npm
-          cache-dependency-path: web/package-lock.json
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.402'
-      - name: Build and test the web interface
-        run: |
-          npm --prefix web ci
-          npm --prefix web test
-          npm --prefix web run build
-          bash scripts/embed-web.sh
       - name: Go unit, security, HTTPS, and race tests
         run: |
           go test -race ./...

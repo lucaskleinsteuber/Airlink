@@ -4,7 +4,9 @@
 
 **Large files, shared locally.**
 
-AirLink sends files and folders directly between devices on the same local network. Native apps for **macOS, Linux and Windows** manage an embedded transfer service; phones and tablets connect through its web interface. No account, cloud relay or internet connection is needed for local transfers.
+AirLink sends files and folders directly between computers on the same local network. Native apps for **macOS, Linux and Windows** manage an embedded transfer service. No account, cloud relay or internet connection is needed for local transfers.
+
+> **In development (0.13):** AirLink is being refocused on desktop-to-desktop transfers. The browser/phone interface, Quick Share links, browser relay, duplicate detection and extension sorting have been removed from the source; clipboard sharing remains. A new, much faster transfer protocol follows. The packages below are the previous 0.12 betas, which still contain the removed features.
 
 **[0.12.0 Beta 3 is available](https://github.com/lucaskleinsteuber/Airlink/releases/tag/v0.12.0-beta.3).** The background and package checks passed. This is beta software: physical Mac↔Arch WLAN, desktop rendering and the new 100-GB acceptance run remain separate, open checks. [Verification records](docs/TESTING.md) distinguish tests, builds, packages and physical devices; [1.0 readiness](docs/RELEASE-READINESS.md) remains a separate gate.
 
@@ -56,7 +58,7 @@ If a computer appears in AirLink but cannot receive files, check its firewall. D
 sudo ufw allow proto tcp from 192.168.1.0/24 to any port 43871 comment 'AirLink local network'
 ```
 
-Replace the example subnet and port with the actual values. This is a local firewall rule, not a router/Internet port forwarding rule. AirLink still requires trusted-device permissions and incoming acceptance unless automatic receiving was explicitly enabled. The separate plain-HTTP browser certificate-setup address can use another port; browser onboarding needs that displayed address reachable too.
+Replace the example subnet and port with the actual values. This is a local firewall rule, not a router/Internet port forwarding rule. AirLink still requires trusted-device permissions and incoming acceptance unless automatic receiving was explicitly enabled.
 
 ### Windows
 
@@ -78,22 +80,19 @@ An older desktop can use the explicit manual address/full-fingerprint flow under
 
 ## Features and platform limits
 
-| Capability | Desktop apps | Browser |
-|---|---|---|
-| Files, folders, drag-and-drop | Native pickers/drop; direct service-to-service TLS | Upload to / download from the selected desktop host |
-| Pause, reconnect and persisted queue | Confirmed blocks survive service restarts | Upload reselection may be required after reload; browser downloads use the download manager |
-| Integrity and encryption | TLS 1.3, per-block SHA-256 and full-file verification | HTTPS, upload block hashes, incremental worker hashing |
-| Trusted devices and rights | Discovery, code comparison, saved identities and revocation | Separate certificate/QR setup and host approval |
-| Quick Share | Local links, password, expiry, session download limit and revocation | Open authorized links while source host/files remain available |
-| Clipboard | Explicit paste/send/copy; per-device permission | Explicit text actions; no background clipboard monitoring |
-| History and organization | Paged history/details; optional duplicate decisions and extension rules | Host rules do not organize browser-managed downloads |
-| Offline use | Transfers, discovery and paired identities work locally | Host-provided web assets require no CDN or account |
+| Capability | Desktop apps |
+|---|---|
+| Files, folders, drag-and-drop | Native pickers/drop; direct service-to-service TLS |
+| Pause, reconnect and persisted queue | Confirmed progress survives service restarts |
+| Integrity and encryption | TLS 1.3 with pinned device identities and SHA-256 verification |
+| Trusted devices and rights | Discovery, eight-digit code comparison, saved identities and revocation |
+| Clipboard | Explicit paste/send/copy; per-device permission |
+| History | Paged history and file details |
+| Offline use | Transfers, discovery and paired identities work locally |
 
-Linux follows system widgets and colors, with KDE/Wayland as the primary desktop target. macOS uses SwiftUI/AppKit, menu-bar operation, Finder Services, configurable shortcut and optional launch at login. Windows has native WPF controls and tray operation. The web interface provides the complete host tooling; some advanced Windows tools remain web-based.
+Linux follows system widgets and colors, with KDE/Wayland as the primary desktop target. macOS uses SwiftUI/AppKit, menu-bar operation, Finder Services, configurable shortcut and optional launch at login. Windows has native WPF controls and tray operation.
 
-**Phones/tablets:** at least one running desktop host is required. Open its browser setup QR/address, compare the host certificate identity, install/trust that host's local certificate as instructed, and approve pairing on the host. iOS/iPadOS also require enabling full certificate trust. Keep the browser open during active mobile uploads. A browser cannot independently discover LAN services. ZIP folder downloads are streamed and require a restart after interruption; individual downloads support HTTP Range where the browser/download manager uses it. Browser relay connects two approved browsers through a desktop host with bounded buffers and no full relay copy on disk.
-
-**Organization:** duplicate detection and sorting are opt-in and off by default. Duplicate decisions never delete existing files. Sorting applies to new individual desktop receives; transferred folders stay together. Existing transfer destinations do not change when receive settings change.
+Phones and tablets are not supported. If a computer is not discovered automatically, **Add device → Other connection options** accepts the other computer's address and fingerprint (shown under **This device**); you still compare the eight-digit code on both screens.
 
 ## Settings and updates
 
@@ -114,11 +113,11 @@ macOS uses Sparkle, Windows NetSparkle, and the Linux AppImage a signed atomic r
 | Linux app state | `$XDG_CONFIG_HOME/AirLink`, otherwise `~/.config/AirLink` |
 | Received files | Actual system Downloads folder or the folder chosen in setup |
 
-State contains private device keys, credentials, settings and transfer/share metadata. Do not publish it. AirLink grants access only to offered files and configured receives, not the general filesystem. There is no cloud, account requirement, telemetry or automatic router forwarding. Downloading builds/dependencies or explicitly checking for updates requires internet access; local transfers do not.
+State contains private device keys, credentials, settings and transfer metadata. Do not publish it. AirLink grants access only to offered files and configured receives, not the general filesystem. There is no cloud, account requirement, telemetry or automatic router forwarding. Downloading builds/dependencies or explicitly checking for updates requires internet access; local transfers do not.
 
 ## Build and test
 
-The common service uses Go 1.27. The web bundle uses Node 24 and is embedded in the service; end users need neither Go nor Node. macOS requires Xcode/Swift 6 and Icon Composer. Windows packages require .NET 10, NSIS and 7-Zip. Linux requires CMake, Ninja, C++20, Qt 6.4+ Core/Network/Widgets/DBus/Svg and OpenSSL Crypto. The written SVG/Icon Composer assets are part of the source.
+The common service uses Go 1.27; end users do not need Go. macOS requires Xcode/Swift 6 and Icon Composer. Windows packages require .NET 10, NSIS and 7-Zip. Linux requires CMake, Ninja, C++20, Qt 6.4+ Core/Network/Widgets/DBus/Svg and OpenSSL Crypto. The written SVG/Icon Composer assets are part of the source.
 
 ```sh
 bash scripts/test.sh

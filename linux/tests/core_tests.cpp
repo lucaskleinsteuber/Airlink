@@ -19,23 +19,18 @@ private slots:
     QJsonObject initial{
         {"name", "Linux"},
         {"receiveDirectory", "/tmp/receive"},
-        {"organization",
-         QJsonObject{{"detectDuplicates", false}, {"rules", QJsonArray{}}}},
+        {"notifications", true},
         {"unknownFuture", true}};
     draft.reset(initial);
     draft.values["name"] = "My Arch laptop";
     auto latest = initial;
     latest["receiveDirectory"] = "/tmp/new";
-    auto org = latest["organization"].toObject();
-    org["rules"] = QJsonArray{QJsonObject{{"id", "rule"},
-                                          {"extensions", QJsonArray{"pdf"}},
-                                          {"folder", "Documents"}}};
-    latest["organization"] = org;
+    latest["notifications"] = false;
     draft.rebase(latest);
     QCOMPARE(draft.values["name"].toString(), "My Arch laptop");
     QCOMPARE(draft.values["receiveDirectory"].toString(), "/tmp/new");
     QVERIFY(draft.values["unknownFuture"].toBool());
-    QCOMPARE(draft.values["organization"], latest["organization"]);
+    QCOMPARE(draft.values["notifications"], latest["notifications"]);
     QVERIFY(draft.dirty());
     QVERIFY(draft.validate().isEmpty());
     draft.values["name"] = "";

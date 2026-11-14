@@ -86,9 +86,8 @@ private:
                     QPushButton *more, const QString &id, int offset);
   void reveal(const QString &id);
   void loadHistory(bool more = false);
-  void shares();
   void clipboard();
-  void browserConnection();
+  void thisDevice();
   void quit();
   void checkUpdates(bool automatic = false);
   void installAppImage();

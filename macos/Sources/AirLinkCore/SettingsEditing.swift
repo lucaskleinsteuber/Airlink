@@ -18,9 +18,6 @@ public enum SettingsEditing {
             result.shortcut.keyCode = draft.shortcut.keyCode
             result.shortcut.modifiers = draft.shortcut.modifiers
         }
-        if draft.organization.detectDuplicates != baseline.organization.detectDuplicates { result.organization.detectDuplicates = draft.organization.detectDuplicates }
-        if draft.organization.sortEnabled != baseline.organization.sortEnabled { result.organization.sortEnabled = draft.organization.sortEnabled }
-        if draft.organization.rules != baseline.organization.rules { result.organization.rules = draft.organization.rules }
         if draft.setupCompleted != baseline.setupCompleted { result.setupCompleted = draft.setupCompleted }
         return result
     }

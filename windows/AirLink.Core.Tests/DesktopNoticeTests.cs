@@ -20,14 +20,11 @@ internal static class DesktopNoticeTests
         var fast = tracker.Observe(new() { Transfers = [Receipt("historical", "completed"), Receipt("fast", "completed")] });
         Check(fast.Count == 1 && fast[0].Kind == DesktopNoticeKind.CompletedTransfer && fast[0].Id == "fast", "Fast auto-accepted completion was lost between polls");
         Check(tracker.Observe(new() { Transfers = [Receipt("fast", "completed")] }).Count == 0, "Completed receipt repeated");
-        var attention = new HostStatus { PairRequests = [new() { Id = "pair", Name = "Mac" }], Transfers = [Receipt("offer", "offered")], Clipboard = [new() { Id = "text", Direction = "receive", Text = "Private message never included in notice" }] };
+        var attention = new HostStatus { PairingSessions = [new() { Id = "pair", PeerName = "Mac", State = "comparing", ComparisonCode = "12345678" }], Transfers = [Receipt("offer", "offered")], Clipboard = [new() { Id = "text", Direction = "receive", Text = "Private message never included in notice" }] };
         var requests = tracker.Observe(attention);
         Check(requests.Select(n => n.Kind).ToHashSet().SetEquals([DesktopNoticeKind.Pairing, DesktopNoticeKind.IncomingTransfer, DesktopNoticeKind.Clipboard]), "A waiting action was not announced");
         Check(requests.All(n => !n.Title.Contains("Private message")), "Clipboard content leaked into notification");
         Check(tracker.Observe(attention).Count == 0, "Repeated status generated repeated attention");
-        var duplicate = Receipt("duplicate", "waitingDuplicate"); duplicate.Files[0].DuplicateState = "pending";
-        Check(tracker.Observe(new() { Transfers = [duplicate] }).Single().Kind == DesktopNoticeKind.DuplicateDecision, "Missing duplicate decision attention");
-        Check(tracker.Observe(new() { Transfers = [duplicate] }).Count == 0, "Duplicate decision repeated");
         var silent = new HostStatus { Settings = new() { Notifications = false }, Transfers = [Receipt("silent", "completed")] };
         Check(tracker.Observe(silent).Count == 0, "Disabled notifications still emitted");
         silent.Settings.Notifications = true;

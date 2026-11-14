@@ -10,8 +10,7 @@ public sealed class SettingsDraft
     public SettingsDraft(HostSettings settings) { baseline = ProtocolJson.Clone(settings); Values = ProtocolJson.Clone(settings); }
     public bool HasChanges => Values.Name != baseline.Name || Values.ReceiveDirectory != baseline.ReceiveDirectory ||
         Values.Appearance != baseline.Appearance || Values.Language != baseline.Language || Values.Notifications != baseline.Notifications || Values.AutomaticUpdateChecks != baseline.AutomaticUpdateChecks ||
-        Values.SendLimitBytesPerSecond != baseline.SendLimitBytesPerSecond || Values.ReceiveLimitBytesPerSecond != baseline.ReceiveLimitBytesPerSecond ||
-        Values.Organization.DetectDuplicates != baseline.Organization.DetectDuplicates;
+        Values.SendLimitBytesPerSecond != baseline.SendLimitBytesPerSecond || Values.ReceiveLimitBytesPerSecond != baseline.ReceiveLimitBytesPerSecond;
     public void Reset(HostSettings settings) { baseline = ProtocolJson.Clone(settings); Values = ProtocolJson.Clone(settings); }
     public HostSettings Merge(HostSettings latest) => Merge(latest, normalizeName: true);
     public bool Rebase(HostSettings latest)
@@ -22,8 +21,7 @@ public sealed class SettingsDraft
     }
     private static bool SameDisplayedFields(HostSettings a, HostSettings b) => a.Name == b.Name && a.ReceiveDirectory == b.ReceiveDirectory &&
         a.Appearance == b.Appearance && a.Language == b.Language && a.Notifications == b.Notifications && a.AutomaticUpdateChecks == b.AutomaticUpdateChecks &&
-        a.SendLimitBytesPerSecond == b.SendLimitBytesPerSecond && a.ReceiveLimitBytesPerSecond == b.ReceiveLimitBytesPerSecond &&
-        a.Organization.DetectDuplicates == b.Organization.DetectDuplicates && a.Organization.SortEnabled == b.Organization.SortEnabled;
+        a.SendLimitBytesPerSecond == b.SendLimitBytesPerSecond && a.ReceiveLimitBytesPerSecond == b.ReceiveLimitBytesPerSecond;
     private HostSettings Merge(HostSettings latest, bool normalizeName)
     {
         var result = ProtocolJson.Clone(latest);
@@ -35,7 +33,6 @@ public sealed class SettingsDraft
         if (Values.AutomaticUpdateChecks != baseline.AutomaticUpdateChecks) result.AutomaticUpdateChecks = Values.AutomaticUpdateChecks;
         if (Values.SendLimitBytesPerSecond != baseline.SendLimitBytesPerSecond) result.SendLimitBytesPerSecond = Values.SendLimitBytesPerSecond;
         if (Values.ReceiveLimitBytesPerSecond != baseline.ReceiveLimitBytesPerSecond) result.ReceiveLimitBytesPerSecond = Values.ReceiveLimitBytesPerSecond;
-        if (Values.Organization.DetectDuplicates != baseline.Organization.DetectDuplicates) result.Organization.DetectDuplicates = Values.Organization.DetectDuplicates;
         return result;
     }
     public static string FormatLimit(long bytes, CultureInfo? culture = null) => (bytes / 1_000_000m).ToString("0.######", culture ?? CultureInfo.CurrentCulture);

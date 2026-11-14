@@ -1,0 +1,150 @@
+{
+  "purpose": "Phase 0 baseline before the 0.13 transfer rewrite",
+  "date": "2026-11-14",
+  "helper": "0.12.0-beta.3 source (commit 8eed526), built locally for darwin-arm64 and linux-amd64",
+  "devices": {
+    "local": "MacBook (Mac17,3), macOS, Wi-Fi 802.11ac ch36 80 MHz, -63 dBm, tx 260 Mbit/s",
+    "remote": "MSI GF63 Thin 10SC, CachyOS, Intel CNVi Wi-Fi, -70 dBm, tx 29 Mbit/s (idle), power save on"
+  },
+  "network": "both on the same 5 GHz access point; ping Mac->laptop 4.5-113 ms (avg 58 ms)",
+  "rawTLSCeiling": {
+    "tool": "cmd/airlink-netbench, TLS 1.3, 10 s each",
+    "macToLinux": {
+      "streams1MiBps": 9.0,
+      "streams4MiBps": 9.5
+    },
+    "linuxToMac": {
+      "streams1MiBps": 10.97,
+      "streams4MiBps": 11.39
+    }
+  },
+  "transfers": [
+    {
+      "label": "baseline-0.12.0-beta.3",
+      "case": "large:512",
+      "direction": "local-to-remote",
+      "iteration": 1,
+      "sourceVersion": "0.12.0-beta.3",
+      "receiverVersion": "0.12.0-beta.3",
+      "bytes": 536870912,
+      "files": 1,
+      "directories": 0,
+      "seconds": 78.077,
+      "MiBPerSecond": 6.558,
+      "stagesSeconds": {
+        "prepared": 0.105,
+        "firstConfirmedBytes": 1.759,
+        "sourceCompleted": 78.07,
+        "receiverCompleted": 78.077
+      },
+      "verified": true,
+      "pairingSeconds": 0.467
+    },
+    {
+      "label": "baseline-0.12.0-beta.3",
+      "case": "large:512",
+      "direction": "remote-to-local",
+      "iteration": 1,
+      "sourceVersion": "0.12.0-beta.3",
+      "receiverVersion": "0.12.0-beta.3",
+      "bytes": 536870912,
+      "files": 1,
+      "directories": 0,
+      "seconds": 51.722,
+      "MiBPerSecond": 9.899,
+      "stagesSeconds": {
+        "prepared": 0.116,
+        "firstConfirmedBytes": 2.448,
+        "sourceCompleted": 51.715,
+        "receiverCompleted": 51.722
+      },
+      "verified": true,
+      "pairingSeconds": 0.467
+    },
+    {
+      "label": "baseline-0.12.0-beta.3",
+      "case": "small:1000x8",
+      "direction": "local-to-remote",
+      "iteration": 1,
+      "sourceVersion": "0.12.0-beta.3",
+      "receiverVersion": "0.12.0-beta.3",
+      "bytes": 8192000,
+      "files": 1000,
+      "directories": 20,
+      "seconds": 42.975,
+      "MiBPerSecond": 0.182,
+      "stagesSeconds": {
+        "prepared": 0.211,
+        "firstConfirmedBytes": 0.639,
+        "sourceCompleted": 42.948,
+        "receiverCompleted": 42.975
+      },
+      "verified": true,
+      "pairingSeconds": 0.467
+    },
+    {
+      "label": "baseline-0.12.0-beta.3",
+      "case": "small:1000x8",
+      "direction": "remote-to-local",
+      "iteration": 1,
+      "sourceVersion": "0.12.0-beta.3",
+      "receiverVersion": "0.12.0-beta.3",
+      "bytes": 8192000,
+      "files": 1000,
+      "directories": 20,
+      "seconds": 56.348,
+      "MiBPerSecond": 0.139,
+      "stagesSeconds": {
+        "prepared": 0.26,
+        "firstConfirmedBytes": 0.547,
+        "sourceCompleted": 56.323,
+        "receiverCompleted": 56.348
+      },
+      "verified": true,
+      "pairingSeconds": 0.467
+    },
+    {
+      "label": "baseline-0.12.0-beta.3",
+      "case": "mixed:200",
+      "direction": "local-to-remote",
+      "iteration": 1,
+      "sourceVersion": "0.12.0-beta.3",
+      "receiverVersion": "0.12.0-beta.3",
+      "bytes": 209715200,
+      "files": 382,
+      "directories": 8,
+      "seconds": 50.172,
+      "MiBPerSecond": 3.986,
+      "stagesSeconds": {
+        "prepared": 0.102,
+        "firstConfirmedBytes": 0.304,
+        "sourceCompleted": 50.16,
+        "receiverCompleted": 50.172
+      },
+      "verified": true,
+      "pairingSeconds": 0.467
+    },
+    {
+      "label": "baseline-0.12.0-beta.3",
+      "case": "mixed:200",
+      "direction": "remote-to-local",
+      "iteration": 1,
+      "sourceVersion": "0.12.0-beta.3",
+      "receiverVersion": "0.12.0-beta.3",
+      "bytes": 209715200,
+      "files": 382,
+      "directories": 8,
+      "seconds": 44.499,
+      "MiBPerSecond": 4.494,
+      "stagesSeconds": {
+        "prepared": 0.13,
+        "firstConfirmedBytes": 0.383,
+        "sourceCompleted": 44.48,
+        "receiverCompleted": 44.499
+      },
+      "verified": true,
+      "pairingSeconds": 0.467
+    }
+  ],
+  "notes": "Every received file was verified by an independent SHA-256 inventory. Fixtures are random data generated on the sending computer."
+}

@@ -1,38 +1,6 @@
 import AirLinkCore
 import SwiftUI
 
-struct PairingApprovalView: View {
-    @EnvironmentObject var model: AppModel
-    let request: PairRequest
-    @State private var working = false
-    @State private var issue: String?
-    @State private var automatic = false
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label(model.text("\(request.name) möchte sich verbinden", "\(request.name) wants to connect"), systemImage: "person.badge.key.fill").font(.headline)
-            Text(model.text("Nur verbinden, wenn du die Anfrage auf diesem Gerät gerade gestartet und den Fingerabdruck verglichen hast.", "Connect only if you just started this request on that device and compared its fingerprint.")).font(.callout).foregroundStyle(.secondary)
-            Toggle(model.text("Von diesem Gerät automatisch empfangen", "Automatically receive from this device"), isOn: $automatic).disabled(working)
-            Text(model.text("Optional. Künftige Dateien dieses Geräts kommen auf diesem Mac ohne weitere Annahme an. Du kannst das direkt beim Gerät wieder ausschalten.", "Optional. Future files from this device arrive on this Mac without another acceptance prompt. You can turn this off on the device card.")).font(.caption).foregroundStyle(.secondary)
-            HStack {
-                Button(model.text("Ablehnen", "Deny")) { respond(deny: true) }
-                Spacer()
-                Button(model.text("Verbinden", "Connect")) { respond(automatic: automatic) }.buttonStyle(.borderedProminent)
-            }.disabled(working || !model.isReady)
-            if working { ProgressView().controlSize(.small) }
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
-        }.padding(18).frame(maxWidth: .infinity, alignment: .leading).background(.blue.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
-    }
-    private func respond(automatic: Bool = false, deny: Bool = false) {
-        guard !working else { return }
-        working = true; issue = nil
-        Task {
-            do { try await model.approvePair(request.id, automatic: automatic, deny: deny) }
-            catch { issue = error.localizedDescription }
-            working = false
-        }
-    }
-}
-
 struct IncomingApprovalView: View {
     @EnvironmentObject var model: AppModel
     let transfer: Transfer

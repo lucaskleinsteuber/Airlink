@@ -101,7 +101,7 @@ public actor DaemonClient {
                 do { try input.write(contentsOf: payload) }
                 catch { Task { await self?.writeFailed(id, session: session) } }
             }
-            if !["duplicate.resolve", "offer", "share.create"].contains(method) {
+            if !["offer"].contains(method) {
                 let timeout = ordinaryRequestTimeout
                 Task { [weak self] in
                     try? await Task.sleep(for: .seconds(timeout))

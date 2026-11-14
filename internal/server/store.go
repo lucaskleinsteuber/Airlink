@@ -59,9 +59,8 @@ func openStore(dir, receive string) (*stateStore, error) {
 	if s.data.Pairings == nil {
 		s.data.Pairings = map[string]pairingRecord{}
 	}
-	if s.data.Settings.Organization.Rules == nil {
-		s.data.Settings.Organization.Rules = []model.SortRule{}
-	}
+	// Duplicate detection and extension sorting were removed in 0.13.
+	s.data.Settings.Organization = model.Organization{Rules: []model.SortRule{}}
 	if receive != "" {
 		s.data.Settings.ReceiveDirectory = receive
 	}
@@ -157,7 +156,6 @@ func (s *stateStore) updateDevice(d model.Device) error {
 	r.Device.CanSend = d.CanSend
 	r.Device.CanReceive = d.CanReceive
 	r.Device.CanClipboard = d.CanClipboard
-	r.Device.CanRelay = d.CanRelay
 	r.Device.AutoAccept = d.AutoAccept
 	if d.Name != "" {
 		r.Device.Name = d.Name

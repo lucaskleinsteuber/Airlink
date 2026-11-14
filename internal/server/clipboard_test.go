@@ -41,11 +41,8 @@ func TestClipboardPermissionAndGuestIsolation(t *testing.T) {
 	if incoming.Direction != "receive" || incoming.DeviceID != allowed.ID {
 		t.Fatal(incoming)
 	}
-	if len(s.guestStatus(other).Clipboard) != 0 || len(s.guestStatus(allowed).Clipboard) != 1 {
-		t.Fatal("clipboard crossed guest boundary")
-	}
-	if !s.guestStatus(allowed).ClipboardAllowed || s.guestStatus(blocked).ClipboardAllowed {
-		t.Fatal("permission status incorrect")
+	if len(s.clipboardSnapshot(other.ID)) != 0 || len(s.clipboardSnapshot(allowed.ID)) != 1 {
+		t.Fatal("clipboard crossed device boundary")
 	}
 	if w := securityRequest(s, http.MethodDelete, "/api/v1/clipboard/"+incoming.ID, otherToken(t, s, other.ID), "", nil); w.Code != 404 {
 		t.Fatal("another device dismissed text", w.Code)
@@ -107,8 +104,8 @@ func TestClipboardHostToBrowserAndRevoke(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if message.Direction != "send" || len(s.guestStatus(d).Clipboard) != 1 {
-		t.Fatal("browser did not receive host offer")
+	if message.Direction != "send" || len(s.clipboardSnapshot(d.ID)) != 1 {
+		t.Fatal("host message not recorded")
 	}
 	params, _ := json.Marshal(map[string]string{"id": d.ID})
 	if _, err = s.Control("device.revoke", params); err != nil {
@@ -170,22 +167,9 @@ func TestClipboardIsNeverPersistedAndOldPairingSurvivesUpgrade(t *testing.T) {
 }
 func TestClipboardNativeDeliveryUsesPinnedPairAndExplicitPermission(t *testing.T) {
 	source, target := integrationHost(t), integrationHost(t)
-	rid, err := source.connectPeer(hostURL(target), target.fingerprint)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = target.approvePair(rid, true); err != nil {
-		t.Fatal(err)
-	}
+	pairForTest(t, source, target)
 	sourceID, targetID := source.store.snapshot().ID, target.store.snapshot().ID
-	deadline := time.Now().Add(6 * time.Second)
-	for time.Now().Before(deadline) {
-		rec, ok := source.store.snapshot().Devices[targetID]
-		if ok && rec.PendingReturnToken == "" && target.store.snapshot().Devices[sourceID].OutboundToken != "" {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	var err error
 	if _, err = source.sendClipboard(targetID, "not allowed"); err == nil {
 		t.Fatal("permission skipped")
 	}

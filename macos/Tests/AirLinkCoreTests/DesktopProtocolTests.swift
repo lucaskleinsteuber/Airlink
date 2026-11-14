@@ -52,10 +52,10 @@ private func desktopTransfer(id: String, device: String = "arch", state: String 
 @Test func updatePreferenceMergesOnlyItsDeliberateChange() {
     let old = HostSettings(name: "Mac", receiveDirectory: "/tmp/receive")
     var draft = old; draft.automaticUpdateChecks = true
-    var latest = old; latest.name = "Renamed Mac"; latest.organization.detectDuplicates = true
+    var latest = old; latest.name = "Renamed Mac"; latest.notifications = false
     let merged = SettingsEditing.merge(baseline: old, draft: draft, latest: latest)
     #expect(merged.automaticUpdateChecks)
-    #expect(merged.name == "Renamed Mac" && merged.organization.detectDuplicates)
+    #expect(merged.name == "Renamed Mac" && !merged.notifications)
 }
 
 @Test func compactSummaryDoesNotInventAReceivedFileFromItsPreview() throws {

@@ -41,8 +41,7 @@ internal sealed class SettingsPage : Grid
     private Button save = null!, discard = null!;
     private TextBox? nameInput, folderInput, sendInput, receiveInput;
     private ComboBox? appearanceInput, languageInput;
-    private CheckBox? notificationsInput, duplicatesInput, updatesInput;
-    private TextBlock? sortingHelp;
+    private CheckBox? notificationsInput, updatesInput;
     private bool applying;
 
     public SettingsPage(MainWindow owner, Controller c, SettingsPageState state, Action changed, Action reopenSetup)
@@ -73,7 +72,6 @@ internal sealed class SettingsPage : Grid
             if (languageInput is not null) languageInput.SelectedIndex = Math.Max(0, Array.IndexOf(new[] { "system", "de", "en" }, values.Language));
             if (notificationsInput is not null) notificationsInput.IsChecked = values.Notifications;
             if (updatesInput is not null) updatesInput.IsChecked = values.AutomaticUpdateChecks;
-            if (duplicatesInput is not null) duplicatesInput.IsChecked = values.Organization.DetectDuplicates;
             if (SettingsDraft.TryParseLimit(state.SendLimit, out var send) && send != values.SendLimitBytesPerSecond)
             {
                 state.SendLimit = SettingsDraft.FormatLimit(values.SendLimitBytesPerSecond);
@@ -84,7 +82,6 @@ internal sealed class SettingsPage : Grid
                 state.ReceiveLimit = SettingsDraft.FormatLimit(values.ReceiveLimitBytesPerSecond);
                 if (receiveInput is not null) receiveInput.Text = state.ReceiveLimit;
             }
-            if (sortingHelp is not null) sortingHelp.Text = SortingDescription(values.Organization.SortEnabled);
         }
         finally { applying = false; }
     }
@@ -179,9 +176,6 @@ internal sealed class SettingsPage : Grid
             if (picker.ShowDialog(owner) == true) folder.Text = picker.FolderName;
         }); choose.HorizontalAlignment = HorizontalAlignment.Left; choose.Margin = new Thickness(0, 10, 0, 12); panel.Children.Add(choose);
         panel.Children.Add(Theme.Text(c.T("Neue Dateien landen direkt hier. Gleiche Namen erhalten eine Nummer. Bereits laufende und frühere Übertragungen behalten ihren Speicherort.", "New files arrive directly here. Duplicate names receive a number. Active and earlier transfers keep their saved location."), 12, secondary: true));
-        duplicatesInput = Toggle(panel, c.T("Identische Inhalte beim Empfang erkennen", "Detect identical content when receiving"), values.Organization.DetectDuplicates, value => state.Draft!.Values.Organization.DetectDuplicates = value);
-        panel.Children.Add(Theme.Text(c.T("AirLink fragt, bevor eine identische Datei übersprungen wird. Vorhandene Dateien bleiben erhalten.", "AirLink asks before skipping identical files. Existing files are preserved."), 12, secondary: true));
-        sortingHelp = Theme.Text(SortingDescription(values.Organization.SortEnabled), 12, secondary: true); sortingHelp.Margin = new Thickness(0, 16, 0, 16); panel.Children.Add(sortingHelp);
         var setup = Theme.Button(c.T("Einrichtung erneut öffnen …", "Open setup again …"), () =>
         {
             if (state.IsDirty && MessageBox.Show(owner, c.T("Ungespeicherte Änderungen verwerfen und die Einrichtung öffnen?", "Discard unsaved changes and open setup?"), c.T("Einrichtung öffnen", "Open setup"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
@@ -197,13 +191,10 @@ internal sealed class SettingsPage : Grid
         var panel = Section(c.T("Übertragung", "Transfers"), c.T("Ohne Limit nutzt AirLink die verfügbare Verbindung.", "Without limits, AirLink uses the available connection."));
         sendInput = Input(panel, c.T("Senden begrenzen · MB/s", "Upload limit · MB/s"), state.SendLimit, value => { state.SendLimit = value; if (SettingsDraft.TryParseLimit(value, out var limit)) state.Draft!.Values.SendLimitBytesPerSecond = limit; });
         receiveInput = Input(panel, c.T("Empfangen begrenzen · MB/s", "Download limit · MB/s"), state.ReceiveLimit, value => { state.ReceiveLimit = value; if (SettingsDraft.TryParseLimit(value, out var limit)) state.Draft!.Values.ReceiveLimitBytesPerSecond = limit; });
-        panel.Children.Add(Theme.Text(c.T("0 bedeutet unbegrenzt. Limits gelten gemeinsam für Dateien, Freigaben und Browserübertragungen pro Richtung.", "0 means unlimited. Each directional limit is shared by files, shares and browser transfers."), 12, secondary: true));
+        panel.Children.Add(Theme.Text(c.T("0 bedeutet unbegrenzt. Limits gelten pro Richtung für alle Übertragungen.", "0 means unlimited. Each limit applies to all transfers in that direction."), 12, secondary: true));
         var note = Theme.Text(c.T("Pausierte Übertragungen setzen beim Fortsetzen an bestätigten Blöcken fort. Die Geschwindigkeit hängt auch von WLAN und Datenträgern beider Geräte ab.", "Paused transfers resume from confirmed chunks. Speed also depends on Wi-Fi and storage on both devices."), 12, secondary: true); note.Margin = new Thickness(0, 22, 0, 0); panel.Children.Add(note);
         return panel;
     }
-    private string SortingDescription(bool enabled) => enabled
-        ? c.T("Deine Sortierregeln sind aktiv und bleiben erhalten. Den Regeleditor findest du in der Weboberfläche.", "Your sorting rules are active and preserved. The rule editor is available in the web interface.")
-        : c.T("Automatische Sortierung ist ausgeschaltet. Sortierregeln können in der Weboberfläche eingerichtet werden.", "Automatic sorting is off. Sorting rules can be configured in the web interface.");
     private FrameworkElement Updates()
     {
         var panel = Section(c.T("Updates", "Updates"), c.T("Neue Betas prüfen und bewusst installieren.", "Check for new betas and choose when to install."));

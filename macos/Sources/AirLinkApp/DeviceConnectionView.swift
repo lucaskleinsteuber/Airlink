@@ -4,13 +4,10 @@ import SwiftUI
 struct ConnectView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
-    @State private var browser = false
     @State private var manual = false
     @State private var requesting = false
     @State private var automatic = false
-    @State private var verified = false
     @State private var issue: String?
-    @State private var sentLegacy = false
     private var nearby: [Device] {
         (model.status?.devices ?? []).filter { !$0.paired && $0.kind == "engine" && $0.address != nil }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
@@ -28,16 +25,9 @@ struct ConnectView: View {
                 Spacer()
                 Button(session?.localConfirmed == true ? model.text("Im Hintergrund warten", "Wait in background") : model.text("Fertig", "Done")) { dismiss() }.disabled(requesting)
             }
-            if session == nil {
-                Picker(model.text("Gerätetyp", "Device type"), selection: $browser) {
-                    Text(model.text("Computer", "Computer")).tag(false)
-                    Text(model.text("Handy oder Tablet", "Phone or tablet")).tag(true)
-                }.pickerStyle(.segmented)
-            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    if browser { LocalConnectionView(embedded: true).environmentObject(model) }
-                    else if let session { comparison(session) }
+                    if let session { comparison(session) }
                     else { selection }
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 3)
             }.frame(minHeight: 330, maxHeight: 520)
@@ -57,9 +47,6 @@ struct ConnectView: View {
         }.padding(26).frame(width: 580).textFieldStyle(.roundedBorder)
             .onChange(of: session?.id) { _, _ in automatic = session?.automaticReceive ?? false }
             .onChange(of: session?.state) { _, state in if state == "paired", let session { model.selectedDeviceID = session.peerId; dismiss() } }
-            .onChange(of: model.connectionDraft.normalizedAddress) { _, _ in verified = false }
-            .onChange(of: model.connectionDraft.normalizedFingerprint) { _, _ in verified = false }
-            .onChange(of: model.connectionDraft.pairedDevice(in: model.status?.devices ?? [])?.id) { _, id in if let id, sentLegacy { model.selectedDeviceID = id; dismiss() } }
             .interactiveDismissDisabled(requesting)
     }
     private var selection: some View {
@@ -83,18 +70,14 @@ struct ConnectView: View {
             }
             DisclosureGroup(model.text("Andere Verbindungsmöglichkeiten", "Other connection options"), isExpanded: $manual) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(model.text("Für ältere Apps oder manuelle Verbindungen: Übernimm Adresse und Fingerabdruck aus „Dieses Gerät“ auf dem anderen Computer.", "For older apps or manual connections, copy the address and fingerprint from This device on the other computer.")).font(.callout).foregroundStyle(.secondary)
+                    Text(model.text("Falls der andere Computer nicht automatisch erscheint: Übernimm Adresse und Fingerabdruck aus „Dieses Gerät“ auf dem anderen Computer. Danach vergleicht ihr wie gewohnt den Code.", "If the other computer does not appear automatically, copy the address and fingerprint from This device on the other computer. You then compare the code as usual.")).font(.callout).foregroundStyle(.secondary)
                     TextField(model.text("HTTPS-Adresse", "HTTPS address"), text: $model.connectionDraft.address)
                     TextField(model.text("Vollständiger SHA-256-Fingerabdruck", "Complete SHA-256 fingerprint"), text: $model.connectionDraft.fingerprint).font(.system(.callout, design: .monospaced))
-                    Toggle(model.text("Ich habe den gesamten Fingerabdruck auf dem anderen Gerät verglichen.", "I compared the complete fingerprint on the other device."), isOn: $verified)
-                    Toggle(model.text("Dateien dieses Geräts künftig automatisch annehmen", "Automatically receive files from this device in future"), isOn: $model.connectionDraft.automaticReceive)
                     Button(model.text("Verbindung anfragen", "Request connection")) {
-                        var comparison = PeerVerification(); comparison.confirm(model.connectionDraft)
                         let draft = model.connectionDraft
-                        requesting = true
-                        Task { do { try await model.connect(draft, verification: comparison); sentLegacy = true } catch { issue = error.localizedDescription }; requesting = false }
-                    }.disabled(!verified || !model.connectionDraft.isValid || requesting || !model.isReady)
-                    if sentLegacy { Label(model.text("Jetzt auf dem anderen Computer bestätigen.", "Now approve on the other computer."), systemImage: "clock").font(.callout).foregroundStyle(.secondary) }
+                        requesting = true; issue = nil
+                        Task { do { try await model.beginManualPairing(draft) } catch { issue = error.localizedDescription }; requesting = false }
+                    }.disabled(!model.connectionDraft.isValid || requesting || !model.isReady)
                 }.padding(.top, 12)
             }
         }

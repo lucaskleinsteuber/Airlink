@@ -20,7 +20,6 @@ struct SettingsView: View {
     @State private var loginEnabled = SMAppService.mainApp.status == .enabled
     @State private var loginNeedsApproval = SMAppService.mainApp.status == .requiresApproval
     @State private var recording = false
-    @State private var advancedOrganization = false
     @ObservedObject private var updater = AirLinkUpdater.shared
     @State private var settingsError: String?
     @State private var saving = false
@@ -45,7 +44,6 @@ struct SettingsView: View {
         if !SetupDraft(name: settings.name, receiveDirectory: settings.receiveDirectory).validFolder { return model.text("Wähle einen gültigen Zielordner unter Empfangen.", "Choose a valid destination under Receiving.") }
         if sendLimit == nil || receiveLimit == nil { return model.text("Prüfe die Geschwindigkeitslimits unter Übertragung.", "Check the speed limits under Transfers.") }
         if !settings.shortcut.isValid { return model.text("Prüfe die Tastenkombination unter Kurzbefehle.", "Check the keyboard shortcut under Shortcuts.") }
-        if !settings.organization.isValid { return model.text("Prüfe die Sortierregeln unter Empfangen.", "Check the organization rules under Receiving.") }
         return nil
     }
     var body: some View {
@@ -103,15 +101,12 @@ struct SettingsView: View {
                 Text(model.text("Neue Dateien landen direkt im gewählten Ordner. Gleichnamige Dateien erhalten einen Namenszusatz. Bisherige Transfers behalten ihren Speicherort.", "New files arrive directly in the chosen folder. Name collisions receive a suffix. Previous transfers keep their existing locations.")).font(.caption).foregroundStyle(.secondary)
                 Button(model.text("Einrichtung erneut öffnen …", "Open setup again …")) { model.showSetup = true; model.showMainWindow() }
             }
-            DisclosureGroup(model.text("Erweiterte Dateiorganisation", "Advanced file organization"), isExpanded: $advancedOrganization) {
-                OrganizationSection(organization: $settings.organization).environmentObject(model)
-            }
             }
             if pane == .transfer {
             Section(model.text("Geschwindigkeit", "Speed")) {
                 RateLimitEditor(title: model.text("Senden begrenzen", "Limit sending"), enabled: $sendEnabled, amount: $sendAmount, unit: $sendUnit)
                 RateLimitEditor(title: model.text("Empfangen begrenzen", "Limit receiving"), enabled: $receiveEnabled, amount: $receiveAmount, unit: $receiveUnit)
-                Text(model.text("Gilt pro Richtung gemeinsam für Dateien, Freigaben und Browser-Relays. Ohne Limit wird die verfügbare Verbindung genutzt.", "Each limit applies across files, shares, and browser relays in that direction. Unlimited uses the available connection.")).font(.caption).foregroundStyle(.secondary)
+                Text(model.text("Gilt pro Richtung für alle Übertragungen. Ohne Limit wird die verfügbare Verbindung genutzt.", "Each limit applies to all transfers in that direction. Unlimited uses the available connection.")).font(.caption).foregroundStyle(.secondary)
                 if sendLimit == nil || receiveLimit == nil { Text(model.text("Ein Limit muss zwischen 1 KiB/s und 1 TiB/s liegen.", "A limit must be between 1 KiB/s and 1 TiB/s.")).font(.caption).foregroundStyle(.red) }
             }
             }

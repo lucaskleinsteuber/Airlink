@@ -28,14 +28,6 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: '1.27.3'
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-      - name: Build embedded web interface
-        run: |
-          npm --prefix web ci
-          npm --prefix web run build
-          bash scripts/embed-web.sh
       - name: Build all four Linux packages and run Qt Core with the actual helper
         run: bash scripts/build-linux-packages.sh
       - name: Run Linux update transactions as an ordinary user

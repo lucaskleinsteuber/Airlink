@@ -4,9 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
-	"net/http"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -39,80 +37,23 @@ func (s *Server) history(owner string, f historyFilter) model.History {
 	}
 	limit = min(limit, 500)
 	query := strings.ToLower(strings.TrimSpace(f.Query))
-	out := model.History{Transfers: []model.Transfer{}, Relays: []model.Relay{}}
-	if f.Direction != "relay" {
-		for _, t := range s.engine.Transfers(owner) {
-			if f.State != "" && t.State != f.State || f.Direction != "" && t.Direction != f.Direction || f.DeviceID != "" && t.DeviceID != f.DeviceID {
-				continue
-			}
-			search := t.DeviceName
-			for _, file := range t.Files {
-				search += " " + file.Path
-			}
-			if query != "" && !strings.Contains(strings.ToLower(search), query) {
-				continue
-			}
-			if owner != "" {
-				t = publicTransfer(t)
-			}
-			out.Transfers = append(out.Transfers, t)
+	out := model.History{Transfers: []model.Transfer{}}
+	for _, t := range s.engine.Transfers(owner) {
+		if f.State != "" && t.State != f.State || f.Direction != "" && t.Direction != f.Direction || f.DeviceID != "" && t.DeviceID != f.DeviceID {
+			continue
 		}
-	}
-	if f.Direction == "" || f.Direction == "relay" {
-		for _, r := range s.relays.List(owner) {
-			if f.State != "" && r.State != f.State || f.DeviceID != "" && r.SenderID != f.DeviceID && r.ReceiverID != f.DeviceID {
-				continue
-			}
-			search := r.SenderName + " " + r.ReceiverName
-			for _, file := range r.Files {
-				search += " " + file.Path
-			}
-			if query != "" && !strings.Contains(strings.ToLower(search), query) {
-				continue
-			}
-			if owner != "" && r.Error != "" {
-				r.Error = "Relay needs attention; reconnect both browsers."
-			}
-			out.Relays = append(out.Relays, r)
+		search := t.DeviceName
+		for _, file := range t.Files {
+			search += " " + file.Path
 		}
+		if query != "" && !strings.Contains(strings.ToLower(search), query) {
+			continue
+		}
+		out.Transfers = append(out.Transfers, t)
 	}
 	sort.Slice(out.Transfers, func(i, j int) bool { return out.Transfers[i].CreatedAt > out.Transfers[j].CreatedAt })
-	sort.Slice(out.Relays, func(i, j int) bool { return out.Relays[i].CreatedAt > out.Relays[j].CreatedAt })
-	type entry struct {
-		date  string
-		relay bool
-		index int
-	}
-	all := []entry{}
-	for i, t := range out.Transfers {
-		all = append(all, entry{t.CreatedAt, false, i})
-	}
-	for i, r := range out.Relays {
-		all = append(all, entry{r.CreatedAt, true, i})
-	}
-	sort.SliceStable(all, func(i, j int) bool { return all[i].date > all[j].date })
-	if len(all) > limit {
-		keepT, keepR := map[int]bool{}, map[int]bool{}
-		for _, v := range all[:limit] {
-			if v.relay {
-				keepR[v.index] = true
-			} else {
-				keepT[v.index] = true
-			}
-		}
-		ts, rs := []model.Transfer{}, []model.Relay{}
-		for i, t := range out.Transfers {
-			if keepT[i] {
-				ts = append(ts, t)
-			}
-		}
-		for i, r := range out.Relays {
-			if keepR[i] {
-				rs = append(rs, r)
-			}
-		}
-		out.Transfers = ts
-		out.Relays = rs
+	if len(out.Transfers) > limit {
+		out.Transfers = out.Transfers[:limit]
 	}
 	return out
 }
@@ -171,21 +112,6 @@ func (s *Server) statistics(owner string) model.Statistics {
 			result.ActiveTransfers++
 		}
 	}
-	for _, r := range s.relays.List(owner) {
-		d := day(r.CreatedAt, r.UpdatedAt)
-		result.RelayedBytes = plus(result.RelayedBytes, r.DeliveredBytes)
-		d.RelayedBytes = plus(d.RelayedBytes, r.DeliveredBytes)
-		switch r.State {
-		case "delivered":
-			result.RelayDeliveries++
-		case "failed":
-			result.FailedTransfers++
-		case "cancelled":
-			result.CancelledTransfers++
-		default:
-			result.ActiveTransfers++
-		}
-	}
 	for _, d := range days {
 		result.Days = append(result.Days, *d)
 	}
@@ -198,10 +124,8 @@ func (s *Server) statistics(owner string) model.Statistics {
 	return result
 }
 func (s *Server) clearHistory(owner string) error {
-	if _, e := s.engine.ClearHistory(owner); e != nil {
-		return e
-	}
-	return s.relays.Clear(owner)
+	_, e := s.engine.ClearHistory(owner)
+	return e
 }
 func (s *Server) historyControl(method string, params json.RawMessage) (any, error) {
 	switch method {
@@ -237,50 +161,4 @@ func (s *Server) historyControl(method string, params json.RawMessage) (any, err
 	default:
 		return nil, errors.New("unknown history method")
 	}
-}
-func (s *Server) handleHistoryAPI(w http.ResponseWriter, r *http.Request, d model.Device) bool {
-	if strings.HasPrefix(r.URL.Path, "/api/v1/history/") {
-		if r.Method != http.MethodDelete {
-			w.Header().Set("Allow", http.MethodDelete)
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return true
-		}
-		id := strings.TrimPrefix(r.URL.Path, "/api/v1/history/")
-		err := s.engine.RemoveHistory(d.ID, id)
-		switch {
-		case err == nil:
-			respond(w, http.StatusOK, map[string]bool{"ok": true})
-		case errors.Is(err, engine.ErrNotFound):
-			fail(w, http.StatusNotFound, errors.New("history entry not found"))
-		case errors.Is(err, engine.ErrConflict):
-			fail(w, http.StatusConflict, errors.New("only finished history entries can be removed"))
-		case errors.Is(err, engine.ErrInvalid):
-			fail(w, http.StatusBadRequest, errors.New("a history entry ID is required"))
-		default:
-			fail(w, http.StatusInternalServerError, errors.New("history entry could not be removed"))
-		}
-		return true
-	}
-	if r.URL.Path != "/api/v1/history" {
-		return false
-	}
-	switch r.Method {
-	case http.MethodGet:
-		q := r.URL.Query()
-		limit, e := strconv.Atoi(q.Get("limit"))
-		if q.Get("limit") != "" && e != nil {
-			fail(w, 400, e)
-			return true
-		}
-		respond(w, 200, s.history(d.ID, historyFilter{Query: q.Get("query"), State: q.Get("state"), Direction: q.Get("direction"), DeviceID: q.Get("deviceId"), Limit: limit}))
-	case http.MethodDelete:
-		if e := s.clearHistory(d.ID); e != nil {
-			fail(w, 500, errors.New("history could not be cleared"))
-		} else {
-			respond(w, 200, map[string]bool{"ok": true})
-		}
-	default:
-		http.Error(w, "method not allowed", 405)
-	}
-	return true
 }

@@ -23,38 +23,23 @@ func actualHelperStatusAndSettingsUseNativeContract() async throws {
         #expect(status.chunkSize == 8 * 1024 * 1024)
         #expect(status.fingerprint.count == 64)
         #expect(!status.urls.isEmpty)
-        #expect(status.setupURLs?.isEmpty == false)
         var settings = status.settings
         settings.receiveDirectory = directory.appendingPathComponent("custom-received").path
         settings.appearance = "dark"; settings.language = "en"; settings.notifications = false
         settings.sendLimitBytesPerSecond = 4 * 1024 * 1024
         settings.receiveLimitBytesPerSecond = 8 * 1024 * 1024
         settings.shortcut = Shortcut(enabled: false)
-        settings.organization = Organization(detectDuplicates: true, sortEnabled: true, rules: [SortRule(id: "test-images", extensions: ["png"], folder: "Images")])
         let response = try await client.request("settings.update", params: JSONEncoder().encode(settings))
         #expect(try JSONDecoder().decode(HostSettings.self, from: response) == settings)
         let updated = try JSONDecoder().decode(HostStatus.self, from: await client.request("status"))
         #expect(updated.settings == settings)
         #expect(updated.statistics != nil)
-        #expect(updated.relays?.isEmpty == true)
         let history = try JSONDecoder().decode(History.self, from: await client.request("history.list", params: JSONEncoder().encode(HistoryFilter())))
         #expect(history.entries.isEmpty)
-        let original = directory.appendingPathComponent("original.txt")
-        let contents = Data("Native share integration".utf8)
-        try contents.write(to: original)
-        let request = ShareCreate(name: "Native integration", paths: [original.path], expiresAt: ShareDate.string(Date().addingTimeInterval(86400)), maxDownloads: 2)
-        let share = try JSONDecoder().decode(Share.self, from: await client.request("share.create", params: JSONEncoder().encode(request)))
-        #expect(share.totalBytes == Int64(contents.count))
-        #expect(share.maxDownloads == 2)
-        #expect(URL(string: share.url ?? "")?.fragment?.isEmpty == false)
-        #expect(try Data(contentsOf: original) == contents)
-        _ = try await client.request("share.revoke", params: JSONEncoder().encode(["id": share.id]))
-        let revoked = try JSONDecoder().decode(HostStatus.self, from: await client.request("status"))
-        #expect(revoked.shares?.first(where: { $0.id == share.id })?.revoked == true)
         _ = try await client.request("history.clear")
-        #expect(try Data(contentsOf: original) == contents)
-        let cleared = try JSONDecoder().decode(HostStatus.self, from: await client.request("status"))
-        #expect(cleared.shares?.contains(where: { $0.id == share.id }) == true)
+        for removed in ["share.list", "relay.list", "duplicate.resolve", "connection.qr", "peer.connect", "pair.approve"] {
+            await #expect(throws: (any Error).self) { _ = try await client.request(removed) }
+        }
         await client.stop()
     } catch {
         await client.stop()
@@ -77,17 +62,30 @@ func actualNativeTrustedPairAndReceivedResultUsePrivateContract() async throws {
         let expectedVersion = try expectedHelperVersion()
         #expect(first.version == expectedVersion && second.version == expectedVersion)
         let address = try #require(second.urls.last(where: { $0.contains("localhost:") }))
-        struct Requested: Decodable { var requestId: String }
-        let requested = try JSONDecoder().decode(Requested.self, from: await source.request("peer.connectTrusted", params: JSONEncoder().encode(["url": address, "fingerprint": second.fingerprint])))
-        _ = try await receiver.request("pair.approveTrusted", params: JSONEncoder().encode(["id": requested.requestId]))
+        // Comparison-code pairing: both helpers show the same code and both
+        // sides confirm, each choosing automatic receipt for its direction.
+        struct Confirmation: Encodable { let id: String; let automaticReceive: Bool }
+        let started = try JSONDecoder().decode(PairingSession.self, from: await source.request("pairing.start", params: JSONEncoder().encode(["url": address, "fingerprint": second.fingerprint])))
         let deadline = Date().addingTimeInterval(15)
+        var remoteSession: PairingSession?
+        while Date() < deadline, remoteSession == nil {
+            let local = try JSONDecoder().decode(PairingSession.self, from: await source.request("pairing.status", params: JSONEncoder().encode(["id": started.id])))
+            if local.state == "comparing", let code = local.comparisonCode {
+                let summary = try JSONDecoder().decode(HostStatus.self, from: await receiver.request("status.summary"))
+                remoteSession = summary.pairingSessions?.first { $0.comparisonCode == code }
+            }
+            if remoteSession == nil { try await Task.sleep(for: .milliseconds(50)) }
+        }
+        let responder = try #require(remoteSession)
+        _ = try await source.request("pairing.confirm", params: JSONEncoder().encode(Confirmation(id: started.id, automaticReceive: true)))
+        _ = try await receiver.request("pairing.confirm", params: JSONEncoder().encode(Confirmation(id: responder.id, automaticReceive: true)))
         var paired = false
         var pairedPeer: Device?
         while Date() < deadline {
             let current = try JSONDecoder().decode(HostStatus.self, from: await source.request("status"))
             if let peer = current.devices.first(where: { $0.id == second.id && $0.paired }) {
                 #expect(peer.autoAccept)
-                #expect(!peer.canClipboard && !peer.canRelay)
+                #expect(!peer.canClipboard)
                 paired = true; pairedPeer = peer; break
             }
             try await Task.sleep(for: .milliseconds(50))
@@ -132,19 +130,16 @@ func actualNativeTrustedPairAndReceivedResultUsePrivateContract() async throws {
             try await Task.sleep(for: .milliseconds(50))
         }
         _ = try #require(sent)
-        let share = try JSONDecoder().decode(Share.self, from: await receiver.request("share.create", params: JSONEncoder().encode(ShareCreate(name: "Kept received file", paths: [item.path]))))
         _ = try await receiver.request("history.remove", params: JSONEncoder().encode(["id": received.id]))
         _ = try await source.request("history.remove", params: JSONEncoder().encode(["id": offered.id]))
         let removed = try JSONDecoder().decode(HostStatus.self, from: await receiver.request("status"))
         #expect(!removed.transfers.contains(where: { $0.id == received.id }))
-        #expect(removed.shares?.contains(where: { $0.id == share.id }) == true)
         #expect(try Data(contentsOf: original) == contents)
         #expect(try Data(contentsOf: URL(fileURLWithPath: item.path)) == contents)
         _ = await receiver.stop()
         try await receiver.start(executable: URL(fileURLWithPath: path), dataDirectory: directory.appendingPathComponent("receiver-state"), receiveDirectory: directory.appendingPathComponent("receiver-files"), disableDiscovery: true)
         let restarted = try JSONDecoder().decode(HostStatus.self, from: await receiver.request("status"))
         #expect(!restarted.transfers.contains(where: { $0.id == received.id }))
-        #expect(restarted.shares?.contains(where: { $0.id == share.id }) == true)
         #expect(try Data(contentsOf: URL(fileURLWithPath: item.path)) == contents)
         _ = await source.stop(); _ = await receiver.stop()
     } catch {

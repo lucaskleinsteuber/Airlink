@@ -1,11 +1,8 @@
 package server
 
 import (
-	"context"
 	"net"
-	"net/http"
 	"net/url"
-	"os"
 	"time"
 )
 
@@ -44,57 +41,6 @@ func (s *Server) addressForPeer(raw string) string {
 	return "https://" + net.JoinHostPort(ip.String(), own.Port())
 }
 
-type cancelReader struct {
-	context.Context
-	*os.File
-}
-
-type sourceReader struct {
-	context.Context
-	*os.File
-	server             *Server
-	transferID, fileID string
-}
-
-func (r *sourceReader) Read(p []byte) (int, error) {
-	if err := r.Context.Err(); err != nil {
-		return 0, err
-	}
-	if err := r.server.engine.ValidateSource(r.transferID, r.fileID, r.File); err != nil {
-		return 0, err
-	}
-	n, err := r.File.Read(p)
-	if check := r.server.engine.ValidateSource(r.transferID, r.fileID, r.File); check != nil {
-		return 0, check
-	}
-	return n, err
-}
-
-type sourcePolicyWriter struct {
-	http.ResponseWriter
-	ctx      context.Context
-	validate func() error
-}
-
-func (w *sourcePolicyWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
-func (w *sourcePolicyWriter) Write(p []byte) (int, error) {
-	if err := w.ctx.Err(); err != nil {
-		return 0, err
-	}
-	if w.validate != nil {
-		if err := w.validate(); err != nil {
-			return 0, err
-		}
-	}
-	return w.ResponseWriter.Write(p)
-}
-
-func (r *cancelReader) Read(b []byte) (int, error) {
-	if e := r.Context.Err(); e != nil {
-		return 0, e
-	}
-	return r.File.Read(b)
-}
 func (s *Server) cancelDeviceRequests(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

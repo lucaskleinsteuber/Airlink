@@ -10,14 +10,12 @@ import Testing
     latest.receiveDirectory = "/Volumes/Incoming"
     latest.notifications = true
     latest.receiveLimitBytesPerSecond = 8 * 1_048_576
-    latest.organization = Organization(detectDuplicates: true)
     latest.shortcut = Shortcut(enabled: false)
     latest.setupCompleted = true
     let saved = SettingsEditing.merge(baseline: baseline, draft: draft, latest: latest)
     #expect(saved.name == "My MacBook")
     #expect(saved.receiveDirectory == latest.receiveDirectory)
     #expect(saved.notifications && saved.setupCompleted)
-    #expect(saved.organization == latest.organization)
     #expect(saved.shortcut == latest.shortcut)
     #expect(saved.receiveLimitBytesPerSecond == latest.receiveLimitBytesPerSecond)
     #expect(draft.receiveDirectory == baseline.receiveDirectory)
@@ -47,19 +45,14 @@ import Testing
     #expect(draft.validName && draft.validFolder)
 }
 
-@Test func togglingOrganizationAndShortcutOptionsKeepsNewerRulesAndKeyChord() {
+@Test func togglingShortcutOptionsKeepsNewerKeyChord() {
     let baseline = HostSettings(name: "Mac", receiveDirectory: "/tmp/received")
     var draft = baseline
-    draft.organization.detectDuplicates = true
     draft.shortcut.enabled = false
     var latest = baseline
-    latest.organization.rules = [SortRule(id: "images", extensions: ["png"], folder: "Pictures")]
-    latest.organization.sortEnabled = true
     latest.shortcut.keyCode = 40
     latest.shortcut.modifiers = 256
     let saved = SettingsEditing.merge(baseline: baseline, draft: draft, latest: latest)
-    #expect(saved.organization.detectDuplicates)
-    #expect(saved.organization.sortEnabled && saved.organization.rules == latest.organization.rules)
     #expect(!saved.shortcut.enabled)
     #expect(saved.shortcut.keyCode == 40 && saved.shortcut.modifiers == 256)
     var recorded = baseline

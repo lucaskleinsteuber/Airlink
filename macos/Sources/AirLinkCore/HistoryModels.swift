@@ -28,52 +28,26 @@ public enum RateLimit {
     }
 }
 
-public struct Relay: Codable, Identifiable, Sendable {
-    public var id: String
-    public var senderId: String
-    public var senderName: String
-    public var receiverId: String
-    public var receiverName: String
-    public var state: String
-    public var files: [TransferFile]
-    public var totalBytes: Int64
-    public var deliveredBytes: Int64
-    public var bytesPerSecond: Double
-    public var createdAt: String
-    public var updatedAt: String
-    public var error: String?
-    public var isActive: Bool { !["delivered", "failed", "cancelled"].contains(state) }
-    public var fractionDelivered: Double {
-        if state == "delivered" { return 1 }
-        guard totalBytes > 0 else { return 0 }
-        return min(1, max(0, Double(deliveredBytes) / Double(totalBytes)))
-    }
-    public var title: String { files.first?.path.components(separatedBy: "/").last ?? "Relay" }
-}
-
 public struct History: Codable, Sendable {
     public var transfers: [Transfer]
-    public var relays: [Relay]
-    public init(transfers: [Transfer] = [], relays: [Relay] = []) { self.transfers = transfers; self.relays = relays }
+    public init(transfers: [Transfer] = []) { self.transfers = transfers }
     public var entries: [HistoryEntry] {
-        (transfers.map { HistoryEntry(transfer: $0) } + relays.map { HistoryEntry(relay: $0) }).sorted { $0.createdAt > $1.createdAt }
+        transfers.map { HistoryEntry(transfer: $0) }.sorted { $0.createdAt > $1.createdAt }
     }
 }
 
 public struct HistoryEntry: Identifiable, Sendable {
-    public var transfer: Transfer?
-    public var relay: Relay?
-    public init(transfer: Transfer) { self.transfer = transfer; relay = nil }
-    public init(relay: Relay) { transfer = nil; self.relay = relay }
-    public var id: String { transfer.map { "transfer-" + $0.id } ?? "relay-" + (relay?.id ?? "") }
-    public var state: String { transfer?.state ?? relay?.state ?? "" }
-    public var direction: String { transfer?.direction ?? "relay" }
-    public var createdAt: String { transfer?.createdAt ?? relay?.createdAt ?? "" }
-    public var title: String { transfer?.title ?? relay?.title ?? "" }
-    public var deviceNames: String { transfer?.deviceName ?? "\(relay?.senderName ?? "") → \(relay?.receiverName ?? "")" }
-    public var deviceIDs: [String] { transfer.map { [$0.deviceId] } ?? [relay?.senderId ?? "", relay?.receiverId ?? ""] }
-    public var files: [TransferFile] { transfer?.files ?? relay?.files ?? [] }
-    public var isTerminal: Bool { ["completed", "failed", "cancelled", "delivered"].contains(state) }
+    public var transfer: Transfer
+    public init(transfer: Transfer) { self.transfer = transfer }
+    public var id: String { "transfer-" + transfer.id }
+    public var state: String { transfer.state }
+    public var direction: String { transfer.direction }
+    public var createdAt: String { transfer.createdAt }
+    public var title: String { transfer.title }
+    public var deviceNames: String { transfer.deviceName }
+    public var deviceIDs: [String] { [transfer.deviceId] }
+    public var files: [TransferFile] { transfer.files }
+    public var isTerminal: Bool { ["completed", "failed", "cancelled"].contains(state) }
 }
 
 public struct HistoryFilter: Codable, Equatable, Sendable {
@@ -99,8 +73,6 @@ public struct Statistics: Codable, Sendable {
     public var failedTransfers: Int64
     public var cancelledTransfers: Int64
     public var activeTransfers: Int64
-    public var relayedBytes: Int64
-    public var relayDeliveries: Int64
     public var trafficSentBytes: Int64
     public var trafficReceivedBytes: Int64
     public var skippedFiles: Int64?
@@ -112,7 +84,6 @@ public struct DayStatistics: Codable, Sendable {
     public var date: String
     public var sentBytes: Int64
     public var receivedBytes: Int64
-    public var relayedBytes: Int64
     public var completedTransfers: Int64
 }
 

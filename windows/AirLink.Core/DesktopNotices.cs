@@ -1,6 +1,6 @@
 namespace AirLink.Core;
 
-public enum DesktopNoticeKind { Pairing, IncomingTransfer, DuplicateDecision, CompletedTransfer, Clipboard, Update }
+public enum DesktopNoticeKind { Pairing, IncomingTransfer, CompletedTransfer, Clipboard, Update }
 public sealed record DesktopNotice(DesktopNoticeKind Kind, string Id, string DeviceName, string Title);
 
 /// <summary>Tracks observations, including when notifications are disabled, without replaying old receipts at launch.</summary>
@@ -10,13 +10,10 @@ public sealed class DesktopNoticeTracker
     private readonly HashSet<string> pairs = [];
     private readonly HashSet<string> completed = [];
     private readonly HashSet<string> clipboard = [];
-    private readonly HashSet<string> decisions = [];
 
     public IReadOnlyList<DesktopNotice> Observe(HostStatus next)
     {
         List<DesktopNotice> notices = [];
-        foreach (var request in next.PairRequests)
-            if (pairs.Add(request.Id)) notices.Add(new(DesktopNoticeKind.Pairing, request.Id, request.Name, ""));
         foreach (var request in next.PairingSessions.Where(p => p.CanConfirm))
             if (pairs.Add("v2:" + request.Id)) notices.Add(new(DesktopNoticeKind.Pairing, request.Id, request.PeerName, ""));
         foreach (var transfer in next.Transfers)
@@ -24,9 +21,6 @@ public sealed class DesktopNoticeTracker
             var prior = previous?.Transfers.FirstOrDefault(t => t.Id == transfer.Id);
             if (transfer.Direction == "receive" && transfer.State == "offered" && prior?.State != "offered")
                 notices.Add(new(DesktopNoticeKind.IncomingTransfer, transfer.Id, transfer.DeviceName, transfer.Title));
-            if (transfer.Direction == "receive" && transfer.State == "waitingDuplicate")
-                foreach (var file in transfer.Files.Where(f => f.DuplicateState == "pending"))
-                    if (decisions.Add(transfer.Id + ":" + file.Id)) notices.Add(new(DesktopNoticeKind.DuplicateDecision, transfer.Id, transfer.DeviceName, file.Path));
             if (transfer.Direction == "receive" && transfer.State == "completed" && completed.Add(transfer.Id) && previous is not null && transfer.HasReceivedContent)
                 notices.Add(new(DesktopNoticeKind.CompletedTransfer, transfer.Id, transfer.DeviceName, transfer.Title));
         }

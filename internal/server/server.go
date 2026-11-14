@@ -3,16 +3,12 @@ package server
 import (
 	"context"
 	"crypto/tls"
-	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"io/fs"
 	"log"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -23,60 +19,44 @@ import (
 	"github.com/gofrs/flock"
 	"github.com/lucaskleinsteuber/Airlink/internal/engine"
 	"github.com/lucaskleinsteuber/Airlink/internal/model"
-	"github.com/lucaskleinsteuber/Airlink/internal/relay"
-	"github.com/lucaskleinsteuber/Airlink/internal/shares"
 	"github.com/lucaskleinsteuber/Airlink/internal/traffic"
 )
-
-//go:embed assets/*
-var assets embed.FS
 
 type Options struct {
 	DataDir, ReceiveDir string
 	Port                int
 	NoDiscovery         bool
 }
-type pendingPair struct {
-	model.PairRequest
-	PollHash     string
-	State, Token string
-	Device       model.Device
-	Expires      time.Time
-}
 type Server struct {
-	engine                               *engine.Engine
-	shares                               *shares.Store
-	relays                               *relay.Store
-	traffic                              *traffic.Meter
-	clipboardMu                          sync.Mutex
-	clipboardMessages                    []model.ClipboardMessage
-	store                                *stateStore
-	settingsMu                           sync.Mutex
-	opts                                 Options
-	fingerprint                          string
-	certificate                          []byte
-	urls, setupURLs                      []string
-	lock                                 *flock.Flock
-	mu                                   sync.Mutex
-	pending                              map[string]*pendingPair
-	discovered                           map[string]model.Device
-	rate                                 map[string][]time.Time
-	senders                              map[string]bool
-	senderCancels                        map[string]context.CancelFunc
-	outgoingWake                         chan struct{}
-	discoveryNames                       chan struct{}
-	active                               map[string]map[string]context.CancelFunc
-	transferRequests                     map[string]map[string]context.CancelFunc
-	chunkSlots                           chan struct{}
-	preparations                         map[string]*preparationJob
-	pairingWorkers                       map[string]bool
-	pairingSlots                         chan struct{}
-	ctx                                  context.Context
-	cancel                               context.CancelFunc
-	httpServer, adminServer, setupServer *http.Server
-	adminURL                             string
-	wg                                   sync.WaitGroup
-	stopDiscovery                        func()
+	engine            *engine.Engine
+	traffic           *traffic.Meter
+	clipboardMu       sync.Mutex
+	clipboardMessages []model.ClipboardMessage
+	store             *stateStore
+	settingsMu        sync.Mutex
+	opts              Options
+	fingerprint       string
+	certificate       []byte
+	urls              []string
+	lock              *flock.Flock
+	mu                sync.Mutex
+	discovered        map[string]model.Device
+	rate              map[string][]time.Time
+	senders           map[string]bool
+	senderCancels     map[string]context.CancelFunc
+	outgoingWake      chan struct{}
+	discoveryNames    chan struct{}
+	active            map[string]map[string]context.CancelFunc
+	transferRequests  map[string]map[string]context.CancelFunc
+	chunkSlots        chan struct{}
+	preparations      map[string]*preparationJob
+	pairingWorkers    map[string]bool
+	pairingSlots      chan struct{}
+	ctx               context.Context
+	cancel            context.CancelFunc
+	httpServer        *http.Server
+	wg                sync.WaitGroup
+	stopDiscovery     func()
 }
 
 func New(opts Options) (*Server, error) {
@@ -118,32 +98,13 @@ func New(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err = eng.SetOrganization(p.Settings.Organization); err != nil {
-		eng.Close()
-		return nil, err
-	}
-	shareStore, err := shares.New(opts.DataDir)
-	if err != nil {
-		eng.Close()
-		return nil, err
-	}
-	relayStore, err := relay.New(opts.DataDir)
-	if err != nil {
-		eng.Close()
-		shareStore.Close()
-		return nil, err
-	}
 	meter, err := traffic.New(opts.DataDir)
 	if err != nil {
 		eng.Close()
-		shareStore.Close()
-		relayStore.Close()
 		return nil, err
 	}
 	if err = meter.SetLimits(p.Settings.SendLimitBytesPerSecond, p.Settings.ReceiveLimitBytesPerSecond); err != nil {
 		eng.Close()
-		shareStore.Close()
-		relayStore.Close()
 		meter.Close()
 		return nil, err
 	}
@@ -153,7 +114,7 @@ func New(opts Options) (*Server, error) {
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Server{engine: eng, shares: shareStore, relays: relayStore, traffic: meter, store: store, opts: opts, fingerprint: fp, certificate: ca, pending: map[string]*pendingPair{}, discovered: map[string]model.Device{}, rate: map[string][]time.Time{}, senders: map[string]bool{}, senderCancels: map[string]context.CancelFunc{}, outgoingWake: make(chan struct{}, 1), discoveryNames: make(chan struct{}, 1), active: map[string]map[string]context.CancelFunc{}, chunkSlots: make(chan struct{}, 2), ctx: ctx, cancel: cancel, lock: lock}
+	s := &Server{engine: eng, traffic: meter, store: store, opts: opts, fingerprint: fp, certificate: ca, discovered: map[string]model.Device{}, rate: map[string][]time.Time{}, senders: map[string]bool{}, senderCancels: map[string]context.CancelFunc{}, outgoingWake: make(chan struct{}, 1), discoveryNames: make(chan struct{}, 1), active: map[string]map[string]context.CancelFunc{}, chunkSlots: make(chan struct{}, 2), ctx: ctx, cancel: cancel, lock: lock}
 	s.pairingWorkers, s.pairingSlots = map[string]bool{}, make(chan struct{}, 2)
 	port := opts.Port
 	if port == 0 {
@@ -165,8 +126,6 @@ func New(opts Options) (*Server, error) {
 	}
 	if err != nil {
 		eng.Close()
-		shareStore.Close()
-		relayStore.Close()
 		meter.Close()
 		cancel()
 		return nil, err
@@ -202,21 +161,11 @@ func New(opts Options) (*Server, error) {
 			log.Print(e)
 		}
 	}()
-	if err = s.startAdmin(); err != nil {
-		s.Close()
-		return nil, err
-	}
-	if err = s.startSetup(); err != nil {
-		s.Close()
-		return nil, err
-	}
 	if !opts.NoDiscovery {
 		s.discovery(port)
 	}
 	s.wg.Add(1)
 	go s.outgoingLoop()
-	s.wg.Add(1)
-	go s.confirmationLoop()
 	s.wg.Add(1)
 	go s.heartbeatLoop()
 	s.wg.Add(1)
@@ -237,24 +186,8 @@ func (s *Server) Close() error {
 		_ = s.httpServer.Shutdown(ctx)
 		_ = s.httpServer.Close()
 	}
-	if s.adminServer != nil {
-		_ = s.adminServer.Shutdown(ctx)
-	}
-	if s.setupServer != nil {
-		_ = s.setupServer.Shutdown(ctx)
-	}
 	s.wg.Wait()
 	e := s.engine.Close()
-	if s.shares != nil {
-		if shareErr := s.shares.Close(); e == nil {
-			e = shareErr
-		}
-	}
-	if s.relays != nil {
-		if closeErr := s.relays.Close(); e == nil {
-			e = closeErr
-		}
-	}
 	if s.traffic != nil {
 		if closeErr := s.traffic.Close(); e == nil {
 			e = closeErr
@@ -265,7 +198,6 @@ func (s *Server) Close() error {
 	}
 	return e
 }
-func (s *Server) AdminURL() string { return s.adminURL }
 func (s *Server) basicStatus() model.Status {
 	p := s.store.snapshot()
 	ds := []model.Device{}
@@ -279,18 +211,12 @@ func (s *Server) basicStatus() model.Status {
 	}
 	s.mu.Lock()
 	ds = append(ds, s.discoveredDevicesLocked(known, time.Now())...)
-	requests := []model.PairRequest{}
-	for _, r := range s.pending {
-		if r.State == "pending" && time.Now().Before(r.Expires) {
-			requests = append(requests, r.PairRequest)
-		}
-	}
 	s.mu.Unlock()
-	return model.Status{Version: model.Version, ID: p.ID, Name: p.Settings.Name, URLs: s.currentURLs(s.urls), SetupURLs: s.currentURLs(s.setupURLs), Fingerprint: s.fingerprint, CertificatePath: filepath.Join(s.opts.DataDir, "certificate.pem"), ChunkSize: model.ChunkSize, Devices: ds, PairRequests: requests, Settings: p.Settings, ClipboardAllowed: true, CurrentDeviceID: p.ID, RelayDevices: []model.Device{}, Capabilities: []string{"status-summary-v1", "preparation-v1", "history-page-v1"}}
+	return model.Status{Version: model.Version, ID: p.ID, Name: p.Settings.Name, URLs: s.currentURLs(s.urls), Fingerprint: s.fingerprint, ChunkSize: model.ChunkSize, Devices: ds, Settings: p.Settings, ClipboardAllowed: true, CurrentDeviceID: p.ID, Capabilities: []string{"status-summary-v1", "preparation-v1", "history-page-v1"}}
 }
 func (s *Server) Status() model.Status {
 	v := s.basicStatus()
-	v.Transfers, v.Shares, v.Clipboard, v.Relays = s.engine.Transfers(""), s.shareSummaries(""), s.clipboardSnapshot(""), s.relaySummaries("")
+	v.Transfers, v.Clipboard = s.engine.Transfers(""), s.clipboardSnapshot("")
 	v.Statistics = s.statistics("")
 	return v
 }
@@ -299,8 +225,6 @@ func (s *Server) summaryStatus() model.Status {
 	v.Summary = true
 	v.Statistics.Days = []model.DayStatistics{}
 	v.Transfers, v.ActiveTransferCount = s.engine.StatusSummaries()
-	v.Shares = []model.Share{}
-	v.Relays, v.ActiveRelayCount = s.relays.ActiveSummaries()
 	v.Clipboard = s.clipboardSnapshot("")
 	for i := range v.Clipboard {
 		v.Clipboard[i].Text = ""
@@ -309,19 +233,6 @@ func (s *Server) summaryStatus() model.Status {
 	v.PairingSessions = s.pairingSnapshots()
 	v.Capabilities = append(v.Capabilities, "pairing-v2")
 	return v
-}
-func (s *Server) guestStatus(d model.Device) model.Status {
-	p := s.store.snapshot()
-	host := model.Device{ID: p.ID, Name: p.Settings.Name, Kind: "engine", Paired: true, Online: true, CanClipboard: d.CanClipboard}
-	ts := s.engine.Transfers(d.ID)
-	for i := range ts {
-		ts[i] = publicTransfer(ts[i])
-	}
-	messages := []model.ClipboardMessage{}
-	if d.CanClipboard {
-		messages = s.clipboardSnapshot(d.ID)
-	}
-	return model.Status{Version: model.Version, ID: p.ID, Name: p.Settings.Name, URLs: s.currentURLs(s.urls), Fingerprint: s.fingerprint, ChunkSize: model.ChunkSize, Devices: []model.Device{host}, Transfers: ts, PairRequests: []model.PairRequest{}, Shares: s.shareSummaries(d.ID), Clipboard: messages, ClipboardAllowed: d.CanClipboard, CurrentDeviceID: d.ID, RelayDevices: s.relayDevices(d), Relays: s.relaySummaries(d.ID), Statistics: s.statistics(d.ID)}
 }
 func respond(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -342,62 +253,20 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 }
 func (s *Server) handler() http.Handler {
 	mux := http.NewServeMux()
-	s.registerShareRoutes(mux)
-	mux.HandleFunc("GET /certificate.cer", func(w http.ResponseWriter, r *http.Request) { s.serveCertificate(w, r) })
-	mux.HandleFunc("GET /certificate.mobileconfig", func(w http.ResponseWriter, r *http.Request) { s.serveCertificate(w, r) })
 	mux.HandleFunc("GET /api/v1/info", func(w http.ResponseWriter, r *http.Request) {
 		p := s.store.snapshot()
 		respond(w, 200, map[string]any{"version": model.Version, "id": p.ID, "name": p.Settings.Name, "chunkSize": model.ChunkSize, "fingerprint": s.fingerprint, "urls": s.currentURLs(s.urls), "capabilities": []string{"pairing-v2"}})
 	})
-	mux.HandleFunc("GET /certificate.pem", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/x-pem-file")
-		w.Header().Set("Content-Disposition", `attachment; filename="AirLink-certificate.pem"`)
-		_, _ = w.Write(s.certificate)
-	})
-	mux.HandleFunc("GET /setup", s.setup)
-	mux.HandleFunc("POST /api/v1/pair/request", s.pairRequest)
-	mux.HandleFunc("POST /api/v1/pair/poll", s.pairPoll)
 	mux.HandleFunc("POST /api/v1/pair/v2/start", s.pairingBegin)
 	for _, action := range []string{"poll", "confirm", "ack", "cancel"} {
 		mux.HandleFunc("POST /api/v1/pair/v2/"+action, s.pairingRemote)
 	}
 	mux.HandleFunc("/api/v1/", s.authenticated)
-	sub, _ := fs.Sub(assets, "assets")
-	files := http.FileServer(http.FS(sub))
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "GET" && r.Method != "HEAD" {
-			http.Error(w, "method not allowed", 405)
-			return
-		}
-		if strings.HasPrefix(r.URL.Path, "/s/") && len(strings.Split(strings.Trim(r.URL.Path, "/"), "/")) == 2 {
-			clone := r.Clone(r.Context())
-			clone.URL.Path = "/"
-			files.ServeHTTP(w, clone)
-			return
-		}
-		if r.URL.Path != "/" {
-			if _, e := fs.Stat(sub, strings.TrimPrefix(r.URL.Path, "/")); e != nil {
-				http.NotFound(w, r)
-				return
-			}
-		}
-		files.ServeHTTP(w, r)
-	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; frame-ancestors 'none'")
 		if !s.validHost(r.Host) {
 			fail(w, 403, errors.New("unrecognized host"))
-			return
-		}
-		if origin := r.Header.Get("Origin"); origin != "" && origin != "https://"+r.Host {
-			fail(w, 403, errors.New("cross-origin request denied"))
-			return
-		}
-		if r.Header.Get("Sec-Fetch-Site") == "cross-site" && r.Method != "GET" {
-			fail(w, 403, errors.New("cross-site request denied"))
 			return
 		}
 		mux.ServeHTTP(w, r)
@@ -420,11 +289,9 @@ func (s *Server) validHost(h string) bool {
 	return strings.EqualFold(host, name) || strings.EqualFold(host, strings.TrimSuffix(name, ".local")+".local")
 }
 func (s *Server) auth(r *http.Request) (model.Device, bool) {
-	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if token == "" {
-		if c, e := r.Cookie("airlink_session"); e == nil {
-			token = c.Value
-		}
+	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !ok {
+		return model.Device{}, false
 	}
 	return s.store.authenticate(token)
 }
@@ -457,28 +324,7 @@ func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 	}()
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/")
-	if s.handleRelayAPI(w, r, d) {
-		return
-	}
-	if s.handleHistoryAPI(w, r, d) {
-		return
-	}
-	if s.handleShareAPI(w, r, d) {
-		return
-	}
 	if s.handleClipboardAPI(w, r, d) {
-		return
-	}
-	if path == "status" && r.Method == "GET" {
-		respond(w, 200, s.guestStatus(d))
-		return
-	}
-	if path == "events" && r.Method == "GET" {
-		s.events(w, r, d)
-		return
-	}
-	if path == "peer/confirm" && r.Method == "POST" {
-		s.peerConfirm(w, r, d)
 		return
 	}
 	if path == "transfers" && r.Method == "POST" {
@@ -517,7 +363,7 @@ func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) {
 		fail(w, 403, errors.New("device permission revoked"))
 		return
 	}
-	if len(parts) >= 5 && parts[2] == "files" || len(parts) == 3 && parts[2] == "archive" {
+	if len(parts) >= 5 && parts[2] == "files" {
 		unregister := s.trackTransferRequest(t.ID, rid, cancel)
 		defer unregister()
 	}
@@ -543,8 +389,6 @@ func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) {
 			err = s.engine.Cancel(t.ID)
 			s.stopSender(t.ID)
 			s.stopTransferRequests(t.ID)
-		case "downloaded":
-			err = s.engine.Downloaded(t.ID)
 		default:
 			fail(w, 403, errors.New("action requires local approval"))
 			return
@@ -556,15 +400,6 @@ func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) {
 		fresh, _ := s.engine.Get(t.ID)
 		fresh = publicTransfer(fresh)
 		respond(w, 200, fresh)
-		return
-	}
-	if len(parts) == 3 && parts[2] == "archive" && r.Method == "GET" {
-		full, err := s.engine.Get(t.ID)
-		if err != nil {
-			s.engineError(w, err)
-			return
-		}
-		s.archive(w, r, full)
 		return
 	}
 	if len(parts) >= 5 && parts[2] == "files" {
@@ -642,24 +477,6 @@ func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) {
 			respond(w, 200, fresh)
 			return
 		}
-		if len(parts) == 5 && parts[4] == "download" && r.Method == "GET" {
-			f, m, e := s.engine.OpenDownloadContext(r.Context(), t.ID, fid)
-			if e != nil {
-				s.engineError(w, e)
-				return
-			}
-			defer f.Close()
-			fi, e := f.Stat()
-			if e != nil {
-				s.engineError(w, e)
-				return
-			}
-			w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(filepath.Base(m.Path)))
-			w.Header().Set("ETag", fmt.Sprintf(`"%s-%d-%d"`, m.ID, fi.Size(), fi.ModTime().UnixNano()))
-			policy := &sourcePolicyWriter{ResponseWriter: w, ctx: r.Context(), validate: func() error { return s.engine.ValidateSource(t.ID, fid, f) }}
-			http.ServeContent(s.traffic.WrapWriter(r.Context(), policy, "send"), r, m.Path, fi.ModTime(), &sourceReader{Context: r.Context(), File: f, server: s, transferID: t.ID, fileID: fid})
-			return
-		}
 	}
 	http.NotFound(w, r)
 }
@@ -685,42 +502,6 @@ func (s *Server) engineError(w http.ResponseWriter, e error) {
 	}
 	fail(w, code, e)
 }
-func (s *Server) events(w http.ResponseWriter, r *http.Request, d model.Device) {
-	f, ok := w.(http.Flusher)
-	if !ok {
-		fail(w, 500, errors.New("streaming unavailable"))
-		return
-	}
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("X-Accel-Buffering", "no")
-	tick := time.NewTicker(time.Second)
-	defer tick.Stop()
-	for {
-		fresh, valid := s.auth(r)
-		if !valid {
-			return
-		}
-		b, _ := json.Marshal(s.guestStatus(fresh))
-		_, err := fmt.Fprintf(w, "event: status\ndata: %s\n\n", b)
-		if err != nil {
-			return
-		}
-		f.Flush()
-		select {
-		case <-r.Context().Done():
-			return
-		case <-s.ctx.Done():
-			return
-		case <-tick.C:
-		}
-	}
-}
-
-func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = io.WriteString(w, `<!doctype html><meta name="viewport" content="width=device-width"><title>AirLink · Verbindung</title><style>body{font:17px system-ui;max-width:660px;margin:60px auto;padding:24px;line-height:1.6;color-scheme:light dark}a{color:#3485ed}code{overflow-wrap:anywhere}</style><h1>Sicher lokal verbinden</h1><p>Vergleiche den Fingerabdruck dieses AirLink-Gastgebers mit der Anzeige in seiner App oder lokalen Konsole, bevor du seinem Zertifikat vertraust.</p><p><code>`+s.fingerprint+`</code></p><p><a href="/certificate.pem">Öffentliches Zertifikat laden</a></p><p>Installiere das Zertifikat auf diesem Gerät als vertrauenswürdig. Unter iOS: Einstellungen → Allgemein → VPN und Geräteverwaltung zum Installieren, danach Allgemein → Info → Zertifikatsvertrauenseinstellungen → volles Vertrauen aktivieren.</p><p>Windows: Zertifikat für den aktuellen Benutzer unter Vertrauenswürdige Stammzertifizierungsstellen importieren. macOS: im Schlüsselbund importieren und nach Fingerabdruckprüfung SSL-Vertrauen setzen. Linux: Zertifikat im Browser oder lokalen Zertifikatsspeicher importieren.</p><p>Das Zertifikat gilt nur für diesen Gastgeber. Widerrufe es bei Bedarf in den Systemeinstellungen. Private Schlüssel werden niemals verteilt.</p><p><a href="/">Zurück zu AirLink</a></p>`)
-}
-
 func (s *Server) fileResponse(id, fileID string, compact bool) (model.Transfer, error) {
 	if compact {
 		return s.engine.FileSnapshot(id, fileID)

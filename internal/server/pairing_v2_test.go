@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -73,12 +74,17 @@ func TestMutualPairingTLSCodeAndDirectionalTrust(t *testing.T) {
 	if !ar.Device.AutoAccept || br.Device.AutoAccept || !ar.Device.Paired || !br.Device.Paired {
 		t.Fatal("directional explicit trust lost", ar.Device, br.Device)
 	}
-	var remote model.Status
-	if err := requestJSON(context.Background(), pinnedClient(b.fingerprint), "GET", hostURL(b)+"/api/v1/status", ar.OutboundToken, nil, &remote); err != nil {
-		t.Fatal("credential unusable", err)
-	}
-	if err := requestJSON(context.Background(), pinnedClient(a.fingerprint), "GET", hostURL(a)+"/api/v1/status", br.OutboundToken, nil, &remote); err != nil {
-		t.Fatal("reverse credential unusable", err)
+	// An authenticated peer reaches the transfer API (404 for an unknown
+	// transfer); an unusable credential would be rejected with 401.
+	for _, check := range []struct {
+		server *Server
+		token  string
+	}{{b, ar.OutboundToken}, {a, br.OutboundToken}} {
+		var status *peerHTTPError
+		err := requestJSON(context.Background(), pinnedClient(check.server.fingerprint), "GET", hostURL(check.server)+"/api/v1/transfers/"+randomID(), check.token, nil, nil)
+		if !errors.As(err, &status) || status.Code != http.StatusNotFound {
+			t.Fatal("credential unusable", err)
+		}
 	}
 	if _, err := a.Control("device.revoke", json.RawMessage(`{"id":"`+ar.Device.ID+`"}`)); err != nil {
 		t.Fatal(err)

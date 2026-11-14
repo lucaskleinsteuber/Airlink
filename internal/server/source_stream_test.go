@@ -1,9 +1,7 @@
 package server
 
 import (
-	"archive/zip"
 	"bytes"
-	"context"
 	"crypto/tls"
 	"encoding/json"
 	"io"
@@ -19,93 +17,6 @@ import (
 
 	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
-
-func TestChangedSourcesAreRecheckedAfterDownloadLimiterWait(t *testing.T) {
-	for _, mode := range []string{"download", "archive"} {
-		t.Run(mode, func(t *testing.T) {
-			s := integrationHost(t)
-			d, _ := integrationDevice(t, s, false)
-			path := filepath.Join(t.TempDir(), "original.bin")
-			data := bytes.Repeat([]byte("ORIGINAL-PRIVATE-CONTENT!"), 4096)
-			if err := os.WriteFile(path, data, 0600); err != nil {
-				t.Fatal(err)
-			}
-			tr, err := s.engine.Offer(d, []string{path})
-			if err != nil {
-				t.Fatal(err)
-			}
-			file, _, err := s.engine.OpenDownloadContext(context.Background(), tr.ID, tr.Files[0].ID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer file.Close()
-			// Buffer bytes while the source is valid, as ServeContent/ZIP do before a
-			// throttled write. The policy must revalidate these already-buffered bytes.
-			reader := &sourceReader{Context: context.Background(), File: file, server: s, transferID: tr.ID, fileID: tr.Files[0].ID}
-			buffered, err := io.ReadAll(reader)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err = s.traffic.SetLimits(1024, 0); err != nil {
-				t.Fatal(err)
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			response := httptest.NewRecorder()
-			var validations atomic.Int32
-			policy := &sourcePolicyWriter{ResponseWriter: response, ctx: ctx, validate: func() error {
-				validations.Add(1)
-				return s.engine.ValidateSource(tr.ID, tr.Files[0].ID, file)
-			}}
-			writer := s.traffic.WrapWriter(ctx, policy, "send")
-			entered, finished := make(chan struct{}), make(chan error, 1)
-			go func() {
-				close(entered)
-				if mode == "download" {
-					_, e := writer.Write(buffered)
-					finished <- e
-					return
-				}
-				archive := zip.NewWriter(writer)
-				entry, e := archive.CreateHeader(&zip.FileHeader{Name: "original.bin", Method: zip.Store})
-				if e == nil {
-					_, e = entry.Write(buffered)
-				}
-				if e == nil {
-					e = archive.Close()
-				}
-				finished <- e
-			}()
-			<-entered
-			// An in-place edit works even while a Windows handle prevents replacement.
-			// Keep the byte count, and force a different timestamp on coarse filesystems.
-			info, _ := os.Stat(path)
-			if err = os.WriteFile(path, bytes.Repeat([]byte("x"), len(data)), 0600); err != nil {
-				t.Fatal(err)
-			}
-			if err = os.Chtimes(path, info.ModTime(), info.ModTime().Add(2*time.Second)); err != nil {
-				t.Fatal(err)
-			}
-			if err = s.traffic.SetLimits(0, 0); err != nil {
-				t.Fatal(err)
-			}
-			select {
-			case err = <-finished:
-				if err == nil {
-					t.Fatal("changed source produced a successful write")
-				}
-			case <-ctx.Done():
-				t.Fatal("write did not finish", ctx.Err())
-			}
-			if validations.Load() == 0 {
-				t.Fatal("source was not checked after the limiter")
-			}
-			if response.Body.Len() != 0 || s.traffic.Snapshot().SentBytes != 0 {
-				t.Fatal("invalidated buffered payload was delivered", response.Body.Len(), s.traffic.Snapshot())
-			}
-		})
-	}
-}
 
 func TestSenderPermanentProtocolErrorsStopWithoutRetryLoop(t *testing.T) {
 	for _, stage := range []string{"offer", "chunk", "complete"} {

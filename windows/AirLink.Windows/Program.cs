@@ -71,7 +71,6 @@ internal static class Program
                 DesktopNoticeKind.Update => controller.T("Neue AirLink-Beta verfügbar", "New AirLink beta available"),
                 DesktopNoticeKind.Pairing => controller.T("Verbindungsanfrage", "Connection request"),
                 DesktopNoticeKind.IncomingTransfer => controller.T("Dateien warten auf Annahme", "Files waiting for acceptance"),
-                DesktopNoticeKind.DuplicateDecision => controller.T("Duplikat benötigt deine Entscheidung", "Duplicate needs your decision"),
                 DesktopNoticeKind.Clipboard => controller.T("Text empfangen", "Text received"),
                 _ => controller.T("Datei empfangen", "File received")
             };

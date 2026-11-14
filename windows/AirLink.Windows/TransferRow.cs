@@ -47,7 +47,7 @@ internal sealed class TransferRow : Border
         detail.Text = t.State == "completed" ? c.Bytes(t.CompletedBytes) + (t.SkippedBytes > 0 ? " · " + c.Bytes(t.SkippedBytes) + c.T(" übersprungen", " skipped") : "") : c.Bytes(t.CompletedBytes) + " / " + c.Bytes(t.TotalBytes) + (speed > 0 && t.State == "running" ? " · " + c.Bytes((long)Math.Min(speed, long.MaxValue)) + "/s" : "");
         problem.Text = t.Problem is { } advice ? c.T(advice.TitleDE, advice.TitleEN) + "\n" + c.T(advice.RecoveryDE, advice.RecoveryEN) : t.Error ?? ""; problem.Visibility = string.IsNullOrWhiteSpace(t.Error) ? Visibility.Collapsed : Visibility.Visible;
         if (DesktopTransferSelection.Remaining(t) is { } left) detail.Text += " · " + (left.TotalMinutes >= 1 ? Math.Ceiling(left.TotalMinutes) + c.T(" Min. übrig", " min left") : Math.Ceiling(left.TotalSeconds) + c.T(" Sek. übrig", " sec left"));
-        var key = t.Retryable + ":" + t.HasContent + ":" + t.State + ":" + c.Ready + ":" + c.RemovingHistory + ":" + string.Join('|', t.Files.Select(f => f.Id + f.Completed + f.Skipped + f.DuplicateState));
+        var key = t.Retryable + ":" + t.HasContent + ":" + t.State + ":" + c.Ready + ":" + c.RemovingHistory + ":" + string.Join('|', t.Files.Select(f => f.Id + f.Completed + f.Skipped));
         if (key == actionKey) return; actionKey = key; actions.Children.Clear(); files.Children.Clear();
         ContextMenu = null;
         if (t.Retryable) actions.Children.Add(Action(c.T("Erneut versuchen", "Try again"), () => c.CommandAsync("transfer.resume", current.Id)));
@@ -57,12 +57,10 @@ internal sealed class TransferRow : Border
             trust.Visibility = NativeExperience.CanAcceptAndTrust(t, c.Status?.Devices.FirstOrDefault(d => d.Id == t.DeviceId)) ? Visibility.Visible : Visibility.Collapsed;
             actions.Children.Add(Action(c.T("Annehmen", "Accept"), () => c.CommandAsync(trust.IsChecked == true ? "transfer.acceptTrusted" : "transfer.accept", current.Id), true)); files.Children.Add(trust);
         }
-        if (t.State is "running" or "queued" or "reconnecting" or "checkingDuplicate" or "waitingDuplicate") actions.Children.Add(Action(c.T("Pause", "Pause"), () => c.CommandAsync("transfer.pause", current.Id)));
+        if (t.State is "running" or "queued" or "reconnecting") actions.Children.Add(Action(c.T("Pause", "Pause"), () => c.CommandAsync("transfer.pause", current.Id)));
         if (t.State is "paused" or "reconnecting") actions.Children.Add(Action(c.T("Fortsetzen", "Resume"), () => c.CommandAsync("transfer.resume", current.Id), true));
         if (t.IsActive) actions.Children.Add(Action(c.T("Abbrechen", "Cancel"), () => c.CommandAsync("transfer.cancel", current.Id)));
         actions.Children.Add(Theme.Button(c.T("Details", "Details"), () => Dialogs.TransferDetails(owner, c, current)));
-        foreach (var file in t.Files.Where(f => !t.Summary && f.DuplicateState == "pending"))
-            files.Children.Add(Theme.Button(file.Path + c.T(" · Duplikat prüfen", " · Review duplicate"), () => { var fresh = current.Files.FirstOrDefault(f => f.Id == file.Id); if (fresh is not null) Dialogs.Duplicate(owner, c, current, fresh); }));
         if (t.Direction == "receive" && t.State == "completed")
         {
             var received = NativeExperience.ReceivedDisplayEntries(t);
@@ -77,11 +75,6 @@ internal sealed class TransferRow : Border
                 }
             }
             else files.Children.Add(Theme.Text(c.T("Identische Dateien übersprungen", "Identical files skipped"), 12, secondary: true));
-        }
-        if (t.State == "completed" && t.Files.Any(f => !f.Directory && !f.Skipped))
-        {
-            var menu = new ContextMenu(); var share = new MenuItem { Header = c.T("Freigabelink erstellen …", "Create share link …") };
-            share.Click += (_, _) => SharingDialogs.Share(owner, c, transfer: current); menu.Items.Add(share); ContextMenu = menu;
         }
         if (NativeExperience.CanRemoveFromHistory(t))
         {

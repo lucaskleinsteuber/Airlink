@@ -41,41 +41,27 @@ import Testing
     #expect(!RateLimit.isValid(1023))
 }
 
-private func relayFixture() throws -> Relay {
-    try JSONDecoder().decode(Relay.self, from: Data(#"{"id":"relay","senderId":"sender","senderName":"Phone","receiverId":"receiver","receiverName":"Tablet","state":"running","files":[{"id":"file","path":"Reports/Annual.pdf","size":1099511627776,"received":0,"completed":false}],"totalBytes":1099511627776,"deliveredBytes":549755813888,"bytesPerSecond":125000000,"createdAt":"2026-10-24T12:00:00Z","updatedAt":"2026-10-24T12:01:00Z"}"#.utf8))
+private func historyFixture() throws -> Transfer {
+    try JSONDecoder().decode(Transfer.self, from: Data(#"{"id":"t","deviceId":"phone","deviceName":"Office PC","direction":"receive","state":"completed","files":[{"id":"file","path":"Reports/Annual.pdf","size":1099511627776,"received":1099511627776,"completed":true}],"totalBytes":1099511627776,"completedBytes":1099511627776,"bytesPerSecond":0,"createdAt":"2026-10-24T12:00:00Z","updatedAt":"2026-10-24T12:01:00Z"}"#.utf8))
 }
 
-@Test func relayByteCountsAndTerminalStateDoNotClaimSavedFile() throws {
-    var relay = try relayFixture()
-    #expect(relay.fractionDelivered == 0.5)
-    #expect(relay.isActive)
-    relay.deliveredBytes = Int64.max
-    #expect(relay.fractionDelivered == 1)
-    relay.state = "delivered"; relay.totalBytes = 0
-    #expect(relay.fractionDelivered == 1)
-    #expect(!relay.isActive)
-    #expect(HistoryEntry(relay: relay).isTerminal)
-    #expect(HistoryEntry(relay: relay).direction == "relay")
-}
-
-@Test func historyFiltersRelayParticipantsNamesPathsAndTerminalScope() throws {
-    let entry = HistoryEntry(relay: try relayFixture())
+@Test func historyFiltersDeviceNamesPathsDirectionAndState() throws {
+    let entry = HistoryEntry(transfer: try historyFixture())
+    #expect(entry.isTerminal)
     var filter = HistoryFilter()
     filter.query = "annual.PDF"
     #expect(filter.matches(entry))
-    filter.query = "PHONE"; filter.deviceId = "receiver"; filter.direction = "relay"
+    filter.query = "OFFICE"; filter.deviceId = "phone"; filter.direction = "receive"
     #expect(filter.matches(entry))
     filter.deviceId = "other"
     #expect(!filter.matches(entry))
-    filter.deviceId = ""; filter.state = "delivered"
+    filter.deviceId = ""; filter.state = "failed"
     #expect(!filter.matches(entry))
-    #expect(!entry.isTerminal)
 }
 
-@Test func statisticsPreserveSeparate64BitTransportAndFileCounters() throws {
-    let fixture = Data(#"{"sentBytes":1099511627776,"receivedBytes":549755813888,"completedTransfers":3,"failedTransfers":1,"cancelledTransfers":2,"activeTransfers":4,"relayedBytes":2199023255552,"relayDeliveries":6,"trafficSentBytes":4398046511104,"trafficReceivedBytes":8796093022208,"days":[{"date":"2026-10-24","sentBytes":1099511627776,"receivedBytes":0,"relayedBytes":2199023255552,"completedTransfers":3}]}"#.utf8)
+@Test func statisticsPreserve64BitTrafficAndFileCounters() throws {
+    let fixture = Data(#"{"sentBytes":1099511627776,"receivedBytes":549755813888,"completedTransfers":3,"failedTransfers":1,"cancelledTransfers":2,"activeTransfers":4,"trafficSentBytes":4398046511104,"trafficReceivedBytes":8796093022208,"days":[{"date":"2026-10-24","sentBytes":1099511627776,"receivedBytes":0,"completedTransfers":3}]}"#.utf8)
     let stats = try JSONDecoder().decode(Statistics.self, from: fixture)
-    #expect(stats.relayedBytes == 2_199_023_255_552)
     #expect(stats.sentBytes == 1_099_511_627_776)
     #expect(stats.trafficReceivedBytes == 8_796_093_022_208)
     #expect(stats.days?.first?.completedTransfers == 3)

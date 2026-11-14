@@ -76,28 +76,6 @@ QString SettingsDraft::validate() const {
         (n > 0 && n < 1024) || std::floor(n) != n)
       return QString::fromLatin1(key);
   }
-  const auto organization = values["organization"].toObject();
-  if (organization.contains("rules") && !organization["rules"].isArray())
-    return QStringLiteral("organization");
-  QSet<QString> ids;
-  for (const auto &value : organization["rules"].toArray()) {
-    const auto r = value.toObject();
-    const auto id = r["id"].toString(), folder = r["folder"].toString();
-    if (id.isEmpty() || ids.contains(id) || folder.isEmpty() ||
-        QDir::isAbsolutePath(folder) || QDir::cleanPath(folder) != folder ||
-        folder == "." || folder.startsWith("../") ||
-        folder.contains(QRegularExpression("[<>:\"\\\\|?*]")))
-      return QStringLiteral("organization");
-    ids.insert(id);
-    const auto extensions = r["extensions"].toArray();
-    if (extensions.isEmpty())
-      return QStringLiteral("organization");
-    for (const auto &ext : extensions)
-      if (!QRegularExpression("^\\.?[a-zA-Z0-9_-]{1,32}$")
-               .match(ext.toString())
-               .hasMatch())
-        return QStringLiteral("organization");
-  }
   return {};
 }
 bool terminal(const QString &s) {
@@ -149,8 +127,6 @@ QString stateLabel(const QString &s, bool en) {
       {"paused", {"Pausiert", "Paused"}},
       {"reconnecting", {"Verbindung unterbrochen", "Connection interrupted"}},
       {"verifying", {"Wird geprüft", "Verifying"}},
-      {"checkingDuplicate", {"Prüft auf Duplikate", "Checking duplicates"}},
-      {"waitingDuplicate", {"Entscheidung erforderlich", "Decision needed"}},
       {"completed", {"Fertig", "Completed"}},
       {"failed", {"Fehlgeschlagen", "Failed"}},
       {"cancelled", {"Abgebrochen", "Cancelled"}},

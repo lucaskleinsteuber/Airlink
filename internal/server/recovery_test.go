@@ -8,42 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/lucaskleinsteuber/Airlink/internal/model"
 )
 
-func TestPeerConfirmationSurvivesRestart(t *testing.T) {
-	source, target := integrationHost(t), integrationHost(t)
-	p := source.store.snapshot()
-	targetID := target.store.snapshot().ID
-	outgoing, incoming := randomID(), randomID()
-	if e := target.store.put(deviceRecord{Device: model.Device{ID: p.ID, Name: "Source", Kind: "engine", CanSend: true, CanReceive: true, Paired: true}, TokenHash: digest([]byte(outgoing))}); e != nil {
-		t.Fatal(e)
-	}
-	if e := source.store.put(deviceRecord{Device: model.Device{ID: targetID, Name: "Target", Kind: "engine", Address: hostURL(target), Fingerprint: target.fingerprint, CanSend: true, CanReceive: true, Paired: true}, TokenHash: digest([]byte(incoming)), OutboundToken: outgoing, PendingReturnToken: incoming}); e != nil {
-		t.Fatal(e)
-	}
-	opts := source.opts
-	if e := source.Close(); e != nil {
-		t.Fatal(e)
-	}
-	resumed, e := New(opts)
-	if e != nil {
-		t.Fatal(e)
-	}
-	defer resumed.Close()
-	deadline := time.Now().Add(6 * time.Second)
-	for time.Now().Before(deadline) {
-		record := target.store.snapshot().Devices[p.ID]
-		local := resumed.store.snapshot().Devices[targetID]
-		if record.OutboundToken == incoming && local.PendingReturnToken == "" {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatal("reciprocal pairing credential was not recovered")
-}
 func TestStoredTransferErrorsStayLocal(t *testing.T) {
 	s := integrationHost(t)
 	d, token := integrationDevice(t, s, false)

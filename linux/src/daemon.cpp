@@ -88,8 +88,7 @@ void DaemonClient::request(const QString &method, const QJsonObject &params,
       "status",         "status.summary", "preparation.status",
       "pairing.status", "history.page",   "history.list",
       "transfer.files", "transfer.get",   "transfer.received",
-      "share.list",     "clipboard.list", "relay.list",
-      "statistics.get"};
+      "clipboard.list", "statistics.get"};
   if (!reads.contains(method))
     ++revision;
   const QByteArray line =
@@ -103,8 +102,7 @@ void DaemonClient::request(const QString &method, const QJsonObject &params,
         "This selection has too many paths. Select its parent folder instead.");
     return;
   }
-  const bool preparing = method == "share.create" || method == "offer" ||
-                         method == "duplicate.resolve";
+  const bool preparing = method == "offer";
   pending.insert(
       id, Pending{std::move(callback),
                   preparing ? std::numeric_limits<qint64>::max()
