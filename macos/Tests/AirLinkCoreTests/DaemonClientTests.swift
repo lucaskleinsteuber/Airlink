@@ -123,3 +123,43 @@ func slowFilesystemRPCAllowsOutOfOrderStatusResponse(method: String) async throw
         throw error
     }
 }
+
+/// Lines without an id are events pushed by the helper; they reach the
+/// handler and never disturb the request/reply correlation.
+@Test func pushedEventsReachTheHandlerBetweenReplies() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let helper = directory.appendingPathComponent("fake-event-helper")
+    let script = #"""
+    #!/bin/sh
+    printf '{"event":"status"}\n'
+    while IFS= read -r line; do
+      id="${line#*\"id\":\"}"
+      id="${id%%\"*}"
+      case "$line" in
+        *'"method":"shutdown"'*) printf '{"id":"%s","result":{}}\n' "$id"; exit 0 ;;
+        *) printf '{"event":"status"}\n{"id":"%s","result":{"ok":true}}\n{"event":"status"}\n' "$id" ;;
+      esac
+    done
+    """#
+    try Data(script.utf8).write(to: helper)
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: helper.path)
+    final class Counter: @unchecked Sendable {
+        private let lock = NSLock(); private var value = 0
+        func add() { lock.lock(); value += 1; lock.unlock() }
+        var count: Int { lock.lock(); defer { lock.unlock() }; return value }
+    }
+    let events = Counter()
+    let client = DaemonClient()
+    await client.onEvent { name in if name == "status" { events.add() } }
+    try await client.start(executable: helper, dataDirectory: directory)
+    for _ in 0..<3 {
+        let response = try await client.request("status.summary")
+        #expect((try JSONSerialization.jsonObject(with: response) as? [String: Bool])?["ok"] == true)
+    }
+    let deadline = Date().addingTimeInterval(2)
+    while events.count < 7, Date() < deadline { try await Task.sleep(for: .milliseconds(20)) }
+    #expect(events.count == 7)
+    await client.stop()
+}

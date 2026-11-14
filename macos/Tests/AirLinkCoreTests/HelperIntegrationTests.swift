@@ -86,7 +86,9 @@ func actualNativeTrustedPairAndReceivedResultUsePrivateContract() async throws {
             let current = try JSONDecoder().decode(HostStatus.self, from: await source.request("status"))
             if let peer = current.devices.first(where: { $0.id == second.id && $0.paired }) {
                 #expect(peer.autoAccept)
-                #expect(!peer.canClipboard)
+                // Your own computers share the clipboard by default; it can be
+                // turned off per device.
+                #expect(peer.canClipboard)
                 paired = true; pairedPeer = peer; break
             }
             try await Task.sleep(for: .milliseconds(50))

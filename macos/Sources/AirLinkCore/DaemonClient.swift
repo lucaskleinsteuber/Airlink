@@ -38,6 +38,11 @@ public actor DaemonClient {
     private let writer = DispatchQueue(label: "com.lucasfd3.airlink.helper-input", qos: .userInitiated)
     private let shutdownPolicy: HelperShutdownPolicy
     private let ordinaryRequestTimeout: TimeInterval
+    private var eventHandler: (@Sendable (String) -> Void)?
+
+    /// Lines without an id are events pushed by the helper, for example
+    /// "status" after a visible change; the app then reads status.summary.
+    public func onEvent(_ handler: (@Sendable (String) -> Void)?) { eventHandler = handler }
 
     public init(shutdownPolicy: HelperShutdownPolicy = HelperShutdownPolicy(), ordinaryRequestTimeout: TimeInterval = 20) {
         self.shutdownPolicy = shutdownPolicy
@@ -183,7 +188,15 @@ public actor DaemonClient {
     }
     private func consume(_ line: Data, session: UUID) {
         guard generation == session, !channelClosed else { return }
-        guard let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any], let id = object["id"] as? String else {
+        guard let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else {
+            invalidReply(session, message: "AirLink helper returned an invalid response.")
+            return
+        }
+        if object["id"] == nil, let event = object["event"] as? String {
+            eventHandler?(event)
+            return
+        }
+        guard let id = object["id"] as? String else {
             invalidReply(session, message: "AirLink helper returned an invalid response.")
             return
         }

@@ -38,4 +38,20 @@
     <key>NSSendTypes</key><array><string>NSFilenamesPboardType</string></array>
     <key>NSRequiredContext</key><dict/>
   </dict></array>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Files and Folders</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSHandlerRank</key>
+            <string>None</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>public.item</string>
+                <string>public.folder</string>
+            </array>
+        </dict>
+    </array>
 </dict></plist>

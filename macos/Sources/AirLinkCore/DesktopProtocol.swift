@@ -11,6 +11,12 @@ public struct PairingSession: Codable, Identifiable, Sendable {
     public var remoteConfirmed: Bool
     public var automaticReceive: Bool
     public var error: String?
+    /// Stable reason: closed, unreachable, outdated, paired, identity, self.
+    public var problem: String?
+    public var initiator: Bool?
+    public var platform: String?
+    public var form: String?
+    public var isOpen: Bool { ["starting", "comparing", "finishing"].contains(state) }
     public var canConfirm: Bool { state == "comparing" && !localConfirmed && comparisonCode?.count == 8 }
     public var formattedCode: String {
         guard let code = comparisonCode, code.count == 8 else { return "" }

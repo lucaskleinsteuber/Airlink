@@ -76,10 +76,21 @@ public struct Device: Codable, Identifiable, Sendable {
     }
     public var autoAccept: Bool
     public var lastSeen: String?
+    /// macos, linux or windows; laptop or desktop. Only chooses the symbol.
+    public var platform: String?
+    public var form: String?
+    /// A nearby computer that runs an older, incompatible AirLink.
+    public var outdated: Bool?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, kind, address, fingerprint, paired, online, canSend, canReceive, autoAccept, lastSeen
+        case id, name, kind, address, fingerprint, paired, online, canSend, canReceive, autoAccept, lastSeen, platform, form, outdated
         case storedCanClipboard = "canClipboard"
+    }
+    public init(id: String, name: String, kind: String = "engine", address: String? = nil, fingerprint: String? = nil, paired: Bool, online: Bool, canSend: Bool = true, canReceive: Bool = true, canClipboard: Bool = true, autoAccept: Bool = true, platform: String? = nil, form: String? = nil, outdated: Bool? = nil) {
+        self.id = id; self.name = name; self.kind = kind; self.address = address; self.fingerprint = fingerprint
+        self.paired = paired; self.online = online; self.canSend = canSend; self.canReceive = canReceive
+        self.storedCanClipboard = canClipboard; self.autoAccept = autoAccept
+        self.platform = platform; self.form = form; self.outdated = outdated
     }
 }
 
